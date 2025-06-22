@@ -61,8 +61,9 @@ pub use dht::{Key, Record};
 pub use mcp::{MCPServer, Tool, MCPService};
 pub use error::{P2PError, Result};
 
-// Re-export libp2p types that users need
-pub use libp2p::{PeerId, Multiaddr};
+// Placeholder types (will be replaced with actual libp2p types)
+pub type PeerId = String;
+pub type Multiaddr = String;
 
 /// P2P Foundation version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
