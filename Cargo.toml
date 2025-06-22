@@ -33,6 +33,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Utilities
 uuid = { version = "1.0", features = ["v4"] }
 
+# QUIC Transport
+quinn = "0.11"
+rustls = "0.23"
+rcgen = "0.13"
+
 # Configuration
 clap = { version = "4.4", features = ["derive"], optional = true }
 
