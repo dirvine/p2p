@@ -1,0 +1,42 @@
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.log
+*.pid
+data/
+logs/
+.env
+
+# Documentation
+/target/doc/
+/target/debug/
+/target/release/
+
+# Benchmarking
+/target/criterion/
+perf.data
+perf.data.old
+flamegraph.svg
+
+# Test artifacts
+*.profraw
+*.profdata
+coverage/
+
+# Config overrides
+config.local.toml
