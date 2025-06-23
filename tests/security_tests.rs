@@ -25,6 +25,7 @@ async fn test_ipv6_node_id_generation() -> Result<()> {
     assert_eq!(node_id.public_key, keypair.public.to_bytes().to_vec());
     assert_eq!(node_id.signature.len(), 64);
     assert_eq!(node_id.salt.len(), 16);
+    assert_eq!(node_id.node_id.len(), 32); // SHA256 output
     
     // Verify node ID is bound to IPv6 address
     let different_addr = Ipv6Addr::from_str("2001:0db8:85a3:0000:0000:8a2e:0370:7335")?;
@@ -56,6 +57,16 @@ async fn test_node_id_verification() -> Result<()> {
     let mut corrupted_node_id = node_id.clone();
     corrupted_node_id.node_id[0] ^= 0xFF;
     assert!(!corrupted_node_id.verify()?);
+    
+    // Test with wrong signature length
+    let mut bad_sig_node_id = node_id.clone();
+    bad_sig_node_id.signature = vec![0u8; 32]; // Wrong length
+    assert!(!bad_sig_node_id.verify()?);
+    
+    // Test with wrong public key length
+    let mut bad_key_node_id = node_id.clone();
+    bad_key_node_id.public_key = vec![0u8; 16]; // Wrong length
+    assert!(!bad_key_node_id.verify()?);
     
     // Test with different IPv6 address
     let mut corrupted_node_id = node_id.clone();
