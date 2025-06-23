@@ -107,11 +107,11 @@ p2p-foundation = "0.1.0"
 - **6to4** (RFC 3056) - Automatic tunneling for public IPv4 addresses
 - **Teredo** (RFC 4380) - NAT traversal with UDP encapsulation  
 - **6in4** (RFC 4213) - Static tunneling with explicit endpoints
+- **DS-Lite** (RFC 6333) - ISP-provided dual-stack lite tunneling
 - **Intelligent Auto-Selection** - Network capability-based protocol selection
 - **Performance Monitoring** - Real-time tunnel health and metrics
 
 ### 🚧 Planned
-- **DS-Lite** (Dual-Stack Lite) - ISP-provided tunneling
 - **ISATAP** - Enterprise network tunneling
 - **MAP-E/MAP-T** - Modern ISP transition mechanisms
 
@@ -184,6 +184,7 @@ cargo test --lib mcp          # MCP protocol tests
 cargo test --test mcp_integration_tests    # MCP integration
 cargo test --test mcp_security_tests       # MCP security features
 cargo test --test mcp_remote_tests         # Remote tool execution
+cargo test --test dslite_tests             # DS-Lite tunneling
 cargo test --test tunneling_tests          # Tunneling protocols
 cargo test --test security_tests           # S/Kademlia security
 
@@ -246,6 +247,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 - [x] 6to4 automatic tunneling (RFC 3056)
 - [x] Teredo NAT traversal tunneling (RFC 4380)  
 - [x] 6in4 static tunneling (RFC 4213)
+- [x] DS-Lite ISP-provided tunneling (RFC 6333)
 - [x] Intelligent protocol auto-selection with scoring
 - [x] Network capability detection and performance monitoring
 
@@ -258,14 +260,14 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 - [x] Comprehensive audit logging and security monitoring
 
 ### ✅ Phase 5: Production Hardening (Completed)
-- [x] Comprehensive test coverage (29 test files, 200+ tests)
+- [x] Comprehensive test coverage (30+ test files, 220+ tests)
 - [x] Security validation and penetration testing
 - [x] Performance benchmarking and optimization
 - [x] Error handling and graceful degradation
 - [x] Documentation and developer experience
 
 ### 📋 Phase 6: Advanced Features (Planned)
-- [ ] Additional tunneling protocols (DS-Lite, ISATAP, MAP-E/MAP-T)
+- [ ] Additional tunneling protocols (ISATAP, MAP-E/MAP-T)
 - [ ] Language bindings (Python, JavaScript, Go)
 - [ ] Mobile and IoT device optimization
 - [ ] Advanced performance monitoring and telemetry

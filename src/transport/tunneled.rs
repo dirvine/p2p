@@ -155,6 +155,10 @@ impl TunneledTransport {
                     // 6in4 address: assigned by tunnel broker
                     "2001:db8:1234::1".parse().unwrap()
                 }
+                crate::tunneling::TunnelProtocol::DsLite => {
+                    // DS-Lite: Client gets IPv6 address for tunnel endpoint
+                    "2001:db8:dslite::1".parse().unwrap()
+                }
             };
             
             let tunnel_info = TunnelInfo {

@@ -35,6 +35,8 @@ pub enum TunnelProtocol {
     Teredo,
     /// 6in4 static tunneling protocol (RFC 4213)
     SixInFour,
+    /// DS-Lite (Dual-Stack Lite) ISP-provided tunneling (RFC 6333)
+    DsLite,
 }
 
 /// Configuration for tunneling protocols
@@ -48,6 +50,10 @@ pub struct TunnelConfig {
     pub remote_ipv4: Option<Ipv4Addr>,
     /// IPv6 prefix to use for the tunnel
     pub ipv6_prefix: Option<Ipv6Addr>,
+    /// DS-Lite AFTR (Address Family Transition Router) IPv6 address
+    pub aftr_ipv6: Option<Ipv6Addr>,
+    /// DS-Lite AFTR domain name for DNS resolution
+    pub aftr_name: Option<String>,
     /// Maximum transmission unit for tunnel packets
     pub mtu: u16,
     /// Keepalive interval for maintaining tunnel state
@@ -224,6 +230,8 @@ impl Default for TunnelConfig {
             local_ipv4: None,
             remote_ipv4: None,
             ipv6_prefix: None,
+            aftr_ipv6: None,
+            aftr_name: None,
             mtu: 1280, // Minimum IPv6 MTU
             keepalive_interval: Duration::from_secs(30),
             establishment_timeout: Duration::from_secs(10),
@@ -235,9 +243,10 @@ impl Default for TunnelManagerConfig {
     fn default() -> Self {
         Self {
             protocol_preference: vec![
-                TunnelProtocol::SixToFour,
-                TunnelProtocol::Teredo,
-                TunnelProtocol::SixInFour,
+                TunnelProtocol::DsLite,     // ISP-provided, most reliable
+                TunnelProtocol::SixToFour,  // Automatic, good for public IPv4
+                TunnelProtocol::Teredo,     // NAT traversal capable
+                TunnelProtocol::SixInFour,  // Manual configuration fallback
             ],
             health_check_interval: Duration::from_secs(60),
             health_check_timeout: Duration::from_secs(5),
@@ -457,6 +466,39 @@ impl TunnelManager {
                 
                 (score, format!("6in4 suitable: {}", reasons.join(", ")))
             }
+            
+            TunnelProtocol::DsLite => {
+                if !capabilities.has_ipv6 {
+                    return (0.0, "DS-Lite requires IPv6 connectivity".to_string());
+                }
+                
+                // DS-Lite gets high score as it's ISP-provided and reliable
+                score += 0.9;
+                reasons.push("ISP-provided infrastructure");
+                
+                // DS-Lite works best with native IPv6
+                if capabilities.has_ipv6 && !capabilities.ipv6_addresses.is_empty() {
+                    score += 0.1;
+                    reasons.push("native IPv6 available");
+                }
+                
+                // DS-Lite handles NAT automatically at the AFTR
+                if capabilities.behind_nat {
+                    // No penalty for being behind NAT - AFTR handles this
+                    reasons.push("AFTR provides centralized NAT");
+                } else {
+                    score += 0.05; // Small bonus for not needing NAT
+                    reasons.push("direct connectivity");
+                }
+                
+                // Higher MTU is beneficial (less fragmentation)
+                if capabilities.interface_mtu >= 1520 {
+                    score += 0.05;
+                    reasons.push("supports optimal MTU");
+                }
+                
+                (score, format!("DS-Lite suitable: {}", reasons.join(", ")))
+            }
         }
     }
     
@@ -507,6 +549,10 @@ impl TunnelManager {
             TunnelProtocol::SixInFour => {
                 // 6in4 requires explicit configuration
                 capabilities.has_ipv4
+            }
+            TunnelProtocol::DsLite => {
+                // DS-Lite requires IPv6 connectivity (native or tunneled)
+                capabilities.has_ipv6
             }
         }
     }
@@ -992,10 +1038,12 @@ fn calculate_reliability_score(state: &TunnelState, metrics: &TunnelMetrics) -> 
 pub mod sixto4;
 pub mod teredo;
 pub mod sixinfour;
+pub mod dslite;
 
 pub use sixto4::SixToFourTunnel;
 pub use teredo::TeredoTunnel;
 pub use sixinfour::SixInFourTunnel;
+pub use dslite::DsLiteTunnel;
 
 /// Create a tunnel configuration for a specific protocol
 pub fn create_tunnel_config(protocol: TunnelProtocol, capabilities: &NetworkCapabilities) -> TunnelConfig {
@@ -1029,6 +1077,13 @@ pub fn create_tunnel_config(protocol: TunnelProtocol, capabilities: &NetworkCapa
             // Note: local_ipv4 and remote_ipv4 must be set by caller
             // IPv6 prefix can be configured or will use default
         }
+        TunnelProtocol::DsLite => {
+            // DS-Lite uses IPv4-in-IPv6 encapsulation
+            config.mtu = 1520; // Account for IPv6 header overhead (40 bytes)
+            // AFTR address discovery will be handled by the tunnel implementation
+            // For now, use a placeholder AFTR name that could be configured
+            config.aftr_name = Some("aftr.example.com".to_string());
+        }
     }
     
     config
@@ -1047,6 +1102,10 @@ pub fn create_tunnel(config: TunnelConfig) -> Result<Box<dyn Tunnel>> {
         }
         TunnelProtocol::SixInFour => {
             let tunnel = SixInFourTunnel::new(config)?;
+            Ok(Box::new(tunnel))
+        }
+        TunnelProtocol::DsLite => {
+            let tunnel = DsLiteTunnel::new(config)?;
             Ok(Box::new(tunnel))
         }
     }

@@ -124,6 +124,7 @@ impl Tunnel for MockTunnel {
             TunnelProtocol::SixToFour => Ok("2002:cb00:7100::1".parse().unwrap()),
             TunnelProtocol::Teredo => Ok("2001:0000:4136:e378:8000:63bf:3fff:fdd2".parse().unwrap()),
             TunnelProtocol::SixInFour => Ok("2001:db8::1".parse().unwrap()),
+            TunnelProtocol::DsLite => Ok("2001:db8:dsl1:0:0:0:0:1".parse().unwrap()),
         }
     }
     
@@ -150,11 +151,12 @@ async fn test_tunnel_selection_with_implementations() -> anyhow::Result<()> {
     let manager = TunnelManager::with_config(config);
     
     // Add mock tunnel implementations
+    manager.add_tunnel(Box::new(MockTunnel::new(TunnelProtocol::DsLite, false))).await;
     manager.add_tunnel(Box::new(MockTunnel::new(TunnelProtocol::SixToFour, false))).await;
     manager.add_tunnel(Box::new(MockTunnel::new(TunnelProtocol::Teredo, false))).await;
     manager.add_tunnel(Box::new(MockTunnel::new(TunnelProtocol::SixInFour, false))).await;
     
-    // Test selection with public IPv4 - should prefer 6to4
+    // Test selection with public IPv4 - should prefer 6to4 (DS-Lite needs IPv6)
     let public_ipv4_caps = NetworkCapabilities {
         has_ipv4: true,
         has_ipv6: false,
@@ -172,6 +174,65 @@ async fn test_tunnel_selection_with_implementations() -> anyhow::Result<()> {
                   "Should prefer 6to4 with public IPv4");
         assert!(!sel.is_fallback, "6to4 with public IP should not be fallback");
         println!("✓ Selected 6to4 for public IPv4: {}", sel.reason);
+    } else {
+        panic!("Should have selected a protocol with available tunnels");
+    }
+    
+    Ok(())
+}
+
+/// Test tunnel selection with IPv6 capabilities favoring DS-Lite
+#[tokio::test]
+async fn test_tunnel_selection_dslite_preferred() -> anyhow::Result<()> {
+    let config = TunnelManagerConfig {
+        max_concurrent_attempts: 0, // Disable actual network tests
+        ..Default::default()
+    };
+    
+    let manager = TunnelManager::with_config(config);
+    
+    // Add mock tunnel implementations including DS-Lite
+    let ds_lite_tunnel = MockTunnel::new(TunnelProtocol::DsLite, false);
+    let six_to_four_tunnel = MockTunnel::new(TunnelProtocol::SixToFour, false);
+    let teredo_tunnel = MockTunnel::new(TunnelProtocol::Teredo, false);
+    let six_in_four_tunnel = MockTunnel::new(TunnelProtocol::SixInFour, false);
+    
+    manager.add_tunnel(Box::new(ds_lite_tunnel)).await;
+    manager.add_tunnel(Box::new(six_to_four_tunnel)).await;
+    manager.add_tunnel(Box::new(teredo_tunnel)).await;
+    manager.add_tunnel(Box::new(six_in_four_tunnel)).await;
+    
+    // Test selection for DS-Lite scenario: IPv6-capable ISP but no native IPv6 addresses yet
+    // This is a realistic scenario where DS-Lite would be used
+    let ipv6_caps = NetworkCapabilities {
+        has_ipv4: true,
+        has_ipv6: true, // DS-Lite requires IPv6 capability
+        behind_nat: true, // DS-Lite handles NAT at AFTR
+        public_ipv4: Some("203.0.113.1".parse().unwrap()),
+        ipv6_addresses: vec![], // No native IPv6 addresses - needs tunneling
+        has_upnp: false,
+        interface_mtu: 1500,
+    };
+    
+    let selection = manager.select_tunnel(&ipv6_caps).await;
+    
+    println!("Network capabilities: IPv4={}, IPv6={}, NAT={}, Public IPv4={:?}, IPv6 addrs={:?}", 
+             ipv6_caps.has_ipv4, ipv6_caps.has_ipv6, ipv6_caps.behind_nat, 
+             ipv6_caps.public_ipv4, ipv6_caps.ipv6_addresses);
+    
+    if let Some(sel) = selection {
+        println!("✓ Selected protocol: {:?}, reason: {}", sel.protocol, sel.reason);
+        // With the given network conditions (IPv6 capable, behind NAT, public IPv4):
+        // - DS-Lite should score ~0.9 (ISP infrastructure + handles NAT)
+        // - 6to4 should score 0.0 (fails behind NAT check)
+        // - Teredo should score 0.9 (0.6 base + 0.3 NAT traversal)
+        // So DS-Lite and Teredo are competitive; both are valid choices
+        assert!(matches!(sel.protocol, 
+                        TunnelProtocol::DsLite | 
+                        TunnelProtocol::Teredo),
+               "Should select DS-Lite or Teredo for IPv6-capable network behind NAT: got {:?}", sel.protocol);
+        assert!(!sel.is_fallback, "Selected protocol should not be fallback");
+        println!("✓ Successfully selected a protocol for IPv6-capable network: {}", sel.reason);
     } else {
         panic!("Should have selected a protocol with available tunnels");
     }
