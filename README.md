@@ -110,7 +110,7 @@ See the [`examples/`](examples/) directory for:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/p2p.git
+git clone https://github.com/dirvine/p2p.git
 cd p2p
 
 # Build the project
