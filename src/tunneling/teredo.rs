@@ -298,14 +298,14 @@ impl TeredoTunnel {
         debug!("Extracting IPv6 from Teredo packet of {} bytes", teredo_packet.len());
         
         // Skip Teredo authentication headers (simplified parsing)
-        // In our implementation, we add an 8-byte header, so skip it
-        if teredo_packet.len() <= 8 {
-            debug!("Teredo packet too short: {} <= 8", teredo_packet.len());
+        // In our implementation, we add a 10-byte header (2+2+4+2), so skip it
+        if teredo_packet.len() <= 10 {
+            debug!("Teredo packet too short: {} <= 10", teredo_packet.len());
             return Err(P2PError::Network("Teredo packet too short".to_string()).into());
         }
         
-        // Skip the 8-byte header we added in create_teredo_header
-        let ipv6_start = 8;
+        // Skip the 10-byte header we added in create_teredo_header
+        let ipv6_start = 10;
         let ipv6_packet = teredo_packet[ipv6_start..].to_vec();
         debug!("Extracted IPv6 packet of {} bytes, first byte: {:02x}", 
                ipv6_packet.len(), 
@@ -472,7 +472,7 @@ impl Tunnel for TeredoTunnel {
             return Err(P2PError::Network("Teredo tunnel not active".to_string()).into());
         }
 
-        if udp_packet.len() < 8 {
+        if udp_packet.len() < 10 {
             return Err(P2PError::Network("Teredo packet too short".to_string()).into());
         }
 

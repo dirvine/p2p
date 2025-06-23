@@ -497,9 +497,11 @@ pub async fn detect_network_capabilities() -> Result<NetworkCapabilities> {
 // Tunneling protocol implementations
 pub mod sixto4;
 pub mod teredo;
+pub mod sixinfour;
 
 pub use sixto4::SixToFourTunnel;
 pub use teredo::TeredoTunnel;
+pub use sixinfour::SixInFourTunnel;
 
 /// Create a tunnel configuration for a specific protocol
 pub fn create_tunnel_config(protocol: TunnelProtocol, capabilities: &NetworkCapabilities) -> TunnelConfig {
@@ -528,8 +530,10 @@ pub fn create_tunnel_config(protocol: TunnelProtocol, capabilities: &NetworkCapa
             config.mtu = 1280; // Teredo MTU is typically lower
         }
         TunnelProtocol::SixInFour => {
-            // 6in4 requires manual configuration
+            // 6in4 requires explicit endpoint configuration
             config.mtu = 1480; // Account for IPv4 header overhead
+            // Note: local_ipv4 and remote_ipv4 must be set by caller
+            // IPv6 prefix can be configured or will use default
         }
     }
     
@@ -548,8 +552,8 @@ pub fn create_tunnel(config: TunnelConfig) -> Result<Box<dyn Tunnel>> {
             Ok(Box::new(tunnel))
         }
         TunnelProtocol::SixInFour => {
-            // TODO: Implement 6in4 tunnel
-            Err(P2PError::Network("6in4 tunnel not yet implemented".to_string()).into())
+            let tunnel = SixInFourTunnel::new(config)?;
+            Ok(Box::new(tunnel))
         }
     }
 }

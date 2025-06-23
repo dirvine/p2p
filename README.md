@@ -76,9 +76,9 @@ p2p-foundation = "0.1.0"
 ### ✅ Implemented
 - **6to4** (RFC 3056) - Automatic tunneling for public IPv4 addresses
 - **Teredo** (RFC 4380) - NAT traversal with UDP encapsulation
+- **6in4** (RFC 4213) - Static tunneling with explicit endpoints
 
 ### 🚧 Planned
-- **6in4** (RFC 4213) - Static tunneling with explicit endpoints
 - **DS-Lite** (Dual-Stack Lite) - ISP-provided tunneling
 - **ISATAP** - Enterprise network tunneling
 - **MAP-E/MAP-T** - Modern ISP transition mechanisms
@@ -191,7 +191,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 - [x] Comprehensive tunneling test suite
 
 ### 🚧 Phase 4: Remaining Features (In Progress)
-- [ ] 6in4 static tunneling protocol
+- [x] 6in4 static tunneling protocol
 - [ ] Transport layer integration
 - [ ] MCP server implementation
 - [ ] Production hardening

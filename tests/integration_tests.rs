@@ -912,13 +912,14 @@ async fn test_teredo_tunneling() -> Result<()> {
     println!("✅ Teredo IPv6 address generated: {}", ipv6_addr);
     println!("✅ External IPv4 address discovered: {}", ipv4_addr);
     
-    // Test metrics collection
+    // Test metrics collection (after connection establishment)
     let initial_metrics = tunnel.metrics().await;
-    assert_eq!(initial_metrics.bytes_sent, 0);
-    assert_eq!(initial_metrics.bytes_received, 0);
-    assert_eq!(initial_metrics.packets_sent, 0);
-    assert_eq!(initial_metrics.packets_received, 0);
-    println!("✅ Initial metrics verified");
+    assert_eq!(initial_metrics.bytes_sent, 0); // Teredo doesn't send via tunnel during connect
+    assert_eq!(initial_metrics.bytes_received, 0); // Haven't received anything yet
+    assert_eq!(initial_metrics.packets_sent, 0); // Teredo doesn't send via tunnel during connect
+    assert_eq!(initial_metrics.packets_received, 0); // Haven't received anything yet
+    println!("✅ Post-connection metrics verified: {} bytes sent, {} packets sent", 
+             initial_metrics.bytes_sent, initial_metrics.packets_sent);
     
     // Test packet encapsulation/decapsulation
     let test_ipv6_packet = create_test_teredo_packet(&ipv6_addr);
@@ -960,6 +961,109 @@ async fn test_teredo_tunneling() -> Result<()> {
     println!("✅ Tunnel disconnection successful");
     
     println!("✅ Teredo tunneling test completed successfully!");
+    Ok(())
+}
+
+/// Test 6in4 static tunneling protocol functionality
+#[tokio::test]
+async fn test_sixinfour_tunneling() -> Result<()> {
+    use p2p_foundation::tunneling::{
+        TunnelProtocol, TunnelConfig, TunnelState, SixInFourTunnel, Tunnel
+    };
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::time::Duration;
+    
+    println!("Testing 6in4 static tunneling protocol...");
+    
+    // Create 6in4 tunnel configuration with explicit endpoints
+    let config = TunnelConfig {
+        protocol: TunnelProtocol::SixInFour,
+        local_ipv4: Some(Ipv4Addr::new(198, 51, 100, 1)), // TEST-NET-2
+        remote_ipv4: Some(Ipv4Addr::new(198, 51, 100, 2)), // TEST-NET-2
+        ipv6_prefix: Some(Ipv6Addr::new(0x2001, 0x470, 0x1234, 0x5678, 0, 0, 0, 0)), // Custom prefix
+        mtu: 1480,
+        keepalive_interval: Duration::from_secs(30),
+        establishment_timeout: Duration::from_secs(10),
+        ..Default::default()
+    };
+    
+    let mut tunnel = SixInFourTunnel::new(config)?;
+    println!("✅ 6in4 tunnel created");
+    
+    // Test initial state
+    assert_eq!(tunnel.protocol(), TunnelProtocol::SixInFour);
+    assert_eq!(tunnel.state().await, TunnelState::Disconnected);
+    assert!(!tunnel.is_active().await);
+    println!("✅ Initial tunnel state verified");
+    
+    // Test tunnel connection (includes configuration validation)
+    tunnel.connect().await?;
+    assert_eq!(tunnel.state().await, TunnelState::Connected);
+    assert!(tunnel.is_active().await);
+    println!("✅ 6in4 tunnel connection established");
+    
+    // Test address assignment
+    let ipv6_addr = tunnel.local_ipv6_addr().await?;
+    let ipv4_addr = tunnel.local_ipv4_addr().await?;
+    
+    // Verify custom IPv6 prefix is used
+    assert_eq!(ipv6_addr.segments()[0], 0x2001);
+    assert_eq!(ipv6_addr.segments()[1], 0x470);
+    assert_eq!(ipv6_addr.segments()[2], 0x1234);
+    assert_eq!(ipv6_addr.segments()[3], 0x5678);
+    assert_eq!(ipv4_addr, Ipv4Addr::new(198, 51, 100, 1));
+    println!("✅ IPv6 address generated with custom prefix: {}", ipv6_addr);
+    println!("✅ IPv4 address confirmed: {}", ipv4_addr);
+    
+    // Test metrics collection (after connection establishment)
+    let initial_metrics = tunnel.metrics().await;
+    assert!(initial_metrics.bytes_sent > 0); // Connection test sends data
+    assert_eq!(initial_metrics.bytes_received, 0); // Haven't received anything yet
+    assert!(initial_metrics.packets_sent > 0); // Connection test sends packets
+    assert_eq!(initial_metrics.packets_received, 0); // Haven't received anything yet
+    println!("✅ Post-connection metrics verified: {} bytes sent, {} packets sent", 
+             initial_metrics.bytes_sent, initial_metrics.packets_sent);
+    
+    // Test packet encapsulation/decapsulation
+    let test_ipv6_packet = create_test_sixinfour_packet(&ipv6_addr);
+    let encapsulated = tunnel.encapsulate(&test_ipv6_packet).await?;
+    assert!(encapsulated.len() > test_ipv6_packet.len()); // Should include IPv4 header
+    println!("✅ Packet encapsulation successful: {} -> {} bytes", 
+             test_ipv6_packet.len(), encapsulated.len());
+    
+    let decapsulated = tunnel.decapsulate(&encapsulated).await?;
+    assert_eq!(decapsulated.len(), test_ipv6_packet.len()); // Should extract original IPv6 packet
+    println!("✅ Packet decapsulation successful");
+    
+    // Test ping functionality (connectivity test)
+    let ping_timeout = Duration::from_secs(5);
+    let rtt = tunnel.ping(ping_timeout).await?;
+    assert!(rtt < ping_timeout);
+    println!("✅ 6in4 tunnel ping successful: RTT = {:?}", rtt);
+    
+    // Test send/receive operations
+    tunnel.send(&test_ipv6_packet).await?;
+    println!("✅ Packet send operation completed");
+    
+    // Test maintenance operations (includes periodic connectivity check)
+    tunnel.maintain().await?;
+    println!("✅ Tunnel maintenance completed");
+    
+    // Test updated metrics after operations
+    let final_metrics = tunnel.metrics().await;
+    assert!(final_metrics.bytes_sent > 0);
+    assert!(final_metrics.packets_sent > 0);
+    assert!(final_metrics.rtt.is_some());
+    println!("✅ Metrics updated: {} bytes sent, {} packets sent", 
+             final_metrics.bytes_sent, final_metrics.packets_sent);
+    
+    // Test tunnel disconnection
+    tunnel.disconnect().await?;
+    assert_eq!(tunnel.state().await, TunnelState::Disconnected);
+    assert!(!tunnel.is_active().await);
+    println!("✅ Tunnel disconnection successful");
+    
+    println!("✅ 6in4 static tunneling test completed successfully!");
     Ok(())
 }
 
@@ -1179,6 +1283,15 @@ async fn test_tunneling_protocol_selection() -> Result<()> {
     };
     manager.add_tunnel(create_tunnel(teredo_config)?).await;
     
+    // Add 6in4 tunnel
+    let sixinfour_config = TunnelConfig {
+        protocol: TunnelProtocol::SixInFour,
+        local_ipv4: Some(Ipv4Addr::new(198, 51, 100, 1)),
+        remote_ipv4: Some(Ipv4Addr::new(198, 51, 100, 2)),
+        ..Default::default()
+    };
+    manager.add_tunnel(create_tunnel(sixinfour_config)?).await;
+    
     // Test 1: IPv6 already available - no tunneling needed
     let ipv6_available = NetworkCapabilities {
         has_ipv4: true,
@@ -1239,7 +1352,7 @@ async fn test_tunneling_protocol_selection() -> Result<()> {
 #[tokio::test]
 async fn test_tunneling_error_handling() -> Result<()> {
     use p2p_foundation::tunneling::{
-        TunnelProtocol, TunnelConfig, SixToFourTunnel, TeredoTunnel, Tunnel
+        TunnelProtocol, TunnelConfig, SixToFourTunnel, TeredoTunnel, SixInFourTunnel, Tunnel
     };
     use std::time::Duration;
     
@@ -1264,6 +1377,16 @@ async fn test_tunneling_error_handling() -> Result<()> {
     let result = TeredoTunnel::new(invalid_teredo_config);
     assert!(result.is_err());
     println!("✅ Invalid Teredo protocol configuration rejected");
+    
+    // Test 1c: Invalid protocol configuration for 6in4
+    let invalid_sixinfour_config = TunnelConfig {
+        protocol: TunnelProtocol::SixToFour, // Wrong protocol for SixInFourTunnel
+        ..Default::default()
+    };
+    
+    let result = SixInFourTunnel::new(invalid_sixinfour_config);
+    assert!(result.is_err());
+    println!("✅ Invalid 6in4 protocol configuration rejected");
     
     // Test 2: 6to4 tunnel without IPv4 address
     let no_ipv4_config = TunnelConfig {
@@ -1446,6 +1569,11 @@ fn create_test_ipv6_packet_simple() -> Vec<u8> {
 
 fn create_test_teredo_packet(dst_addr: &std::net::Ipv6Addr) -> Vec<u8> {
     // Create a Teredo-compatible IPv6 packet
+    create_test_ipv6_packet(dst_addr)
+}
+
+fn create_test_sixinfour_packet(dst_addr: &std::net::Ipv6Addr) -> Vec<u8> {
+    // Create a 6in4-compatible IPv6 packet
     create_test_ipv6_packet(dst_addr)
 }
 
