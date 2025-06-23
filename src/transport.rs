@@ -6,6 +6,7 @@
 
 pub mod tcp;
 pub mod quic;
+pub mod tunneled;
 
 use crate::{PeerId, Multiaddr, P2PError, Result};
 use async_trait::async_trait;

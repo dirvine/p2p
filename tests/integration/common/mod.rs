@@ -109,7 +109,7 @@ impl TestNetwork {
         for i in 1..self.nodes.len() {
             timeout(
                 self.config.connection_timeout,
-                self.nodes[i].connect(bootstrap_addr.clone())
+                self.nodes[i].connect_peer(&bootstrap_addr.to_string())
             ).await
             .map_err(|_| anyhow::anyhow!("Bootstrap connection timeout for node {}", i))?
             .map_err(|e| anyhow::anyhow!("Bootstrap connection failed for node {}: {}", i, e))?;
@@ -155,10 +155,10 @@ impl TestNetwork {
     }
 
     /// Shutdown all nodes gracefully
-    pub async fn shutdown(self) -> Result<()> {
+    pub async fn stop(self) -> Result<()> {
         for (i, node) in self.nodes.into_iter().enumerate() {
-            node.shutdown().await
-                .map_err(|e| anyhow::anyhow!("Failed to shutdown node {}: {}", i, e))?;
+            node.stop().await
+                .map_err(|e| anyhow::anyhow!("Failed to stop node {}: {}", i, e))?;
         }
         Ok(())
     }
@@ -279,9 +279,8 @@ impl TestAssertions {
         for i in 0..network.nodes.len() {
             for j in 0..network.nodes.len() {
                 if i != j {
-                    let reachable = network.nodes[i].can_reach_peer(
-                        network.nodes[j].peer_id()
-                    ).await?;
+                    let connected_peers = network.nodes[i].connected_peers().await;
+                    let reachable = connected_peers.contains(&network.nodes[j].peer_id().to_string());
                     assert!(
                         reachable,
                         "Node {} cannot reach node {}",
@@ -404,8 +403,8 @@ mod tests {
         let network = result.unwrap();
         assert_eq!(network.nodes.len(), 2);
         
-        // Clean shutdown
-        network.shutdown().await.expect("Failed to shutdown network");
+        // Clean stop
+        network.stop().await.expect("Failed to stop network");
     }
 
     #[test]

@@ -48,7 +48,7 @@ pub struct IPDiversityConfig {
 }
 
 /// Analysis of an IPv6 address for diversity enforcement
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct IPAnalysis {
     /// /64 subnet (host allocation)
     pub subnet_64: Ipv6Addr,
@@ -211,6 +211,7 @@ impl IPv6NodeID {
 }
 
 /// IP diversity enforcement system
+#[derive(Debug)]
 pub struct IPDiversityEnforcer {
     config: IPDiversityConfig,
     subnet_64_counts: HashMap<Ipv6Addr, usize>,
@@ -435,6 +436,7 @@ pub struct DiversityStats {
 }
 
 /// Reputation manager for tracking node behavior
+#[derive(Debug)]
 pub struct ReputationManager {
     reputations: HashMap<PeerId, NodeReputation>,
     reputation_decay: f64,

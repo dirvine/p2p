@@ -15,11 +15,12 @@ use tokio::time::timeout;
 use p2p_foundation::{P2PNode, NodeConfig, tunneling::*};
 use crate::common::{TestNetwork, TestNetworkConfig, TestNodeConfig, TestDataGen, PerformanceTest};
 
-mod sixto4;
-mod teredo;
-mod manual;
-mod auto_selection;
-mod nat_traversal;
+// Integration test submodules - TBD
+// mod sixto4;
+// mod teredo;  
+// mod manual;
+// mod auto_selection;
+// mod nat_traversal;
 
 /// Test 6to4 tunneling basic functionality
 #[tokio::test]
@@ -86,8 +87,8 @@ async fn test_6to4_tunneling_basic() -> Result<()> {
     assert_eq!(tunnel_stats.tunnel_errors, 0);
     
     // Cleanup
-    ipv4_node.shutdown().await?;
-    ipv6_node.shutdown().await?;
+    ipv4_node.stop().await?;
+    ipv6_node.stop().await?;
     
     Ok(())
 }
@@ -172,8 +173,8 @@ async fn test_teredo_tunneling() -> Result<()> {
     assert!(tunnel_health.nat_type != NATType::Unknown);
     
     // Cleanup
-    node1.shutdown().await?;
-    node2.shutdown().await?;
+    node1.stop().await?;
+    node2.stop().await?;
     
     Ok(())
 }
@@ -238,8 +239,8 @@ async fn test_6in4_manual_tunnel() -> Result<()> {
     
     // Cleanup
     node1.destroy_manual_tunnel(tunnel.id()).await?;
-    node1.shutdown().await?;
-    node2.shutdown().await?;
+    node1.stop().await?;
+    node2.stop().await?;
     
     Ok(())
 }
@@ -308,8 +309,8 @@ async fn test_tunnel_auto_selection() -> Result<()> {
     assert_eq!(received.data, test_data);
     
     // Cleanup
-    node1.shutdown().await?;
-    node2.shutdown().await?;
+    node1.stop().await?;
+    node2.stop().await?;
     
     Ok(())
 }
@@ -385,8 +386,8 @@ async fn test_tunnel_failover() -> Result<()> {
     assert_eq!(failover_received.data, failover_data);
     
     // Cleanup
-    node1.shutdown().await?;
-    node2.shutdown().await?;
+    node1.stop().await?;
+    node2.stop().await?;
     
     Ok(())
 }
@@ -411,7 +412,7 @@ async fn test_tunnel_performance() -> Result<()> {
         let throughput = (test_data.len() * 10 * 8) as f64 / 
                         (duration.as_secs_f64() * 1_000_000.0);
         
-        network.shutdown().await?;
+        network.stop().await?;
         Ok::<f64, anyhow::Error>(throughput)
     }).await?;
     
@@ -446,8 +447,8 @@ async fn test_tunnel_performance() -> Result<()> {
         let throughput = (test_data.len() * 10 * 8) as f64 / 
                         (duration.as_secs_f64() * 1_000_000.0);
         
-        node1.shutdown().await?;
-        node2.shutdown().await?;
+        node1.stop().await?;
+        node2.stop().await?;
         
         Ok::<f64, anyhow::Error>(throughput)
     }).await?;
@@ -550,8 +551,8 @@ async fn test_tunnel_packet_loss_recovery() -> Result<()> {
     println!("Tunnel recovery stats: {:?}", recovery_stats);
     
     // Cleanup
-    node1.shutdown().await?;
-    node2.shutdown().await?;
+    node1.stop().await?;
+    node2.stop().await?;
     
     Ok(())
 }
@@ -633,9 +634,9 @@ async fn test_tunnel_concurrent_connections() -> Result<()> {
     assert!(tunnel_stats.total_bytes_received > 0);
     
     // Cleanup
-    server_node.shutdown().await?;
+    server_node.stop().await?;
     for client in client_nodes {
-        client.shutdown().await?;
+        client.stop().await?;
     }
     
     Ok(())

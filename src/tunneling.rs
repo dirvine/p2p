@@ -198,6 +198,25 @@ pub struct NetworkCapabilities {
     pub interface_mtu: u16,
 }
 
+/// Quality metrics for tunnel monitoring and selection
+#[derive(Debug, Clone)]
+pub struct TunnelQualityMetric {
+    /// Protocol type
+    pub protocol: TunnelProtocol,
+    /// Current tunnel state
+    pub state: TunnelState,
+    /// Round-trip time
+    pub rtt: Option<Duration>,
+    /// Packet loss percentage (0-100)
+    pub packet_loss: Option<f32>,
+    /// Throughput in bytes per second
+    pub throughput: Option<f64>,
+    /// Overall reliability score (0.0-1.0)
+    pub reliability_score: f32,
+    /// Last activity timestamp
+    pub last_activity: Instant,
+}
+
 impl Default for TunnelConfig {
     fn default() -> Self {
         Self {
@@ -282,32 +301,195 @@ impl TunnelManager {
         
         // If IPv6 is natively available, no tunneling needed
         if capabilities.has_ipv6 && !capabilities.ipv6_addresses.is_empty() {
+            info!("Native IPv6 connectivity detected, no tunneling required");
             return None;
         }
         
+        info!("Selecting optimal tunnel protocol based on network conditions");
+        debug!("Network capabilities: {:?}", capabilities);
+        
+        // Perform intelligent protocol selection
+        let selection = self.intelligent_protocol_selection(capabilities).await;
+        
+        if let Some(ref selection) = selection {
+            info!("Selected {} tunnel: {}", 
+                  format!("{:?}", selection.protocol), selection.reason);
+        } else {
+            warn!("No suitable tunnel protocol found for current network conditions");
+        }
+        
+        selection.map(|mut sel| {
+            sel.selection_time = start_time.elapsed();
+            sel
+        })
+    }
+    
+    /// Intelligent protocol selection with scoring and fallback logic
+    async fn intelligent_protocol_selection(&self, capabilities: &NetworkCapabilities) -> Option<TunnelSelection> {
         let tunnels = self.tunnels.read().await;
         
-        // Try protocols in preference order
-        for preferred_protocol in &self.config.protocol_preference {
-            for (idx, tunnel) in tunnels.iter().enumerate() {
-                if tunnel.protocol() == *preferred_protocol {
-                    if self.is_protocol_suitable(preferred_protocol, capabilities) {
+        // Score each available protocol
+        let mut scored_protocols: Vec<(TunnelProtocol, f32, String)> = Vec::new();
+        
+        for tunnel in tunnels.iter() {
+            let protocol = tunnel.protocol();
+            let (score, reason) = self.score_protocol(&protocol, capabilities).await;
+            
+            debug!("Protocol {:?} scored {:.2}: {}", protocol, score, reason);
+            
+            if score > 0.0 {
+                scored_protocols.push((protocol, score, reason));
+            }
+        }
+        
+        // Sort by score (highest first)
+        scored_protocols.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        
+        // Try protocols in order of score, with validation
+        for (protocol, score, reason) in scored_protocols {
+            if let Some(tunnel_idx) = self.find_tunnel_index(&protocol, &tunnels).await {
+                // Test protocol viability if configured to do so
+                if self.config.max_concurrent_attempts > 0 {
+                    if let Ok(_) = self.test_protocol_viability(&protocol, tunnel_idx).await {
                         let mut active = self.active_tunnel.write().await;
-                        *active = Some(idx);
+                        *active = Some(tunnel_idx);
                         
                         return Some(TunnelSelection {
-                            protocol: preferred_protocol.clone(),
-                            reason: format!("Best available protocol for current network conditions"),
-                            selection_time: start_time.elapsed(),
-                            is_fallback: false,
+                            protocol,
+                            reason: format!("{} (score: {:.2})", reason, score),
+                            selection_time: Duration::ZERO, // Will be set by caller
+                            is_fallback: score < 0.7, // Consider scores below 0.7 as fallback
                         });
+                    } else {
+                        warn!("Protocol {:?} failed viability test despite good score", protocol);
                     }
+                } else {
+                    // Skip viability testing, use based on score alone
+                    let mut active = self.active_tunnel.write().await;
+                    *active = Some(tunnel_idx);
+                    
+                    return Some(TunnelSelection {
+                        protocol,
+                        reason: format!("{} (score: {:.2})", reason, score),
+                        selection_time: Duration::ZERO,
+                        is_fallback: score < 0.7,
+                    });
                 }
             }
         }
         
-        // No suitable tunnel found
         None
+    }
+    
+    /// Score a protocol based on network conditions (0.0 = unsuitable, 1.0 = perfect)
+    async fn score_protocol(&self, protocol: &TunnelProtocol, capabilities: &NetworkCapabilities) -> (f32, String) {
+        let mut score = 0.0;
+        let mut reasons = Vec::new();
+        
+        match protocol {
+            TunnelProtocol::SixToFour => {
+                if !capabilities.has_ipv4 {
+                    return (0.0, "No IPv4 connectivity".to_string());
+                }
+                
+                if capabilities.behind_nat {
+                    return (0.0, "6to4 requires public IPv4 address, behind NAT".to_string());
+                }
+                
+                if capabilities.public_ipv4.is_some() {
+                    score += 0.8; // High score for public IPv4
+                    reasons.push("has public IPv4");
+                } else {
+                    return (0.0, "6to4 requires public IPv4 address".to_string());
+                }
+                
+                // Bonus for higher MTU
+                if capabilities.interface_mtu >= 1500 {
+                    score += 0.2;
+                    reasons.push("good MTU");
+                }
+                
+                (score, format!("6to4 suitable: {}", reasons.join(", ")))
+            }
+            
+            TunnelProtocol::Teredo => {
+                if !capabilities.has_ipv4 {
+                    return (0.0, "No IPv4 connectivity".to_string());
+                }
+                
+                score += 0.6; // Base score for Teredo
+                reasons.push("works with any IPv4");
+                
+                if capabilities.behind_nat {
+                    score += 0.3; // Teredo is designed for NAT traversal
+                    reasons.push("excellent NAT traversal");
+                } else {
+                    score += 0.1; // Still works without NAT
+                }
+                
+                if capabilities.has_upnp {
+                    score += 0.1; // UPnP can help with port mapping
+                    reasons.push("UPnP available");
+                }
+                
+                (score, format!("Teredo suitable: {}", reasons.join(", ")))
+            }
+            
+            TunnelProtocol::SixInFour => {
+                if !capabilities.has_ipv4 {
+                    return (0.0, "No IPv4 connectivity".to_string());
+                }
+                
+                // 6in4 requires explicit configuration, so it's a fallback
+                score += 0.4;
+                reasons.push("requires manual configuration");
+                
+                if !capabilities.behind_nat && capabilities.public_ipv4.is_some() {
+                    score += 0.3; // Better with public IP
+                    reasons.push("has public IPv4");
+                }
+                
+                // Higher MTU is beneficial for 6in4
+                if capabilities.interface_mtu >= 1500 {
+                    score += 0.2;
+                    reasons.push("good MTU");
+                }
+                
+                (score, format!("6in4 suitable: {}", reasons.join(", ")))
+            }
+        }
+    }
+    
+    /// Find the index of a tunnel with the specified protocol
+    async fn find_tunnel_index(&self, protocol: &TunnelProtocol, tunnels: &[Box<dyn Tunnel>]) -> Option<usize> {
+        for (idx, tunnel) in tunnels.iter().enumerate() {
+            if tunnel.protocol() == *protocol {
+                return Some(idx);
+            }
+        }
+        None
+    }
+    
+    /// Test if a protocol is actually viable by attempting a quick connection test
+    async fn test_protocol_viability(&self, _protocol: &TunnelProtocol, tunnel_idx: usize) -> Result<()> {
+        let tunnels = self.tunnels.read().await;
+        
+        if let Some(tunnel) = tunnels.get(tunnel_idx) {
+            // For now, just check if the tunnel reports as suitable for its state
+            match tunnel.state().await {
+                TunnelState::Connected => Ok(()),
+                TunnelState::Failed(_) => Err(P2PError::Network("Tunnel in failed state".to_string())),
+                _ => {
+                    // Could perform more sophisticated testing here:
+                    // - Try to establish a test connection
+                    // - Send a ping packet
+                    // - Verify routing tables
+                    Ok(()) // Assume viable for now
+                }
+            }
+        } else {
+            Err(P2PError::Network("Tunnel not found".to_string()))
+        }
     }
     
     /// Check if a protocol is suitable for the current network conditions
@@ -420,8 +602,14 @@ impl TunnelManager {
     /// Perform health checks on all tunnels
     pub async fn health_check(&self) -> Result<()> {
         let mut tunnels = self.tunnels.write().await;
+        let current_active = {
+            let active = self.active_tunnel.read().await;
+            *active
+        };
         
-        for tunnel in tunnels.iter_mut() {
+        let mut active_tunnel_failed = false;
+        
+        for (idx, tunnel) in tunnels.iter_mut().enumerate() {
             match tunnel.ping(self.config.health_check_timeout).await {
                 Ok(rtt) => {
                     debug!("Health check passed for {} tunnel (RTT: {:?})", 
@@ -431,8 +619,13 @@ impl TunnelManager {
                     warn!("Health check failed for {} tunnel: {}", 
                           format!("{:?}", tunnel.protocol()), e);
                     
+                    // Check if this is the currently active tunnel
+                    if current_active == Some(idx) {
+                        active_tunnel_failed = true;
+                    }
+                    
                     if self.config.auto_failover {
-                        // Try to reconnect or failover
+                        // Try to reconnect
                         if let Err(reconnect_err) = tunnel.connect().await {
                             warn!("Failed to reconnect {} tunnel: {}", 
                                   format!("{:?}", tunnel.protocol()), reconnect_err);
@@ -441,6 +634,80 @@ impl TunnelManager {
                 }
             }
         }
+        
+        // If active tunnel failed and auto-failover is enabled, find replacement
+        if active_tunnel_failed && self.config.auto_failover {
+            drop(tunnels); // Release write lock before calling failover
+            self.perform_automatic_failover().await?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Perform automatic failover to the next best available tunnel
+    pub async fn perform_automatic_failover(&self) -> Result<()> {
+        info!("Performing automatic tunnel failover...");
+        
+        // Detect current network capabilities
+        let capabilities = detect_network_capabilities().await?;
+        
+        // Select new tunnel, excluding the currently failed one
+        if let Some(selection) = self.select_tunnel(&capabilities).await {
+            info!("Failover successful: switched to {} tunnel ({})", 
+                  format!("{:?}", selection.protocol), selection.reason);
+            
+            // Connect to the new tunnel
+            self.connect().await?;
+            
+            Ok(())
+        } else {
+            let error_msg = "No suitable backup tunnel available for failover";
+            warn!("{}", error_msg);
+            Err(P2PError::Network(error_msg.to_string()))
+        }
+    }
+    
+    /// Get tunnel quality metrics for monitoring and selection
+    pub async fn get_tunnel_quality_metrics(&self) -> Vec<TunnelQualityMetric> {
+        let tunnels = self.tunnels.read().await;
+        let mut metrics = Vec::new();
+        
+        for tunnel in tunnels.iter() {
+            let tunnel_metrics = tunnel.metrics().await;
+            let state = tunnel.state().await;
+            
+            let quality = TunnelQualityMetric {
+                protocol: tunnel.protocol(),
+                state: state.clone(),
+                rtt: tunnel_metrics.rtt,
+                packet_loss: if tunnel_metrics.packets_sent > 0 {
+                    Some((tunnel_metrics.packets_dropped as f32 / tunnel_metrics.packets_sent as f32) * 100.0)
+                } else {
+                    None
+                },
+                throughput: calculate_throughput(&tunnel_metrics),
+                reliability_score: calculate_reliability_score(&state, &tunnel_metrics),
+                last_activity: tunnel_metrics.last_activity,
+            };
+            
+            metrics.push(quality);
+        }
+        
+        metrics
+    }
+    
+    /// Start automatic monitoring task for continuous health checks
+    pub async fn start_monitoring(&self) -> Result<()> {
+        if self.config.health_check_interval.is_zero() {
+            debug!("Health check monitoring disabled (interval is zero)");
+            return Ok(());
+        }
+        
+        info!("Starting tunnel monitoring with interval {:?}", self.config.health_check_interval);
+        
+        // In a real implementation, this would spawn a background task
+        // For now, we just log that monitoring would start
+        debug!("Tunnel monitoring task would be spawned here");
         
         Ok(())
     }
@@ -470,28 +737,253 @@ impl Default for TunnelManager {
 pub async fn detect_network_capabilities() -> Result<NetworkCapabilities> {
     debug!("Detecting network capabilities...");
     
-    // This is a simplified implementation - in production, this would:
-    // 1. Test for IPv6 connectivity
-    // 2. Detect NAT presence
-    // 3. Discover public IP addresses
-    // 4. Test UPnP availability
-    // 5. Measure interface MTU
-    
-    // For now, simulate basic detection
-    let capabilities = NetworkCapabilities {
-        has_ipv6: false, // Most networks don't have native IPv6 yet
-        has_ipv4: true,  // Assume IPv4 is always available
-        behind_nat: true, // Assume NAT in most cases
-        public_ipv4: None, // Would be detected via STUN or similar
+    let mut capabilities = NetworkCapabilities {
+        has_ipv6: false,
+        has_ipv4: false,
+        behind_nat: false,
+        public_ipv4: None,
         ipv6_addresses: Vec::new(),
-        has_upnp: false, // Would be tested
-        interface_mtu: 1500, // Standard Ethernet MTU
+        has_upnp: false,
+        interface_mtu: 1500,
     };
     
-    info!("Network capabilities detected: IPv4={}, IPv6={}, NAT={}", 
-          capabilities.has_ipv4, capabilities.has_ipv6, capabilities.behind_nat);
+    // Detect IPv4 connectivity
+    capabilities.has_ipv4 = detect_ipv4_connectivity().await;
+    debug!("IPv4 connectivity: {}", capabilities.has_ipv4);
+    
+    // Detect IPv6 connectivity
+    let ipv6_result = detect_ipv6_connectivity().await;
+    capabilities.has_ipv6 = !ipv6_result.is_empty();
+    capabilities.ipv6_addresses = ipv6_result;
+    debug!("IPv6 connectivity: {}, addresses: {:?}", capabilities.has_ipv6, capabilities.ipv6_addresses);
+    
+    // Detect NAT presence and public IPv4
+    if capabilities.has_ipv4 {
+        let nat_detection = detect_nat_and_public_ip().await;
+        capabilities.behind_nat = nat_detection.0;
+        capabilities.public_ipv4 = nat_detection.1;
+        debug!("NAT detection: behind_nat={}, public_ipv4={:?}", capabilities.behind_nat, capabilities.public_ipv4);
+    }
+    
+    // Test UPnP availability
+    capabilities.has_upnp = test_upnp_availability().await;
+    debug!("UPnP availability: {}", capabilities.has_upnp);
+    
+    // Detect interface MTU
+    capabilities.interface_mtu = detect_interface_mtu().await;
+    debug!("Interface MTU: {}", capabilities.interface_mtu);
+    
+    info!("Network capabilities detected: IPv4={}, IPv6={}, NAT={}, UPnP={}, MTU={}", 
+          capabilities.has_ipv4, capabilities.has_ipv6, capabilities.behind_nat,
+          capabilities.has_upnp, capabilities.interface_mtu);
     
     Ok(capabilities)
+}
+
+/// Detect IPv4 connectivity by testing connection to known servers
+async fn detect_ipv4_connectivity() -> bool {
+    // Try to connect to well-known IPv4 addresses
+    let test_addresses = [
+        "8.8.8.8:53",     // Google DNS
+        "1.1.1.1:53",     // Cloudflare DNS
+        "208.67.222.222:53", // OpenDNS
+    ];
+    
+    for addr in &test_addresses {
+        if let Ok(_) = tokio::time::timeout(
+            Duration::from_secs(3),
+            tokio::net::TcpStream::connect(addr)
+        ).await {
+            debug!("IPv4 connectivity confirmed via {}", addr);
+            return true;
+        }
+    }
+    
+    debug!("IPv4 connectivity test failed");
+    false
+}
+
+/// Detect IPv6 connectivity and available addresses
+async fn detect_ipv6_connectivity() -> Vec<Ipv6Addr> {
+    let mut ipv6_addrs = Vec::new();
+    
+    // Get local IPv6 addresses
+    if let Ok(interfaces) = get_network_interfaces().await {
+        for interface in interfaces {
+            for addr in interface.ipv6_addrs {
+                if !addr.is_loopback() && !addr.is_multicast() {
+                    ipv6_addrs.push(addr);
+                }
+            }
+        }
+    }
+    
+    // Test connectivity to IPv6 servers if we have addresses
+    if !ipv6_addrs.is_empty() {
+        let test_addresses = [
+            "[2001:4860:4860::8888]:53", // Google DNS
+            "[2606:4700:4700::1111]:53", // Cloudflare DNS
+        ];
+        
+        for addr in &test_addresses {
+            if let Ok(_) = tokio::time::timeout(
+                Duration::from_secs(3),
+                tokio::net::TcpStream::connect(addr)
+            ).await {
+                debug!("IPv6 connectivity confirmed via {}", addr);
+                return ipv6_addrs;
+            }
+        }
+        
+        debug!("IPv6 addresses found but no external connectivity");
+        ipv6_addrs.clear(); // Clear if no external connectivity
+    }
+    
+    ipv6_addrs
+}
+
+/// Detect NAT presence and discover public IPv4 address
+async fn detect_nat_and_public_ip() -> (bool, Option<Ipv4Addr>) {
+    // Get local IPv4 address
+    let local_ipv4 = get_local_ipv4_addr().await;
+    
+    // Try to discover public IP via STUN-like service
+    if let Ok(public_ip) = discover_public_ipv4().await {
+        let behind_nat = local_ipv4.map_or(true, |local| local != public_ip);
+        return (behind_nat, Some(public_ip));
+    }
+    
+    // Fallback: check if local IP is private
+    if let Some(local) = local_ipv4 {
+        let behind_nat = local.is_private();
+        (behind_nat, if behind_nat { None } else { Some(local) })
+    } else {
+        (true, None)
+    }
+}
+
+/// Discover public IPv4 address using external services
+async fn discover_public_ipv4() -> Result<Ipv4Addr> {
+    // Try multiple IP discovery services
+    let services = [
+        "https://api.ipify.org",
+        "https://icanhazip.com",
+        "https://ifconfig.me/ip",
+    ];
+    
+    for service in &services {
+        if let Ok(response) = tokio::time::timeout(
+            Duration::from_secs(5),
+            reqwest::get(*service)
+        ).await {
+            if let Ok(response) = response {
+                if let Ok(ip_str) = response.text().await {
+                    if let Ok(ip) = ip_str.trim().parse::<Ipv4Addr>() {
+                        debug!("Public IPv4 discovered via {}: {}", service, ip);
+                        return Ok(ip);
+                    }
+                }
+            }
+        }
+    }
+    
+    Err(P2PError::Network("Failed to discover public IPv4 address".to_string()))
+}
+
+/// Get local IPv4 address
+async fn get_local_ipv4_addr() -> Option<Ipv4Addr> {
+    if let Ok(interfaces) = get_network_interfaces().await {
+        for interface in interfaces {
+            for addr in interface.ipv4_addrs {
+                if !addr.is_loopback() && !addr.is_multicast() {
+                    return Some(addr);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Test UPnP availability for automatic port forwarding
+async fn test_upnp_availability() -> bool {
+    // This would test for UPnP Internet Gateway Device Protocol
+    // For now, return false as a conservative default
+    // In production, this would:
+    // 1. Send M-SEARCH multicast to discover UPnP devices
+    // 2. Parse device descriptions
+    // 3. Test port mapping capabilities
+    debug!("UPnP testing not implemented, assuming unavailable");
+    false
+}
+
+/// Detect interface MTU
+async fn detect_interface_mtu() -> u16 {
+    // Try to detect the MTU of the primary network interface
+    // For now, return standard Ethernet MTU
+    // In production, this would:
+    // 1. Query interface statistics
+    // 2. Perform path MTU discovery
+    // 3. Test actual payload sizes
+    1500
+}
+
+/// Network interface information
+#[derive(Debug)]
+struct NetworkInterface {
+    name: String,
+    ipv4_addrs: Vec<Ipv4Addr>,
+    ipv6_addrs: Vec<Ipv6Addr>,
+}
+
+/// Get network interfaces (simplified implementation)
+async fn get_network_interfaces() -> Result<Vec<NetworkInterface>> {
+    // This is a placeholder - in production this would use platform-specific APIs
+    // to enumerate network interfaces and their addresses
+    
+    // For now, simulate a typical interface
+    let interface = NetworkInterface {
+        name: "eth0".to_string(),
+        ipv4_addrs: vec![Ipv4Addr::new(192, 168, 1, 100)],
+        ipv6_addrs: vec![],
+    };
+    
+    Ok(vec![interface])
+}
+
+/// Calculate throughput based on tunnel metrics
+fn calculate_throughput(metrics: &TunnelMetrics) -> Option<f64> {
+    let elapsed = metrics.last_activity.elapsed();
+    if elapsed.as_secs() > 0 {
+        let total_bytes = metrics.bytes_sent + metrics.bytes_received;
+        Some(total_bytes as f64 / elapsed.as_secs_f64())
+    } else {
+        None
+    }
+}
+
+/// Calculate reliability score based on tunnel state and metrics
+fn calculate_reliability_score(state: &TunnelState, metrics: &TunnelMetrics) -> f32 {
+    let mut score = match state {
+        TunnelState::Connected => 1.0,
+        TunnelState::Connecting => 0.5,
+        TunnelState::Disconnected => 0.0,
+        TunnelState::Failed(_) => 0.0,
+        TunnelState::Disconnecting => 0.2,
+    };
+    
+    // Adjust score based on packet loss
+    if metrics.packets_sent > 0 {
+        let packet_loss = metrics.packets_dropped as f32 / metrics.packets_sent as f32;
+        score *= (1.0 - packet_loss).max(0.0);
+    }
+    
+    // Adjust score based on activity recency
+    let inactive_time = metrics.last_activity.elapsed();
+    if inactive_time > Duration::from_secs(300) { // 5 minutes
+        score *= 0.5; // Penalize stale tunnels
+    }
+    
+    score.min(1.0).max(0.0)
 }
 
 // Tunneling protocol implementations

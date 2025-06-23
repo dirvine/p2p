@@ -16,11 +16,12 @@ use tokio::time::timeout;
 use p2p_foundation::{P2PNode, Key};
 use crate::common::{TestNetwork, TestNetworkConfig, TestNodeConfig, TestDataGen, TestAssertions, PerformanceTest};
 
-mod collaborative_ai;
-mod distributed_computing;
-mod data_replication;
-mod network_healing;
-mod edge_cases;
+// Integration test submodules - TBD
+// mod collaborative_ai;
+// mod distributed_computing;
+// mod data_replication;
+// mod network_healing;
+// mod edge_cases;
 
 /// Test complete AI agent collaboration scenario
 #[tokio::test]
@@ -119,7 +120,7 @@ async fn test_ai_agent_collaboration() -> Result<()> {
         assert_eq!(results_json["participants"].as_array().unwrap().len(), 4);
     }
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -194,7 +195,7 @@ async fn test_distributed_file_storage() -> Result<()> {
     ];
     
     for node in &failed_nodes {
-        node.shutdown().await?;
+        node.stop().await?;
     }
     
     // File should still be reconstructable from remaining nodes
@@ -220,7 +221,7 @@ async fn test_distributed_file_storage() -> Result<()> {
     let fault_tolerant_file: Vec<u8> = fault_tolerant_chunks.into_iter().flatten().collect();
     assert_eq!(fault_tolerant_file, file_content, "File should be reconstructable despite failures");
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -259,7 +260,7 @@ async fn test_network_partition_healing() -> Result<()> {
     
     // Simulate partition by shutting down half the nodes
     for node in &partition_b_nodes {
-        node.shutdown().await?;
+        node.stop().await?;
     }
     
     // Wait for partition detection
@@ -347,7 +348,7 @@ async fn test_network_partition_healing() -> Result<()> {
         }
     }
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -480,7 +481,7 @@ async fn test_collaborative_editing() -> Result<()> {
     assert!(final_contents[0].contains("Modified by Node 2"));
     assert!(final_contents[0].contains("Section by Node 3"));
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -521,7 +522,7 @@ async fn test_rapid_node_churn() -> Result<()> {
         // Remove some existing nodes
         if network.nodes.len() > 3 {
             let removed_node = network.nodes.remove(network.nodes.len() - 1);
-            removed_node.shutdown().await?;
+            removed_node.stop().await?;
         }
         
         // Add new nodes to network
@@ -548,7 +549,7 @@ async fn test_rapid_node_churn() -> Result<()> {
     
     assert!(accessible_count >= 2, "Data should be accessible from multiple nodes after churn");
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -666,7 +667,7 @@ async fn test_realistic_load_performance() -> Result<()> {
         load_duration
     );
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 

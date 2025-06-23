@@ -14,11 +14,12 @@ use tokio::time::timeout;
 use p2p_foundation::{P2PNode, security::*};
 use crate::common::{TestNetwork, TestNetworkConfig, TestNodeConfig, TestDataGen};
 
-mod encryption;
-mod authentication;
-mod key_management;
-mod attack_resistance;
-mod certificates;
+// Integration test submodules - TBD
+// mod encryption;
+// mod authentication;
+// mod key_management;
+// mod attack_resistance;
+// mod certificates;
 
 /// Test basic cryptographic key generation and management
 #[tokio::test]
@@ -59,7 +60,7 @@ async fn test_key_generation() -> Result<()> {
     ).await?;
     assert_ne!(derived_key, different_key);
     
-    node.shutdown().await?;
+    node.stop().await?;
     Ok(())
 }
 
@@ -102,7 +103,7 @@ async fn test_message_signing() -> Result<()> {
     ).await?;
     assert!(!wrong_verification.is_valid());
     
-    node.shutdown().await?;
+    node.stop().await?;
     Ok(())
 }
 
@@ -137,7 +138,7 @@ async fn test_peer_authentication() -> Result<()> {
     assert!(reverse_result.is_authenticated());
     assert_eq!(reverse_result.peer_id(), node2_id);
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -178,7 +179,7 @@ async fn test_message_encryption() -> Result<()> {
     ).await;
     assert!(wrong_decryption.is_err());
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -223,7 +224,7 @@ async fn test_secure_channel() -> Result<()> {
     
     assert_eq!(post_rotation_received, post_rotation_message);
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -293,10 +294,10 @@ async fn test_certificate_authentication() -> Result<()> {
     assert!(connection_result.is_err() || connection_result.unwrap().is_err());
     
     // Cleanup
-    ca_node.shutdown().await?;
-    node1.shutdown().await?;
-    node2.shutdown().await?;
-    unauth_node.shutdown().await?;
+    ca_node.stop().await?;
+    node1.stop().await?;
+    node2.stop().await?;
+    unauth_node.stop().await?;
     
     Ok(())
 }
@@ -331,7 +332,7 @@ async fn test_replay_attack_protection() -> Result<()> {
     let modified_result = network.node(1)?.security().verify_signed_message(&modified_message).await?;
     assert!(!modified_result.is_valid());
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -370,7 +371,7 @@ async fn test_mitm_protection() -> Result<()> {
     let attacker_channel_result = network.node(2)?.security().get_secure_channel(&network.node(0)?.peer_id()).await;
     assert!(attacker_channel_result.is_err(), "Attacker should not have access to secure channel");
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -449,7 +450,7 @@ async fn test_dos_protection() -> Result<()> {
             },
             Ok(Err(_)) | Err(_) => {
                 // Connection rejected due to limits
-                extra_node.shutdown().await?;
+                extra_node.stop().await?;
                 break;
             }
         }
@@ -463,10 +464,10 @@ async fn test_dos_protection() -> Result<()> {
     );
     
     // Cleanup
-    protected_node.shutdown().await?;
-    client_node.shutdown().await?;
+    protected_node.stop().await?;
+    client_node.stop().await?;
     for node in additional_connections {
-        node.shutdown().await?;
+        node.stop().await?;
     }
     
     Ok(())
@@ -511,7 +512,7 @@ async fn test_adversarial_key_exchange() -> Result<()> {
     
     assert!(forward_secrecy_attack.is_err(), "Should maintain forward secrecy");
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -558,6 +559,6 @@ async fn test_cryptographic_strength() -> Result<()> {
     assert!(!weak_test.is_strong());
     assert!(weak_test.is_weak());
     
-    node.shutdown().await?;
+    node.stop().await?;
     Ok(())
 }

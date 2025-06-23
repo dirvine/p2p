@@ -3,6 +3,9 @@
 //! This module provides a Kademlia-based DHT for distributed peer routing and data storage.
 //! It implements the core Kademlia algorithm with proper distance metrics, k-buckets,
 //! and network operations for a fully decentralized P2P system.
+//!
+//! The implementation includes S/Kademlia security extensions for enhanced protection
+//! against various attacks on the DHT infrastructure.
 
 use crate::{PeerId, Multiaddr, Result, P2PError};
 use serde::{Deserialize, Serialize};
@@ -12,6 +15,13 @@ use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 use futures;
+use anyhow;
+
+// S/Kademlia security extensions
+pub mod skademlia;
+
+// IPv6-based node identity system
+pub mod ipv6_identity;
 
 /// DHT configuration parameters
 #[derive(Debug, Clone)]
@@ -57,18 +67,42 @@ pub struct Record {
 }
 
 /// DHT node information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DHTNode {
     /// Node peer ID
     pub peer_id: PeerId,
     /// Node addresses
     pub addresses: Vec<Multiaddr>,
-    /// Last seen timestamp
+    /// Last seen timestamp (seconds since epoch)
+    #[serde(with = "instant_as_secs")]
     pub last_seen: Instant,
     /// Node distance from local node
     pub distance: Key,
     /// Connection status
     pub is_connected: bool,
+}
+
+/// Serde helper for Instant serialization
+mod instant_as_secs {
+    use serde::{Deserializer, Serializer, Deserialize, Serialize};
+    use std::time::Instant;
+    
+    pub fn serialize<S>(instant: &Instant, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Convert to approximate seconds since creation
+        instant.elapsed().as_secs().serialize(serializer)
+    }
+    
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Instant, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let secs = u64::deserialize(deserializer)?;
+        // Return current instant minus the stored duration (approximate)
+        Ok(Instant::now() - std::time::Duration::from_secs(secs))
+    }
 }
 
 /// Serializable DHT node for network transmission
@@ -117,7 +151,7 @@ pub struct DHTStorage {
     config: DHTConfig,
 }
 
-/// Main DHT implementation
+/// Main DHT implementation with S/Kademlia security extensions
 #[derive(Debug)]
 pub struct DHT {
     /// Local node ID
@@ -128,6 +162,10 @@ pub struct DHT {
     storage: DHTStorage,
     /// Configuration
     config: DHTConfig,
+    /// S/Kademlia security extensions
+    pub skademlia: Option<skademlia::SKademlia>,
+    /// IPv6-based identity manager
+    pub ipv6_identity_manager: Option<ipv6_identity::IPv6DHTIdentityManager>,
 }
 
 /// DHT query types
@@ -321,6 +359,17 @@ impl DHTNode {
             addresses,
             last_seen: Instant::now(),
             distance,
+            is_connected: false,
+        }
+    }
+    
+    /// Create a new DHT node with explicit key (for testing)
+    pub fn new_with_key(peer_id: PeerId, addresses: Vec<Multiaddr>, key: Key) -> Self {
+        Self {
+            peer_id,
+            addresses,
+            last_seen: Instant::now(),
+            distance: key,
             is_connected: false,
         }
     }
@@ -576,6 +625,59 @@ impl DHT {
             routing_table,
             storage,
             config,
+            skademlia: None,
+            ipv6_identity_manager: None,
+        }
+    }
+    
+    /// Create a new DHT instance with S/Kademlia security extensions
+    pub fn new_with_security(local_id: Key, config: DHTConfig, skademlia_config: skademlia::SKademliaConfig) -> Self {
+        let routing_table = RoutingTable::new(local_id.clone(), config.clone());
+        let storage = DHTStorage::new(config.clone());
+        let skademlia = skademlia::SKademlia::new(skademlia_config);
+        
+        Self {
+            local_id,
+            routing_table,
+            storage,
+            config,
+            skademlia: Some(skademlia),
+            ipv6_identity_manager: None,
+        }
+    }
+
+    /// Create a new DHT instance with full IPv6 security integration
+    pub fn new_with_ipv6_security(
+        local_id: Key, 
+        config: DHTConfig, 
+        skademlia_config: skademlia::SKademliaConfig,
+        ipv6_config: ipv6_identity::IPv6DHTConfig
+    ) -> Self {
+        let routing_table = RoutingTable::new(local_id.clone(), config.clone());
+        let storage = DHTStorage::new(config.clone());
+        let skademlia = skademlia::SKademlia::new(skademlia_config);
+        let ipv6_identity_manager = ipv6_identity::IPv6DHTIdentityManager::new(ipv6_config);
+        
+        Self {
+            local_id,
+            routing_table,
+            storage,
+            config,
+            skademlia: Some(skademlia),
+            ipv6_identity_manager: Some(ipv6_identity_manager),
+        }
+    }
+
+    /// Initialize local IPv6 identity
+    pub fn set_local_ipv6_identity(&mut self, identity: crate::security::IPv6NodeID) -> Result<()> {
+        if let Some(ref mut manager) = self.ipv6_identity_manager {
+            // Update local_id to match IPv6 identity
+            self.local_id = ipv6_identity::IPv6DHTIdentityManager::generate_dht_key(&identity);
+            manager.set_local_identity(identity)?;
+            info!("Local IPv6 identity set and DHT key updated");
+            Ok(())
+        } else {
+            Err(P2PError::Security("IPv6 identity manager not enabled".to_string()).into())
         }
     }
     
@@ -583,6 +685,69 @@ impl DHT {
     pub async fn add_bootstrap_node(&self, peer_id: PeerId, addresses: Vec<Multiaddr>) -> Result<()> {
         let node = DHTNode::new(peer_id, addresses, &self.local_id);
         self.routing_table.add_node(node).await
+    }
+
+    /// Add an IPv6-verified node to the DHT
+    pub async fn add_ipv6_node(&mut self, peer_id: PeerId, addresses: Vec<Multiaddr>, ipv6_identity: crate::security::IPv6NodeID) -> Result<()> {
+        if let Some(ref mut manager) = self.ipv6_identity_manager {
+            // Validate the node join with IPv6 security checks
+            let base_node = DHTNode::new(peer_id.clone(), addresses, &self.local_id);
+            let security_event = manager.validate_node_join(&base_node, &ipv6_identity).await?;
+            
+            match security_event {
+                ipv6_identity::IPv6SecurityEvent::NodeJoined { verification_confidence, .. } => {
+                    // Enhance the node with IPv6 identity
+                    let ipv6_node = manager.enhance_dht_node(base_node.clone(), ipv6_identity).await?;
+                    
+                    // Update the DHT key to match IPv6 identity
+                    let mut enhanced_base_node = base_node;
+                    enhanced_base_node.distance = ipv6_node.get_dht_key().distance(&self.local_id);
+                    
+                    // Add to routing table
+                    self.routing_table.add_node(enhanced_base_node).await?;
+                    
+                    info!("Added IPv6-verified node {} with confidence {:.2}", peer_id, verification_confidence);
+                    Ok(())
+                }
+                ipv6_identity::IPv6SecurityEvent::VerificationFailed { reason, .. } => {
+                    Err(P2PError::Security(format!("IPv6 verification failed: {}", reason)).into())
+                }
+                ipv6_identity::IPv6SecurityEvent::DiversityViolation { subnet_type, .. } => {
+                    Err(P2PError::Security(format!("IP diversity violation: {}", subnet_type)).into())
+                }
+                ipv6_identity::IPv6SecurityEvent::NodeBanned { reason, .. } => {
+                    Err(P2PError::Security(format!("Node banned: {}", reason)).into())
+                }
+                _ => {
+                    Err(P2PError::Security("Unexpected security event".to_string()).into())
+                }
+            }
+        } else {
+            // Fallback to regular node addition if IPv6 manager not enabled
+            self.add_bootstrap_node(peer_id, addresses).await
+        }
+    }
+
+    /// Remove node with IPv6 cleanup
+    pub async fn remove_ipv6_node(&mut self, peer_id: &PeerId) -> Result<()> {
+        // Remove from routing table
+        self.routing_table.remove_node(peer_id).await?;
+        
+        // Clean up IPv6 tracking
+        if let Some(ref mut manager) = self.ipv6_identity_manager {
+            manager.remove_node(peer_id);
+        }
+        
+        Ok(())
+    }
+
+    /// Check if node is banned due to IPv6 security violations
+    pub fn is_node_banned(&self, peer_id: &PeerId) -> bool {
+        if let Some(ref manager) = self.ipv6_identity_manager {
+            manager.is_node_banned(peer_id)
+        } else {
+            false
+        }
     }
     
     /// Store a record in the DHT with replication
@@ -717,7 +882,406 @@ impl DHT {
         // Refresh buckets that haven't been active
         self.refresh_buckets().await?;
         
+        // Note: S/Kademlia cleanup would happen here in a mutable context
+        
         Ok(())
+    }
+    
+    /// Perform secure lookup using S/Kademlia disjoint paths with distance verification
+    pub async fn secure_get(&mut self, key: &Key) -> Result<Option<Record>> {
+        // Check local storage first
+        if let Some(record) = self.storage.get(key).await {
+            if !record.is_expired() {
+                return Ok(Some(record));
+            }
+        }
+        
+        // Check if S/Kademlia is enabled and extract configuration
+        let (enable_distance_verification, disjoint_path_count, min_reputation) = if let Some(ref skademlia) = self.skademlia {
+            (skademlia.config.enable_distance_verification, 
+             skademlia.config.disjoint_path_count,
+             skademlia.config.min_routing_reputation)
+        } else {
+            // Fallback to regular get if S/Kademlia not enabled
+            return Ok(self.get(key).await);
+        };
+        
+        // Get initial nodes for disjoint path lookup
+        let initial_nodes = self.routing_table
+            .closest_nodes(key, disjoint_path_count * 3)
+            .await;
+        
+        if initial_nodes.is_empty() {
+            return Ok(None);
+        }
+        
+        // Perform secure lookup with disjoint paths
+        let secure_nodes = if let Some(ref mut skademlia) = self.skademlia {
+            skademlia.secure_lookup(key.clone(), initial_nodes).await?
+        } else {
+            return Ok(None);
+        };
+        
+        // Query the securely found nodes with distance verification
+        for node in &secure_nodes {
+            // Verify node distance before querying if enabled
+            if enable_distance_verification {
+                let witness_nodes = self.select_witness_nodes(&node.peer_id, 3).await;
+                
+                let consensus = if let Some(ref mut skademlia) = self.skademlia {
+                    skademlia.verify_distance_consensus(&node.peer_id, key, witness_nodes).await?
+                } else {
+                    continue;
+                };
+                
+                if consensus.confidence < min_reputation {
+                    debug!("Skipping node {} due to low distance verification confidence", node.peer_id);
+                    continue;
+                }
+            }
+            
+            let query = DHTQuery::FindValue { 
+                key: key.clone(), 
+                requester: self.local_id.to_hex() 
+            };
+            if let Ok(DHTResponse::Value { record }) = self.simulate_query(node, query).await {
+                // Store locally for future access
+                let _ = self.storage.store(record.clone()).await;
+                return Ok(Some(record));
+            }
+        }
+        
+        Ok(None)
+    }
+    
+    /// Store a record using S/Kademlia security-aware node selection
+    pub async fn secure_put(&mut self, key: Key, value: Vec<u8>) -> Result<()> {
+        let record = Record::new(key.clone(), value, self.local_id.to_hex());
+        
+        // Store locally first
+        self.storage.store(record.clone()).await?;
+        
+        // Get secure nodes and perform replications
+        let secure_nodes = if let Some(ref skademlia) = self.skademlia {
+            // Get candidate nodes
+            let candidate_nodes = self.routing_table
+                .closest_nodes(&key, self.config.replication_factor * 2)
+                .await;
+            
+            // Use S/Kademlia to select secure nodes based on reputation
+            skademlia.select_secure_nodes(
+                &candidate_nodes, 
+                &key, 
+                self.config.replication_factor
+            )
+        } else {
+            // Fallback to regular closest nodes
+            self.routing_table.closest_nodes(&key, self.config.replication_factor).await
+        };
+        
+        info!("Storing record with key {} on {} secure nodes", key.to_hex(), secure_nodes.len());
+        
+        // Perform replications and collect results
+        let mut replication_results = Vec::new();
+        let mut successful_replications = 0;
+        
+        for node in &secure_nodes {
+            let success = self.replicate_record(&record, node).await.is_ok();
+            replication_results.push((node.peer_id.clone(), success));
+            if success {
+                successful_replications += 1;
+            }
+        }
+        
+        // Update reputations if S/Kademlia enabled
+        if let Some(ref mut skademlia) = self.skademlia {
+            for (peer_id, success) in replication_results {
+                skademlia.reputation_manager.update_reputation(
+                    &peer_id, 
+                    success, 
+                    Duration::from_millis(100)
+                );
+            }
+        }
+        
+        if successful_replications > 0 {
+            info!("Successfully replicated to {}/{} secure nodes", 
+                 successful_replications, secure_nodes.len());
+        }
+        
+        Ok(())
+    }
+    
+    /// Update sibling lists for a key range
+    pub async fn update_sibling_list(&mut self, key: Key) -> Result<()> {
+        if let Some(ref mut skademlia) = self.skademlia {
+            let nodes = self.routing_table.closest_nodes(&key, skademlia.config.sibling_list_size).await;
+            skademlia.update_sibling_list(key, nodes);
+        }
+        Ok(())
+    }
+    
+    /// Validate routing table consistency using S/Kademlia
+    pub async fn validate_routing_consistency(&self) -> Result<skademlia::ConsistencyReport> {
+        if let Some(ref skademlia) = self.skademlia {
+            // Get sample of nodes for validation (using closest_nodes as a proxy)
+            let sample_key = Key::random();
+            let sample_nodes = self.routing_table.closest_nodes(&sample_key, 100).await;
+            skademlia.validate_routing_consistency(&sample_nodes).await
+        } else {
+            Err(P2PError::DHT("S/Kademlia not enabled".to_string()).into())
+        }
+    }
+    
+    /// Create a distance verification challenge for a peer
+    pub fn create_distance_challenge(&mut self, peer_id: &PeerId, key: &Key) -> Option<skademlia::DistanceChallenge> {
+        self.skademlia.as_mut()
+            .map(|skademlia| skademlia.create_distance_challenge(peer_id, key))
+    }
+    
+    /// Verify a distance proof
+    pub fn verify_distance_proof(&self, proof: &skademlia::DistanceProof) -> Result<bool> {
+        if let Some(ref skademlia) = self.skademlia {
+            skademlia.verify_distance_proof(proof)
+        } else {
+            Err(P2PError::DHT("S/Kademlia not enabled".to_string()).into())
+        }
+    }
+
+    /// Verify distances of multiple nodes using enhanced consensus
+    async fn verify_node_distances(&self, nodes: &[DHTNode], target_key: &Key, min_reputation: f64) -> Result<Vec<DHTNode>> {
+        let mut verified_nodes = Vec::new();
+        
+        for node in nodes {
+            let witness_nodes = self.select_witness_nodes(&node.peer_id, 3).await;
+            
+            // Only proceed if we have enough witness nodes
+            if witness_nodes.len() >= 2 {
+                // Simulate consensus verification (simplified for now)
+                let consensus_confidence = 0.8; // Placeholder
+                
+                if consensus_confidence >= min_reputation {
+                    verified_nodes.push(node.clone());
+                } else {
+                    debug!("Node {} failed distance verification with confidence {}", 
+                           node.peer_id, consensus_confidence);
+                }
+            }
+        }
+        
+        Ok(verified_nodes)
+    }
+
+    /// Select witness nodes for distance verification  
+    async fn select_witness_nodes(&self, target_peer: &PeerId, count: usize) -> Vec<PeerId> {
+        // Get nodes that are close to the target but not the target itself
+        let target_key = Key::new(target_peer.as_bytes());
+        let candidate_nodes = self.routing_table.closest_nodes(&target_key, count * 2).await;
+        
+        candidate_nodes.into_iter()
+            .filter(|node| node.peer_id != *target_peer)
+            .take(count)
+            .map(|node| node.peer_id)
+            .collect()
+    }
+
+    /// Create enhanced distance challenge with adaptive difficulty
+    pub fn create_enhanced_distance_challenge(&mut self, peer_id: &PeerId, key: &Key, suspected_attack: bool) -> Option<skademlia::EnhancedDistanceChallenge> {
+        if let Some(ref mut skademlia) = self.skademlia {
+            Some(skademlia.create_adaptive_distance_challenge(peer_id, key, suspected_attack))
+        } else {
+            None
+        }
+    }
+
+    /// Verify distance using multi-round challenge protocol  
+    pub async fn verify_distance_multi_round(&mut self, challenge: &skademlia::EnhancedDistanceChallenge) -> Result<bool> {
+        if let Some(ref mut skademlia) = self.skademlia {
+            skademlia.verify_distance_multi_round(challenge).await
+        } else {
+            Err(P2PError::DHT("S/Kademlia not enabled".to_string()).into())
+        }
+    }
+    
+    /// Get security bucket for a key range
+    pub fn get_security_bucket(&mut self, key: &Key) -> Option<&mut skademlia::SecurityBucket> {
+        self.skademlia.as_mut()
+            .map(|skademlia| skademlia.get_security_bucket(key))
+    }
+    
+    /// Add trusted node to security bucket
+    pub async fn add_trusted_node(&mut self, key: &Key, peer_id: PeerId, addresses: Vec<Multiaddr>) -> Result<()> {
+        if let Some(ref mut skademlia) = self.skademlia {
+            let node = DHTNode::new(peer_id, addresses, &self.local_id);
+            let security_bucket = skademlia.get_security_bucket(key);
+            security_bucket.add_trusted_node(node);
+        }
+        Ok(())
+    }
+
+    /// Perform IPv6-enhanced secure get operation
+    pub async fn ipv6_secure_get(&mut self, key: &Key) -> Result<Option<Record>> {
+        // Check if requester would be banned
+        if self.is_node_banned(&self.local_id.to_hex()) {
+            return Err(P2PError::Security("Local node is banned".to_string()).into());
+        }
+
+        // Check local storage first
+        if let Some(record) = self.storage.get(key).await {
+            if !record.is_expired() {
+                return Ok(Some(record));
+            }
+        }
+        
+        // Get IPv6-verified nodes for secure lookup
+        let verified_nodes = self.get_ipv6_verified_nodes_for_key(key).await?;
+        
+        if verified_nodes.is_empty() {
+            // Fallback to regular secure_get if no IPv6 nodes available
+            return self.secure_get(key).await;
+        }
+
+        // Perform S/Kademlia secure lookup with IPv6-verified nodes
+        if let Some(ref mut skademlia) = self.skademlia {
+            let secure_nodes = skademlia.secure_lookup(key.clone(), verified_nodes).await?;
+            
+            // Query nodes with both distance and IPv6 verification
+            for node in &secure_nodes {
+                // Additional IPv6 verification
+                if let Some(ref manager) = self.ipv6_identity_manager {
+                    if let Some(ipv6_node) = manager.get_verified_node(&node.peer_id) {
+                        // Check if IPv6 identity needs refresh
+                        if ipv6_node.needs_identity_refresh(manager.config.identity_refresh_interval) {
+                            debug!("Skipping node {} due to stale IPv6 identity", node.peer_id);
+                            continue;
+                        }
+                    } else {
+                        debug!("Skipping node {} without verified IPv6 identity", node.peer_id);
+                        continue;
+                    }
+                }
+                
+                let query = DHTQuery::FindValue { 
+                    key: key.clone(), 
+                    requester: self.local_id.to_hex() 
+                };
+                if let Ok(DHTResponse::Value { record }) = self.simulate_query(node, query).await {
+                    // Update IPv6 reputation for successful response
+                    if let Some(ref mut manager) = self.ipv6_identity_manager {
+                        manager.update_ipv6_reputation(&node.peer_id, true);
+                    }
+                    
+                    // Store locally for future access
+                    let _ = self.storage.store(record.clone()).await;
+                    return Ok(Some(record));
+                }
+            }
+        }
+        
+        Ok(None)
+    }
+
+    /// Perform IPv6-enhanced secure put operation
+    pub async fn ipv6_secure_put(&mut self, key: Key, value: Vec<u8>) -> Result<()> {
+        // Check if local node would be banned
+        if self.is_node_banned(&self.local_id.to_hex()) {
+            return Err(P2PError::Security("Local node is banned".to_string()).into());
+        }
+
+        let record = Record::new(key.clone(), value, self.local_id.to_hex());
+        
+        // Store locally first
+        self.storage.store(record.clone()).await?;
+        
+        // Get IPv6-verified nodes for secure replication
+        let verified_nodes = self.get_ipv6_verified_nodes_for_key(&key).await?;
+        
+        // Use S/Kademlia for secure node selection among verified nodes
+        let secure_nodes = if let Some(ref skademlia) = self.skademlia {
+            skademlia.select_secure_nodes(&verified_nodes, &key, self.config.replication_factor)
+        } else {
+            verified_nodes.into_iter().take(self.config.replication_factor).collect()
+        };
+
+        info!("Storing record with key {} on {} IPv6-verified secure nodes", key.to_hex(), secure_nodes.len());
+        
+        // Perform replications with IPv6 reputation tracking
+        let mut successful_replications = 0;
+        
+        for node in &secure_nodes {
+            let success = self.replicate_record(&record, node).await.is_ok();
+            
+            // Update IPv6 reputation based on replication success
+            if let Some(ref mut manager) = self.ipv6_identity_manager {
+                manager.update_ipv6_reputation(&node.peer_id, success);
+            }
+            
+            if success {
+                successful_replications += 1;
+            }
+        }
+        
+        if successful_replications == 0 && !secure_nodes.is_empty() {
+            return Err(P2PError::DHT("Failed to replicate to any IPv6-verified nodes".to_string()).into());
+        }
+        
+        info!("Successfully replicated to {}/{} IPv6-verified nodes", 
+              successful_replications, secure_nodes.len());
+        Ok(())
+    }
+
+    /// Get IPv6-verified nodes suitable for a key
+    async fn get_ipv6_verified_nodes_for_key(&self, key: &Key) -> Result<Vec<DHTNode>> {
+        let mut verified_nodes = Vec::new();
+        
+        // Get closest nodes from routing table
+        let candidate_nodes = self.routing_table.closest_nodes(key, self.config.replication_factor * 2).await;
+        
+        if let Some(ref manager) = self.ipv6_identity_manager {
+            for node in candidate_nodes {
+                // Check if node has verified IPv6 identity
+                if let Some(ipv6_node) = manager.get_verified_node(&node.peer_id) {
+                    // Check if identity is still fresh
+                    if !ipv6_node.needs_identity_refresh(manager.config.identity_refresh_interval) {
+                        // Check if node is not banned
+                        if !manager.is_node_banned(&node.peer_id) {
+                            verified_nodes.push(node);
+                        }
+                    }
+                }
+            }
+        } else {
+            // If no IPv6 manager, return all candidates
+            verified_nodes = candidate_nodes;
+        }
+        
+        Ok(verified_nodes)
+    }
+
+    /// Get IPv6 diversity statistics
+    pub fn get_ipv6_diversity_stats(&self) -> Option<crate::security::DiversityStats> {
+        self.ipv6_identity_manager.as_ref()
+            .map(|manager| manager.get_ipv6_diversity_stats())
+    }
+
+    /// Cleanup expired IPv6 identities and reputation data
+    pub fn cleanup_ipv6_data(&mut self) {
+        if let Some(ref mut manager) = self.ipv6_identity_manager {
+            manager.cleanup_expired();
+        }
+    }
+
+    /// Ban a node for IPv6 security violations
+    pub fn ban_ipv6_node(&mut self, peer_id: &PeerId, reason: &str) {
+        if let Some(ref mut manager) = self.ipv6_identity_manager {
+            manager.ban_node(peer_id, reason);
+        }
+    }
+
+    /// Get local IPv6 identity
+    pub fn get_local_ipv6_identity(&self) -> Option<&crate::security::IPv6NodeID> {
+        self.ipv6_identity_manager.as_ref()
+            .and_then(|manager| manager.get_local_identity())
     }
     
     /// Replicate a record to a specific node

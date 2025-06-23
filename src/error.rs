@@ -28,6 +28,9 @@ pub enum P2PError {
     
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
+    
+    #[error("Generic error: {0}")]
+    Generic(#[from] anyhow::Error),
 }
 
 /// Result type alias for P2P Foundation operations

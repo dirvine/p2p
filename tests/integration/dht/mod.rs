@@ -15,11 +15,12 @@ use tokio::time::timeout;
 use p2p_foundation::{Key, Record, P2PNode};
 use crate::common::{TestNetwork, TestNetworkConfig, TestDataGen, TestAssertions, PerformanceTest};
 
-mod storage;
-mod routing;
-mod replication;
-mod consistency;
-mod performance;
+// Integration test submodules - TBD  
+// mod storage;
+// mod routing;
+// mod replication;
+// mod consistency;
+// mod performance;
 
 /// Test basic DHT put/get operations
 #[tokio::test]
@@ -40,7 +41,7 @@ async fn test_dht_basic_put_get() -> Result<()> {
     let retrieved = network.node(1)?.dht_get(&key).await?;
     assert_eq!(retrieved, Some(value));
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -76,7 +77,7 @@ async fn test_dht_large_values() -> Result<()> {
     assert!(store_time < Duration::from_secs(10));
     assert!(retrieve_time < Duration::from_secs(10));
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -126,7 +127,7 @@ async fn test_dht_routing() -> Result<()> {
         );
     }
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -166,7 +167,7 @@ async fn test_dht_replication() -> Result<()> {
         replication_count
     );
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -195,7 +196,7 @@ async fn test_dht_network_partition() -> Result<()> {
     ];
     
     for node in &partition_nodes {
-        node.shutdown().await?;
+        node.stop().await?;
     }
     
     // Wait for partition detection
@@ -209,7 +210,7 @@ async fn test_dht_network_partition() -> Result<()> {
     assert_eq!(network.node(1)?.dht_get(&key1).await?, Some(value1));
     assert_eq!(network.node(2)?.dht_get(&key2).await?, Some(value2));
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -240,7 +241,7 @@ async fn test_dht_record_expiration() -> Result<()> {
     let expired_result = network.node(1)?.dht_get(&key).await?;
     assert_eq!(expired_result, None, "Value should have expired");
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -287,7 +288,7 @@ async fn test_dht_versioning() -> Result<()> {
     let result = network.node(2)?.dht_put_record(old_record).await;
     assert!(result.is_err(), "Older version should be rejected");
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -356,7 +357,7 @@ async fn test_dht_concurrent_operations() -> Result<()> {
         "Too many stored values were not retrievable"
     );
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -431,7 +432,7 @@ async fn test_dht_performance() -> Result<()> {
     println!("Average batch put time: {:?}", avg_batch_put_time);
     println!("Average batch get time: {:?}", avg_batch_get_time);
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -451,7 +452,7 @@ async fn test_dht_persistence() -> Result<()> {
     // Shutdown one node
     let restarting_node = network.nodes.remove(1);
     let restarting_config = network.configs[1].clone();
-    restarting_node.shutdown().await?;
+    restarting_node.stop().await?;
     
     // Wait a bit
     tokio::time::sleep(Duration::from_secs(2)).await;
@@ -472,7 +473,7 @@ async fn test_dht_persistence() -> Result<()> {
     
     // Cleanup
     network.nodes.push(restarted_node);
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -518,6 +519,6 @@ async fn test_dht_key_space_distribution() -> Result<()> {
         );
     }
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }

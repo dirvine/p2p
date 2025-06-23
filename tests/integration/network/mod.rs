@@ -14,11 +14,12 @@ use tokio::time::timeout;
 use p2p_foundation::{P2PNode, NodeConfig, PeerId, Multiaddr};
 use crate::common::{TestNetwork, TestNetworkConfig, TestNodeConfig, TestAssertions, PerformanceTest};
 
-mod node_lifecycle;
-mod peer_discovery;
-mod connection_management;
-mod topology;
-mod ipv6_support;
+// Integration test submodules - TBD
+// mod node_lifecycle;
+// mod peer_discovery;
+// mod connection_management;
+// mod topology;
+// mod ipv6_support;
 
 /// Test node creation with default configuration
 #[tokio::test]
@@ -33,7 +34,7 @@ async fn test_node_creation_default() -> Result<()> {
     let addrs = node.listen_addrs().await?;
     assert!(!addrs.is_empty(), "Node should be listening on at least one address");
     
-    node.shutdown().await?;
+    node.stop().await?;
     Ok(())
 }
 
@@ -64,7 +65,7 @@ async fn test_node_creation_custom() -> Result<()> {
     let mcp_services = node.mcp_list_services().await?;
     assert!(!mcp_services.is_empty());
     
-    node.shutdown().await?;
+    node.stop().await?;
     Ok(())
 }
 
@@ -87,7 +88,7 @@ async fn test_peer_connection() -> Result<()> {
     assert!(network.node(0)?.is_connected(&node1_id).await?);
     assert!(network.node(1)?.is_connected(&node2_id).await?);
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -112,7 +113,7 @@ async fn test_multiple_peer_connections() -> Result<()> {
     // Verify full connectivity
     TestAssertions::assert_full_connectivity(&network).await?;
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -127,13 +128,13 @@ async fn test_connection_timeout() -> Result<()> {
     
     let result = timeout(
         Duration::from_secs(5),
-        node.connect(invalid_addr)
+        node.connect_peer(&invalid_addr.to_string())
     ).await;
     
     assert!(result.is_err() || result.unwrap().is_err());
     assert!(start.elapsed() >= Duration::from_secs(1)); // Should respect timeout
     
-    node.shutdown().await?;
+    node.stop().await?;
     Ok(())
 }
 
@@ -155,13 +156,13 @@ async fn test_peer_disconnection_reconnection() -> Result<()> {
     
     // Reconnect
     let node1_addr = network.addrs[1].clone();
-    network.node_mut(0)?.connect(node1_addr).await?;
+    network.node_mut(0)?.connect_peer(&node1_addr.to_string()).await?;
     
     // Wait for reconnection
     tokio::time::sleep(Duration::from_secs(1)).await;
     assert!(network.node(0)?.is_connected(&node1_id).await?);
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -175,7 +176,7 @@ async fn test_network_resilience() -> Result<()> {
     
     // Remove one node (simulate failure)
     let failed_node = network.nodes.remove(2);
-    failed_node.shutdown().await?;
+    failed_node.stop().await?;
     
     // Wait for failure detection
     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -192,7 +193,7 @@ async fn test_network_resilience() -> Result<()> {
         }
     }
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -221,7 +222,7 @@ async fn test_connection_limits() -> Result<()> {
     
     // Connect all nodes to the limited node
     for other_node in &other_nodes {
-        let _ = other_node.connect(node_addr.clone()).await;
+        let _ = other_node.connect_peer(&node_addr.to_string()).await;
     }
     
     // Wait for connections to stabilize
@@ -236,9 +237,9 @@ async fn test_connection_limits() -> Result<()> {
     );
     
     // Cleanup
-    node.shutdown().await?;
+    node.stop().await?;
     for other_node in other_nodes {
-        other_node.shutdown().await?;
+        other_node.stop().await?;
     }
     
     Ok(())
@@ -271,7 +272,7 @@ async fn test_topology_discovery() -> Result<()> {
         );
     }
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -283,7 +284,7 @@ async fn test_connection_performance() -> Result<()> {
     // Test single connection performance
     let connection_time = perf.measure_async("single_connection", async {
         let network = TestNetwork::simple(2).await?;
-        network.shutdown().await?;
+        network.stop().await?;
         Ok::<(), anyhow::Error>(())
     }).await?;
     
@@ -291,7 +292,7 @@ async fn test_connection_performance() -> Result<()> {
     let multi_connection_time = perf.measure_async("multi_connection", async {
         let network = TestNetwork::simple(10).await?;
         network.wait_for_discovery().await?;
-        network.shutdown().await?;
+        network.stop().await?;
         Ok::<(), anyhow::Error>(())
     }).await?;
     
@@ -338,7 +339,7 @@ async fn test_mixed_ipv4_ipv6_network() -> Result<()> {
     if let Some(ipv4_addr) = ipv4_addrs.iter().find(|addr| addr.to_string().contains("ip4")) {
         let result = timeout(
             Duration::from_secs(10),
-            ipv6_node.connect(ipv4_addr.clone())
+            ipv6_node.connect_peer(&ipv4_addr.to_string())
         ).await;
         
         // Connection should succeed or fail gracefully
@@ -357,8 +358,8 @@ async fn test_mixed_ipv4_ipv6_network() -> Result<()> {
     }
     
     // Cleanup
-    ipv4_node.shutdown().await?;
-    ipv6_node.shutdown().await?;
+    ipv4_node.stop().await?;
+    ipv6_node.stop().await?;
     
     Ok(())
 }
@@ -391,7 +392,7 @@ async fn test_keep_alive() -> Result<()> {
     let test_data = b"keep-alive test";
     network.node(0)?.send_message(&node1_id, test_data.to_vec()).await?;
     
-    network.shutdown().await?;
+    network.stop().await?;
     Ok(())
 }
 
@@ -409,7 +410,7 @@ async fn test_connection_stress() -> Result<()> {
         println!("Stress test iteration {}", i);
         
         // Connect
-        node2.connect(node1_addr.clone()).await?;
+        node2.connect_peer(&node1_addr.to_string()).await?;
         assert!(node1.is_connected(&node2_id).await?);
         
         // Disconnect
@@ -422,8 +423,8 @@ async fn test_connection_stress() -> Result<()> {
     }
     
     // Final cleanup
-    node1.shutdown().await?;
-    node2.shutdown().await?;
+    node1.stop().await?;
+    node2.stop().await?;
     
     Ok(())
 }

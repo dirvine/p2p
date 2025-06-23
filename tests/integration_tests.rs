@@ -179,7 +179,7 @@ async fn test_module_structure() -> Result<()> {
     // Test that all modules are accessible
     let _network_config = network::NodeConfig::default();
     let _dht_key = dht::Key::new(b"test");
-    let _mcp_server = mcp::MCPServer::new();
+    let _mcp_server = mcp::MCPServer::new(mcp::MCPServerConfig::default());
     let _error = error::P2PError::Network("test".to_string());
     
     println!("All module structures are accessible");
@@ -816,14 +816,14 @@ async fn test_network_functionality() -> Result<()> {
     
     println!("✅ Peer disconnection works");
     
-    // Test node shutdown
+    // Test node stop
     node1.stop().await?;
     node2.stop().await?;
     
     assert!(!node1.is_running().await);
     assert!(!node2.is_running().await);
     
-    println!("✅ Node shutdown successful");
+    println!("✅ Node stop successful");
     println!("✅ Network functionality test completed successfully!");
     
     Ok(())
