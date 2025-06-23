@@ -9,11 +9,10 @@
 
 use anyhow::Result;
 use std::time::Duration;
-use std::net::{SocketAddr, IpAddr, Ipv4Addr, Ipv6Addr};
 use tokio::time::timeout;
 
-use p2p_foundation::{P2PNode, NodeConfig, transport::*};
-use crate::common::{TestNetwork, TestNetworkConfig, TestNodeConfig, TestDataGen, PerformanceTest};
+use p2p_foundation::{P2PNode, transport::*};
+use crate::common::{TestNetwork, PerformanceTest};
 
 // Integration test submodules - TBD
 // mod quic;

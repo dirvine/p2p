@@ -6,6 +6,7 @@
 use crate::{PeerId, Multiaddr, P2PError, Result};
 use crate::mcp::{MCPServer, MCPServerConfig, Tool, MCPCallContext, MCP_PROTOCOL};
 use crate::dht::{DHT, DHTConfig as DHTConfigInner};
+use crate::production::{ProductionConfig, ResourceManager, ResourceMetrics};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -53,6 +54,9 @@ pub struct NodeConfig {
     
     /// Security configuration
     pub security_config: SecurityConfig,
+    
+    /// Production hardening configuration
+    pub production_config: Option<ProductionConfig>,
 }
 
 /// DHT-specific configuration
@@ -113,6 +117,7 @@ impl Default for NodeConfig {
             max_incoming_connections: 100,
             dht_config: DHTConfig::default(),
             security_config: SecurityConfig::default(),
+            production_config: None, // Use default production config if enabled
         }
     }
 }
@@ -180,39 +185,53 @@ pub enum ConnectionStatus {
 pub enum NetworkEvent {
     /// A new peer has connected
     PeerConnected {
+        /// The identifier of the newly connected peer
         peer_id: PeerId,
+        /// The network addresses where the peer can be reached
         addresses: Vec<Multiaddr>,
     },
     
     /// A peer has disconnected
     PeerDisconnected {
+        /// The identifier of the disconnected peer
         peer_id: PeerId,
+        /// The reason for the disconnection
         reason: String,
     },
     
     /// A message was received from a peer
     MessageReceived {
+        /// The identifier of the sending peer
         peer_id: PeerId,
+        /// The protocol used for the message
         protocol: String,
+        /// The raw message data
         data: Vec<u8>,
     },
     
     /// A connection attempt failed
     ConnectionFailed {
+        /// The identifier of the peer (if known)
         peer_id: Option<PeerId>,
+        /// The address where connection was attempted
         address: Multiaddr,
+        /// The error message describing the failure
         error: String,
     },
     
     /// DHT record was stored
     DHTRecordStored {
+        /// The DHT key where the record was stored
         key: Vec<u8>,
+        /// The value that was stored
         value: Vec<u8>,
     },
     
     /// DHT record was retrieved
     DHTRecordRetrieved {
+        /// The DHT key that was queried
         key: Vec<u8>,
+        /// The retrieved value, if found
         value: Option<Vec<u8>>,
     },
 }
@@ -245,6 +264,9 @@ pub struct P2PNode {
     
     /// DHT instance (optional)
     dht: Option<Arc<RwLock<DHT>>>,
+    
+    /// Production resource manager (optional)
+    resource_manager: Option<Arc<ResourceManager>>,
 }
 
 impl P2PNode {
@@ -298,6 +320,13 @@ impl P2PNode {
             None
         };
         
+        // Initialize production resource manager if configured
+        let resource_manager = if let Some(prod_config) = config.production_config.clone() {
+            Some(Arc::new(ResourceManager::new(prod_config)))
+        } else {
+            None
+        };
+        
         let node = Self {
             config,
             peer_id,
@@ -308,6 +337,7 @@ impl P2PNode {
             running: RwLock::new(false),
             mcp_server,
             dht,
+            resource_manager,
         };
         
         info!("Created P2P node with peer ID: {}", node.peer_id);
@@ -332,6 +362,13 @@ impl P2PNode {
     /// Start the P2P node
     pub async fn start(&self) -> Result<()> {
         info!("Starting P2P node...");
+        
+        // Start production resource manager if configured
+        if let Some(ref resource_manager) = self.resource_manager {
+            resource_manager.start().await
+                .map_err(|e| P2PError::Network(format!("Failed to start resource manager: {}", e)))?;
+            info!("Production resource manager started");
+        }
         
         // Set running state
         *self.running.write().await = true;
@@ -397,6 +434,13 @@ impl P2PNode {
         // Disconnect all peers
         self.disconnect_all_peers().await?;
         
+        // Shutdown production resource manager if configured
+        if let Some(ref resource_manager) = self.resource_manager {
+            resource_manager.shutdown().await
+                .map_err(|e| P2PError::Network(format!("Failed to shutdown resource manager: {}", e)))?;
+            info!("Production resource manager stopped");
+        }
+        
         info!("P2P node stopped");
         Ok(())
     }
@@ -430,6 +474,13 @@ impl P2PNode {
     pub async fn connect_peer(&self, address: &Multiaddr) -> Result<PeerId> {
         info!("Connecting to peer at: {}", address);
         
+        // Check production limits if resource manager is enabled
+        let _connection_guard = if let Some(ref resource_manager) = self.resource_manager {
+            Some(resource_manager.acquire_connection().await?)
+        } else {
+            None
+        };
+        
         // This is a placeholder implementation
         // In a real implementation, this would:
         // 1. Establish a connection using the transport layer
@@ -449,6 +500,11 @@ impl P2PNode {
         };
         
         self.peers.write().await.insert(peer_id.clone(), peer_info);
+        
+        // Record bandwidth usage if resource manager is enabled
+        if let Some(ref resource_manager) = self.resource_manager {
+            resource_manager.record_bandwidth(0, 0); // Placeholder for handshake data
+        }
         
         // Emit event
         let _ = self.event_tx.send(NetworkEvent::PeerConnected {
@@ -483,6 +539,13 @@ impl P2PNode {
     pub async fn send_message(&self, peer_id: &PeerId, protocol: &str, data: Vec<u8>) -> Result<()> {
         debug!("Sending message to peer {} on protocol {}", peer_id, protocol);
         
+        // Check rate limits if resource manager is enabled
+        if let Some(ref resource_manager) = self.resource_manager {
+            if !resource_manager.check_rate_limit(peer_id, "message").await? {
+                return Err(P2PError::Network(format!("Rate limit exceeded for peer {}", peer_id)));
+            }
+        }
+        
         // Check if peer is connected
         if !self.peers.read().await.contains_key(peer_id) {
             return Err(P2PError::Network(format!("Peer {} not connected", peer_id)));
@@ -503,6 +566,11 @@ impl P2PNode {
                     }
                 }
             }
+        }
+        
+        // Record bandwidth usage if resource manager is enabled
+        if let Some(ref resource_manager) = self.resource_manager {
+            resource_manager.record_bandwidth(data.len() as u64, 0);
         }
         
         // This is a placeholder implementation
@@ -540,6 +608,13 @@ impl P2PNode {
     /// Call a local MCP tool
     pub async fn call_mcp_tool(&self, tool_name: &str, arguments: Value) -> Result<Value> {
         if let Some(ref mcp_server) = self.mcp_server {
+            // Check rate limits if resource manager is enabled
+            if let Some(ref resource_manager) = self.resource_manager {
+                if !resource_manager.check_rate_limit(&self.peer_id, "mcp").await? {
+                    return Err(P2PError::MCP("MCP rate limit exceeded".to_string()));
+                }
+            }
+            
             let context = MCPCallContext {
                 caller_id: self.peer_id.clone(),
                 timestamp: SystemTime::now(),
@@ -653,6 +728,40 @@ impl P2PNode {
         }
     }
     
+    /// Get production resource metrics
+    pub async fn resource_metrics(&self) -> Result<ResourceMetrics> {
+        if let Some(ref resource_manager) = self.resource_manager {
+            Ok(resource_manager.get_metrics().await)
+        } else {
+            Err(P2PError::Network("Production resource manager not enabled".to_string()))
+        }
+    }
+    
+    /// Check system health
+    pub async fn health_check(&self) -> Result<()> {
+        if let Some(ref resource_manager) = self.resource_manager {
+            resource_manager.health_check().await
+        } else {
+            // Basic health check without resource manager
+            let peer_count = self.peer_count().await;
+            if peer_count > self.config.max_connections {
+                Err(P2PError::Network(format!("Too many connections: {}", peer_count)))
+            } else {
+                Ok(())
+            }
+        }
+    }
+    
+    /// Get production configuration (if enabled)
+    pub fn production_config(&self) -> Option<&ProductionConfig> {
+        self.config.production_config.as_ref()
+    }
+    
+    /// Check if production hardening is enabled
+    pub fn is_production_mode(&self) -> bool {
+        self.resource_manager.is_some()
+    }
+    
     /// Get DHT reference
     pub fn dht(&self) -> Option<&Arc<RwLock<DHT>>> {
         self.dht.as_ref()
@@ -762,6 +871,18 @@ impl NodeBuilder {
     /// Set maximum connections
     pub fn with_max_connections(mut self, max: usize) -> Self {
         self.config.max_connections = max;
+        self
+    }
+    
+    /// Enable production mode with default configuration
+    pub fn with_production_mode(mut self) -> Self {
+        self.config.production_config = Some(ProductionConfig::default());
+        self
+    }
+    
+    /// Configure production settings
+    pub fn with_production_config(mut self, production_config: ProductionConfig) -> Self {
+        self.config.production_config = Some(production_config);
         self
     }
     

@@ -4,10 +4,9 @@
 //! S/Kademlia provides enhanced security through disjoint path routing, sibling lists,
 //! and cryptographic verification mechanisms to resist various attacks on the DHT.
 
-use crate::dht::{Key, DHTNode, DHTConfig};
-use crate::security::{IPv6NodeID, ReputationManager, NodeReputation};
+use crate::dht::{Key, DHTNode};
+use crate::security::ReputationManager;
 use crate::{PeerId, Result, P2PError};
-use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant, SystemTime};
@@ -710,12 +709,17 @@ impl SKademlia {
             measurements.push(measurement);
         }
         
-        // Calculate consensus distance (median of measurements)
-        let consensus_distance = self.calculate_consensus_distance(&measurements)?;
-        
         // Calculate overall confidence
         let total_confidence: f64 = measurements.iter().map(|m| m.confidence).sum();
         let confidence = if measurements.is_empty() { 0.0 } else { total_confidence / measurements.len() as f64 };
+        
+        // Calculate consensus distance (handle empty measurements gracefully)
+        let consensus_distance = if measurements.is_empty() {
+            // For empty measurements, use a zero distance
+            Key::from_hash([0u8; 32])
+        } else {
+            self.calculate_consensus_distance(&measurements)?
+        };
         
         Ok(DistanceConsensus {
             target_key: target_key.clone(),
@@ -746,7 +750,7 @@ impl SKademlia {
         let mut successful_rounds = 0;
         let required_rounds = (challenge.max_rounds + 1) / 2; // Majority
         
-        for round in 1..=challenge.max_rounds {
+        for _round in 1..=challenge.max_rounds {
             // Select subset of witness nodes for this round
             let round_witnesses: Vec<_> = challenge.witness_nodes.iter()
                 .take(3) // Use up to 3 witnesses per round
@@ -864,7 +868,7 @@ impl SKademlia {
 
     /// Clean up expired lookups and challenges
     pub fn cleanup_expired(&mut self) {
-        let now = Instant::now();
+        let _now = Instant::now();
         
         // Remove completed or expired lookups
         self.active_lookups.retain(|_, lookup| {

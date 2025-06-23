@@ -5,7 +5,7 @@
 
 use p2p_foundation::tunneling::{
     TunnelManager, TunnelManagerConfig, TunnelProtocol, NetworkCapabilities,
-    detect_network_capabilities, Tunnel, TunnelConfig, TunnelState, TunnelMetrics
+    Tunnel, TunnelConfig, TunnelState, TunnelMetrics
 };
 use p2p_foundation::{Result, P2PError};
 use async_trait::async_trait;

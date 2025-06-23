@@ -193,8 +193,8 @@ pub struct TransportManager {
 struct ConnectionPool {
     /// Active connections
     connections: Vec<Arc<Mutex<Box<dyn Connection>>>>,
-    /// Connection info cache
-    info_cache: HashMap<String, ConnectionInfo>,
+    /// Connection info cache (reserved for future use)
+    _info_cache: HashMap<String, ConnectionInfo>,
     /// Pool statistics
     stats: ConnectionPoolStats,
     /// Pool configuration
@@ -397,7 +397,7 @@ impl ConnectionPool {
     fn new(max_connections: usize) -> Self {
         Self {
             connections: Vec::new(),
-            info_cache: HashMap::new(),
+            _info_cache: HashMap::new(),
             stats: ConnectionPoolStats {
                 messages_per_connection: HashMap::new(),
                 bytes_per_connection: HashMap::new(),

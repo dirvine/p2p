@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// IPv6 prefix for 6to4 tunneling (2002::/16)
 const SIXTO4_PREFIX: u16 = 0x2002;

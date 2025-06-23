@@ -13,8 +13,8 @@ use std::collections::HashMap;
 use serde_json::{json, Value};
 use tokio::time::timeout;
 
-use p2p_foundation::{P2PNode, MCPServer, Tool, MCPService, mcp::*};
-use crate::common::{TestNetwork, TestNetworkConfig, TestNodeConfig, TestDataGen, PerformanceTest};
+use p2p_foundation::{P2PNode, mcp::*};
+use crate::common::{TestNetwork, PerformanceTest};
 
 // Integration test submodules - TBD
 // mod tools;

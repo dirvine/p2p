@@ -493,6 +493,7 @@ impl TunnelManager {
     }
     
     /// Check if a protocol is suitable for the current network conditions
+    #[allow(dead_code)]
     fn is_protocol_suitable(&self, protocol: &TunnelProtocol, capabilities: &NetworkCapabilities) -> bool {
         match protocol {
             TunnelProtocol::SixToFour => {
@@ -928,9 +929,10 @@ async fn detect_interface_mtu() -> u16 {
 }
 
 /// Network interface information
+#[allow(dead_code)]
 #[derive(Debug)]
 struct NetworkInterface {
-    name: String,
+    _name: String,
     ipv4_addrs: Vec<Ipv4Addr>,
     ipv6_addrs: Vec<Ipv6Addr>,
 }
@@ -942,7 +944,7 @@ async fn get_network_interfaces() -> Result<Vec<NetworkInterface>> {
     
     // For now, simulate a typical interface
     let interface = NetworkInterface {
-        name: "eth0".to_string(),
+        _name: "eth0".to_string(),
         ipv4_addrs: vec![Ipv4Addr::new(192, 168, 1, 100)],
         ipv6_addrs: vec![],
     };

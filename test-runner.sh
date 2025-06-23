@@ -77,6 +77,7 @@ OPTIONS:
     --release               Run tests in release mode
     --single-thread         Run tests single-threaded
     --module MODULE         Run specific test module only
+    --list-tests            List all available test files without running them
 
 EXAMPLES:
     $0                          # Run with dev environment
@@ -93,7 +94,9 @@ MODULES:
     mcp         MCP server tests
     security    Security and crypto tests
     scenarios   End-to-end scenario tests
-    all         All integration tests (default)
+    production  Production hardening tests
+    unit        Unit tests (in src/)
+    all         All tests (default)
 
 EOF
 }
@@ -217,6 +220,10 @@ run_test_module() {
         "dht")
             print_info "Running DHT module tests..."
             cargo test --test integration_tests dht_tests $cargo_args
+            cargo test --test ipv6_dht_integration_tests $cargo_args
+            cargo test --test skademlia_tests $cargo_args
+            cargo test --test skademlia_integration_tests $cargo_args
+            cargo test --test distance_verification_tests $cargo_args
             ;;
         "transport")
             print_info "Running transport layer tests..."
@@ -225,29 +232,130 @@ run_test_module() {
         "tunneling")
             print_info "Running tunneling protocol tests..."
             cargo test --test integration_tests tunneling_tests $cargo_args
+            cargo test --test tunneling_integration_tests $cargo_args
+            cargo test --test tunneling_auto_selection_tests $cargo_args
             ;;
         "mcp")
             print_info "Running MCP server tests..."
             cargo test --test integration_tests mcp_tests $cargo_args
+            cargo test --test mcp_integration_tests $cargo_args
+            cargo test --test mcp_remote_tests $cargo_args
+            cargo test --test mcp_security_tests $cargo_args
             ;;
         "security")
             print_info "Running security module tests..."
             cargo test --test integration_tests security_tests $cargo_args
+            cargo test --test security_tests $cargo_args
+            cargo test --test security_comprehensive_tests $cargo_args
+            cargo test --test simple_security_test $cargo_args
             ;;
         "scenarios")
             print_info "Running end-to-end scenario tests..."
             cargo test --test integration_tests scenario_tests $cargo_args
+            cargo test --test comprehensive_integration_tests $cargo_args
+            ;;
+        "production")
+            print_info "Running production hardening tests..."
+            cargo test --test production_test $cargo_args
+            ;;
+        "unit")
+            print_info "Running unit tests..."
+            cargo test --lib $cargo_args
             ;;
         "all")
-            print_info "Running all integration tests..."
-            cargo test --test integration_tests $cargo_args
+            print_info "Running all tests..."
+            
+            # Unit tests
+            print_info "  -> Unit tests"
+            cargo test --lib $cargo_args || return 1
+            
+            # Integration tests
+            print_info "  -> Main integration tests"
+            cargo test --test integration_tests $cargo_args || return 1
+            
+            # DHT tests
+            print_info "  -> DHT tests"
+            cargo test --test ipv6_dht_integration_tests $cargo_args || return 1
+            cargo test --test skademlia_tests $cargo_args || return 1
+            cargo test --test skademlia_integration_tests $cargo_args || return 1
+            cargo test --test distance_verification_tests $cargo_args || return 1
+            
+            # Tunneling tests
+            print_info "  -> Tunneling tests"
+            cargo test --test tunneling_integration_tests $cargo_args || return 1
+            cargo test --test tunneling_auto_selection_tests $cargo_args || return 1
+            
+            # MCP tests
+            print_info "  -> MCP tests"
+            cargo test --test mcp_integration_tests $cargo_args || return 1
+            cargo test --test mcp_remote_tests $cargo_args || return 1
+            cargo test --test mcp_security_tests $cargo_args || return 1
+            
+            # Security tests
+            print_info "  -> Security tests"
+            cargo test --test security_tests $cargo_args || return 1
+            cargo test --test security_comprehensive_tests $cargo_args || return 1
+            cargo test --test simple_security_test $cargo_args || return 1
+            
+            # Production tests
+            print_info "  -> Production tests"
+            cargo test --test production_test $cargo_args || return 1
+            
+            # Comprehensive tests
+            print_info "  -> Comprehensive integration tests"
+            cargo test --test comprehensive_integration_tests $cargo_args || return 1
             ;;
         *)
             print_error "Unknown test module: $module"
-            print_info "Valid modules: network, dht, transport, tunneling, mcp, security, scenarios, all"
+            print_info "Valid modules: network, dht, transport, tunneling, mcp, security, scenarios, production, unit, all"
             exit 1
             ;;
     esac
+}
+
+# List all available test files
+list_tests() {
+    print_info "Available test files:"
+    echo
+    
+    print_info "Unit tests (in src/):"
+    echo "  - cargo test --lib"
+    echo
+    
+    print_info "Integration test files:"
+    echo "  - integration_tests.rs (main integration tests)"
+    echo "  - comprehensive_integration_tests.rs (end-to-end scenarios)"
+    echo
+    
+    print_info "DHT test files:"
+    echo "  - ipv6_dht_integration_tests.rs"
+    echo "  - skademlia_tests.rs"
+    echo "  - skademlia_integration_tests.rs" 
+    echo "  - distance_verification_tests.rs"
+    echo
+    
+    print_info "Tunneling test files:"
+    echo "  - tunneling_integration_tests.rs"
+    echo "  - tunneling_auto_selection_tests.rs"
+    echo
+    
+    print_info "MCP test files:"
+    echo "  - mcp_integration_tests.rs"
+    echo "  - mcp_remote_tests.rs"
+    echo "  - mcp_security_tests.rs"
+    echo
+    
+    print_info "Security test files:"
+    echo "  - security_tests.rs"
+    echo "  - security_comprehensive_tests.rs" 
+    echo "  - simple_security_test.rs"
+    echo
+    
+    print_info "Production test files:"
+    echo "  - production_test.rs"
+    echo
+    
+    print_info "Total test files: 14 integration test files + unit tests"
 }
 
 # Main function
@@ -265,6 +373,10 @@ main() {
         case $1 in
             -h|--help)
                 show_help
+                exit 0
+                ;;
+            --list-tests)
+                list_tests
                 exit 0
                 ;;
             dev|ci|bench|stress)

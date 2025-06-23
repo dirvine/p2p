@@ -29,8 +29,8 @@ pub struct TcpConnection {
     remote_addr: Multiaddr,
     /// Connection info
     info: ConnectionInfo,
-    /// Whether the connection is encrypted
-    encrypted: bool,
+    /// Whether the connection is encrypted (reserved for future TLS support)
+    _encrypted: bool,
 }
 
 impl TcpTransport {
@@ -114,7 +114,7 @@ impl Transport for TcpTransport {
             local_addr: local_multiaddr,
             remote_addr: remote_multiaddr,
             info: connection_info,
-            encrypted: self.require_tls,
+            _encrypted: self.require_tls,
         };
         
         info!("TCP connection established to {}", addr);

@@ -46,100 +46,135 @@ pub const SERVICE_DISCOVERY_INTERVAL: Duration = Duration::from_secs(60);
 pub enum MCPMessage {
     /// Initialize MCP session
     Initialize {
+        /// MCP protocol version being used
         protocol_version: String,
+        /// Client capabilities for this session
         capabilities: MCPCapabilities,
+        /// Information about the connecting client
         client_info: MCPClientInfo,
     },
     /// Initialize response
     InitializeResult {
+        /// MCP protocol version the server supports
         protocol_version: String,
+        /// Server capabilities for this session
         capabilities: MCPCapabilities,
+        /// Information about the MCP server
         server_info: MCPServerInfo,
     },
     /// List available tools
     ListTools {
+        /// Pagination cursor for large tool lists
         cursor: Option<String>,
     },
     /// List tools response
     ListToolsResult {
+        /// Available tools on this server
         tools: Vec<MCPTool>,
+        /// Next pagination cursor if more tools available
         next_cursor: Option<String>,
     },
     /// Call a tool
     CallTool {
+        /// Name of the tool to call
         name: String,
+        /// Arguments to pass to the tool
         arguments: Value,
     },
     /// Tool call response
     CallToolResult {
+        /// Content returned by the tool
         content: Vec<MCPContent>,
+        /// Whether the call resulted in an error
         is_error: bool,
     },
     /// List available prompts
     ListPrompts {
+        /// Pagination cursor for large prompt lists
         cursor: Option<String>,
     },
     /// List prompts response
     ListPromptsResult {
+        /// Available prompts on this server
         prompts: Vec<MCPPrompt>,
+        /// Next pagination cursor if more prompts available
         next_cursor: Option<String>,
     },
     /// Get a prompt
     GetPrompt {
+        /// Name of the prompt to retrieve
         name: String,
+        /// Arguments to customize the prompt
         arguments: Option<Value>,
     },
     /// Get prompt response
     GetPromptResult {
+        /// Description of the prompt
         description: Option<String>,
+        /// Prompt messages/content
         messages: Vec<MCPPromptMessage>,
     },
     /// List available resources
     ListResources {
+        /// Pagination cursor for large resource lists
         cursor: Option<String>,
     },
     /// List resources response
     ListResourcesResult {
+        /// Available resources on this server
         resources: Vec<MCPResource>,
+        /// Next pagination cursor if more resources available
         next_cursor: Option<String>,
     },
     /// Read a resource
     ReadResource {
+        /// URI of the resource to read
         uri: String,
     },
     /// Read resource response
     ReadResourceResult {
+        /// Contents of the requested resource
         contents: Vec<MCPResourceContent>,
     },
     /// Subscribe to resource
     SubscribeResource {
+        /// URI of the resource to subscribe to
         uri: String,
     },
     /// Unsubscribe from resource
     UnsubscribeResource {
+        /// URI of the resource to unsubscribe from
         uri: String,
     },
     /// Resource updated notification
     ResourceUpdated {
+        /// URI of the resource that was updated
         uri: String,
     },
     /// List logs
     ListLogs {
+        /// Pagination cursor for large log lists
         cursor: Option<String>,
     },
     /// List logs response
     ListLogsResult {
+        /// Log entries available on this server
         logs: Vec<MCPLogEntry>,
+        /// Next pagination cursor if more logs available
         next_cursor: Option<String>,
     },
     /// Set log level
     SetLogLevel {
+        /// Log level to set for the server
         level: MCPLogLevel,
     },
     /// Error response
     Error {
+        /// Error code identifying the type of error
         code: i32,
+        /// Human-readable error message
         message: String,
+        /// Optional additional error data
         data: Option<Value>,
     },
 }
@@ -283,13 +318,13 @@ pub trait ToolHandler {
 pub struct ToolRequirements {
     /// Maximum memory usage in bytes
     pub max_memory: Option<u64>,
-    /// Maximum execution time
+    /// Maximum execution time allowed for tool calls
     pub max_execution_time: Option<Duration>,
-    /// Required capabilities
+    /// Required capabilities that must be available
     pub required_capabilities: Vec<String>,
-    /// Network access required
+    /// Whether this tool requires network access
     pub requires_network: bool,
-    /// File system access required
+    /// Whether this tool requires file system access
     pub requires_filesystem: bool,
 }
 
@@ -311,15 +346,19 @@ impl Default for ToolRequirements {
 pub enum MCPContent {
     /// Text content
     Text {
+        /// The text content
         text: String,
     },
     /// Image content
     Image {
+        /// Base64-encoded image data
         data: String,
+        /// MIME type of the image
         mime_type: String,
     },
     /// Resource content
     Resource {
+        /// Reference to an MCP resource
         resource: MCPResourceReference,
     },
 }
@@ -648,9 +687,11 @@ pub struct MCPServer {
     config: MCPServerConfig,
     /// Registered tools
     tools: Arc<RwLock<HashMap<String, Tool>>>,
-    /// Registered prompts
+    /// Registered prompts (reserved for future implementation)
+    #[allow(dead_code)]
     prompts: Arc<RwLock<HashMap<String, MCPPrompt>>>,
-    /// Registered resources
+    /// Registered resources (reserved for future implementation)
+    #[allow(dead_code)]
     resources: Arc<RwLock<HashMap<String, MCPResource>>>,
     /// Active sessions
     sessions: Arc<RwLock<HashMap<String, MCPSession>>>,
@@ -666,7 +707,8 @@ pub struct MCPServer {
     stats: Arc<RwLock<MCPServerStats>>,
     /// Message channel for incoming requests
     request_tx: mpsc::UnboundedSender<MCPRequest>,
-    /// Message channel for outgoing responses
+    /// Message channel for outgoing responses (reserved for future implementation)
+    #[allow(dead_code)]
     response_rx: Arc<RwLock<mpsc::UnboundedReceiver<MCPResponse>>>,
     /// Security manager
     security_manager: Option<Arc<MCPSecurityManager>>,

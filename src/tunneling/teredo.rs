@@ -18,21 +18,25 @@ use async_trait::async_trait;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// IPv6 prefix for Teredo tunneling (2001::/32)
+#[allow(dead_code)]
 const TEREDO_PREFIX: u32 = 0x2001_0000;
 
 /// Default Teredo server address (Using a public IPv4 address for testing)
 const DEFAULT_TEREDO_SERVER: &str = "65.55.158.118:3544";
 
 /// Teredo relay discovery multicast address
+#[allow(dead_code)]
 const TEREDO_DISCOVERY_ADDR: &str = "ff02::2:0000";
 
 /// Protocol number for IPv6-in-UDP encapsulation
+#[allow(dead_code)]
 const IPV6_IN_UDP_PROTOCOL: u8 = 41;
 
 /// Teredo packet types
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 enum TeredoPacketType {
     /// Router Solicitation for initial setup
@@ -46,6 +50,7 @@ enum TeredoPacketType {
 }
 
 /// Teredo address components
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct TeredoAddress {
     /// Server IPv4 address
@@ -141,6 +146,7 @@ impl TeredoTunnel {
     }
 
     /// Parse a Teredo IPv6 address to extract components
+    #[allow(dead_code)]
     fn parse_teredo_address(ipv6: &Ipv6Addr) -> Option<TeredoAddress> {
         let segments = ipv6.segments();
         

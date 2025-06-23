@@ -11,8 +11,8 @@ use anyhow::Result;
 use std::time::Duration;
 use tokio::time::timeout;
 
-use p2p_foundation::{P2PNode, NodeConfig, PeerId, Multiaddr};
-use crate::common::{TestNetwork, TestNetworkConfig, TestNodeConfig, TestAssertions, PerformanceTest};
+use p2p_foundation::{P2PNode, NodeConfig, Multiaddr};
+use crate::common::{TestNetwork, TestAssertions, PerformanceTest};
 
 // Integration test submodules - TBD
 // mod node_lifecycle;

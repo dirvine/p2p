@@ -42,7 +42,7 @@ fn create_test_skademlia() -> SKademlia {
 #[tokio::test]
 async fn test_disjoint_path_lookup_creation() -> Result<()> {
     let target = Key::new(b"test_target_key");
-    let mut lookup = DisjointPathLookup::new(target.clone(), 3, 1);
+    let lookup = DisjointPathLookup::new(target.clone(), 3, 1);
     
     // Verify initial state
     assert_eq!(lookup.target, target);
@@ -255,7 +255,7 @@ async fn test_sibling_routing_verification() -> Result<()> {
     // Create target and proposed nodes
     let target = Key::new(b"target_key");
     let good_node = create_test_node("good", 5); // Closer to target
-    let bad_node = create_test_node("bad", 200); // Further from target than local
+    let _bad_node = create_test_node("bad", 200); // Further from target than local
     
     // Test verification with reasonable proposal
     assert!(sibling_list.verify_routing_decision(&target, &[good_node]));
@@ -402,11 +402,11 @@ async fn test_skademlia_cleanup() -> Result<()> {
     let lookup = DisjointPathLookup::new(key.clone(), 3, 1);
     skademlia.active_lookups.insert(key.clone(), lookup);
     
-    let challenge = skademlia.create_distance_challenge(&peer_id, &key);
+    let _challenge = skademlia.create_distance_challenge(&peer_id, &key);
     // Challenge should be in pending_challenges
     
     let initial_lookups = skademlia.active_lookups.len();
-    let initial_challenges = skademlia.pending_challenges.len();
+    let _initial_challenges = skademlia.pending_challenges.len();
     
     // Cleanup (this should remove expired items)
     skademlia.cleanup_expired();
@@ -477,13 +477,13 @@ async fn test_complete_disjoint_lookup_flow() -> Result<()> {
     }
     
     // Check for results
-    let all_results = lookup.get_results();
+    let _all_results = lookup.get_results();
     // Results might be empty if nodes aren't close enough to target, so let's check the paths have nodes
     let has_results = lookup.path_states.iter().any(|path| !path.results.is_empty() || !path.to_query.is_empty());
     assert!(has_results, "Lookup should have some results or nodes to query");
     
     // Validate results consistency
-    let is_consistent = lookup.validate_results()?;
+    let _is_consistent = lookup.validate_results()?;
     // Consistency depends on having overlapping results across paths
     
     Ok(())
@@ -540,7 +540,7 @@ async fn test_disjoint_path_performance() -> Result<()> {
     
     // Test disjointness verification performance
     let start = Instant::now();
-    let is_disjoint = lookup.verify_disjointness();
+    let _is_disjoint = lookup.verify_disjointness();
     let verify_duration = start.elapsed();
     
     assert!(verify_duration < Duration::from_millis(10));

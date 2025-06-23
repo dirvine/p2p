@@ -5,11 +5,36 @@
 
 use p2p_foundation::tunneling::{
     TunnelManager, TunnelManagerConfig, TunnelProtocol, NetworkCapabilities,
-    detect_network_capabilities
+    detect_network_capabilities, create_tunnel, create_tunnel_config
 };
-use std::net::{Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
 use tokio::time;
+
+/// Helper function to create a tunnel manager with all tunnel implementations registered
+async fn create_initialized_tunnel_manager(config: TunnelManagerConfig) -> TunnelManager {
+    let manager = TunnelManager::with_config(config);
+    
+    // Create basic capabilities for tunnel creation
+    let basic_capabilities = NetworkCapabilities {
+        has_ipv4: true,
+        has_ipv6: false,
+        behind_nat: false,
+        public_ipv4: Some("203.0.113.1".parse().unwrap()),
+        ipv6_addresses: Vec::new(),
+        has_upnp: false,
+        interface_mtu: 1500,
+    };
+    
+    // Create and register all tunnel types
+    for protocol in [TunnelProtocol::SixToFour, TunnelProtocol::Teredo, TunnelProtocol::SixInFour] {
+        let config = create_tunnel_config(protocol, &basic_capabilities);
+        if let Ok(tunnel) = create_tunnel(config) {
+            manager.add_tunnel(tunnel).await;
+        }
+    }
+    
+    manager
+}
 
 /// Test network capability detection with various scenarios
 #[tokio::test]
@@ -42,7 +67,7 @@ async fn test_auto_selection_6to4_preferred() -> anyhow::Result<()> {
         ..Default::default()
     };
     
-    let manager = TunnelManager::with_config(config);
+    let manager = create_initialized_tunnel_manager(config).await;
     
     // Mock capabilities: public IPv4, no NAT - should prefer 6to4
     let capabilities = NetworkCapabilities {
@@ -78,7 +103,7 @@ async fn test_auto_selection_teredo_preferred() -> anyhow::Result<()> {
         ..Default::default()
     };
     
-    let manager = TunnelManager::with_config(config);
+    let manager = create_initialized_tunnel_manager(config).await;
     
     // Mock capabilities: behind NAT, no public IPv4 - should prefer Teredo
     let capabilities = NetworkCapabilities {
@@ -113,7 +138,7 @@ async fn test_auto_selection_6in4_fallback() -> anyhow::Result<()> {
         ..Default::default()
     };
     
-    let manager = TunnelManager::with_config(config);
+    let manager = create_initialized_tunnel_manager(config).await;
     
     // Mock capabilities: limited IPv4, no good options - should fallback to 6in4
     let capabilities = NetworkCapabilities {

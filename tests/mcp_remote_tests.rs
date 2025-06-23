@@ -7,7 +7,6 @@ use p2p_foundation::{P2PNode, NodeConfig, Result};
 use p2p_foundation::mcp::{Tool, ToolHandler, P2PMCPMessage, P2PMCPMessageType, MCPMessage};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use std::time::Duration;
 
 /// Simple calculator tool for testing
 struct CalculatorTool;
@@ -54,12 +53,18 @@ impl ToolHandler for CalculatorTool {
 
 /// Helper function to create a test P2P node with MCP enabled
 async fn create_test_node_with_mcp(peer_id: &str) -> Result<Arc<P2PNode>> {
+    // Create MCP config with authentication and rate limiting disabled for testing
+    let mut mcp_config = p2p_foundation::mcp::MCPServerConfig::default();
+    mcp_config.enable_auth = false;         // Disable authentication for testing
+    mcp_config.enable_rate_limiting = false; // Disable rate limiting for testing
+    
     let config = NodeConfig {
         peer_id: Some(peer_id.to_string()),
         listen_addrs: vec![
             format!("/ip4/127.0.0.1/tcp/{}", 9000 + rand::random::<u16>() % 1000)
         ],
         enable_mcp_server: true,
+        mcp_server_config: Some(mcp_config),
         ..NodeConfig::default()
     };
     

@@ -8,7 +8,7 @@ use ed25519_dalek::Keypair;
 use p2p_foundation::security::*;
 use std::net::Ipv6Addr;
 use std::str::FromStr;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 /// Test IPv6-based node ID generation
 #[tokio::test]
@@ -260,7 +260,6 @@ async fn test_subnet_prefix_extraction() -> Result<()> {
 /// Test reputation management system
 #[tokio::test]
 async fn test_reputation_management() -> Result<()> {
-    use p2p_foundation::PeerId;
     
     let mut reputation_manager = ReputationManager::new(0.1, 0.1);
     
@@ -299,7 +298,6 @@ async fn test_reputation_management() -> Result<()> {
 /// Test reputation decay over time
 #[tokio::test]
 async fn test_reputation_decay() -> Result<()> {
-    use p2p_foundation::PeerId;
     
     let mut reputation_manager = ReputationManager::new(1.0, 0.1); // High decay rate
     let peer_id = "test-peer-decay-456".to_string();
@@ -388,7 +386,7 @@ async fn test_sybil_attack_prevention() -> Result<()> {
 #[tokio::test] 
 async fn test_attack_cost_analysis() -> Result<()> {
     let config = IPDiversityConfig::default();
-    let enforcer = IPDiversityEnforcer::new(config);
+    let _enforcer = IPDiversityEnforcer::new(config);
     
     // Calculate how many /64 subnets an attacker would need to control
     // significant portion of keyspace

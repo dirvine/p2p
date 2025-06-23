@@ -654,8 +654,8 @@ async fn test_comprehensive_security_validation() -> Result<()> {
             info!("DHT stats: {:?}", stats);
             
             // Verify DHT is functional
-            assert!(stats.total_nodes >= 0, "Should have valid node count");
-            assert!(stats.stored_records >= 0, "Should have valid record count");
+            // Stats validation - total_nodes is usize, always >= 0
+            // Stats validation - stored_records is usize, always >= 0
             
             info!("✓ IPv6 security validation passed");
         }

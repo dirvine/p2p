@@ -3,12 +3,11 @@
 //! This module provides shared testing infrastructure for all integration tests,
 //! including test network setup, configuration builders, and assertion helpers.
 
-use std::net::SocketAddr;
 use std::time::Duration;
 use std::collections::HashMap;
 use anyhow::Result;
 use tokio::time::timeout;
-use p2p_foundation::{P2PNode, NodeConfig, PeerId, Multiaddr};
+use p2p_foundation::{P2PNode, NodeConfig, Multiaddr};
 
 /// Test network configuration
 #[derive(Debug, Clone)]

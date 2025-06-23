@@ -95,6 +95,7 @@ impl TestResults {
 
 /// Test suite runner
 pub struct TestSuiteRunner {
+    #[allow(dead_code)]
     config: IntegrationTestConfig,
 }
 
@@ -300,7 +301,7 @@ async fn test_quic_transport() -> Result<()> {
 /// Test QUIC-specific advanced features
 #[tokio::test]
 async fn test_quic_advanced_features() -> Result<()> {
-    use p2p_foundation::transport::{QuicTransport, Transport, TransportManager, TransportSelection, TransportOptions};
+    use p2p_foundation::transport::{QuicTransport, TransportManager, TransportSelection, TransportOptions};
     
     println!("Testing QUIC advanced features...");
     
@@ -435,7 +436,7 @@ async fn test_dht_data_operations() -> Result<()> {
     // Test record expiration (using custom TTL)
     let expiring_key = Key::new(b"expiring_record");
     let short_ttl = Duration::from_millis(100);
-    let expiring_record = Record::with_ttl(
+    let _expiring_record = Record::with_ttl(
         expiring_key.clone(), 
         b"will_expire".to_vec(), 
         "test_publisher".to_string(), 
@@ -543,8 +544,7 @@ async fn test_dht_query_protocol() -> Result<()> {
 /// Test DHT maintenance operations
 #[tokio::test]
 async fn test_dht_maintenance() -> Result<()> {
-    use p2p_foundation::dht::{DHT, DHTConfig, Key, Record};
-    use std::time::{Duration, SystemTime};
+    use p2p_foundation::dht::{DHT, DHTConfig, Key};
     
     println!("Testing DHT maintenance operations...");
     
@@ -612,7 +612,7 @@ async fn test_dht_maintenance() -> Result<()> {
 /// Test DHT with multiple nodes and data replication scenarios
 #[tokio::test]
 async fn test_dht_multi_node_scenarios() -> Result<()> {
-    use p2p_foundation::dht::{DHT, DHTConfig, Key, DHTNode};
+    use p2p_foundation::dht::{DHT, DHTConfig, Key};
     
     println!("Testing DHT multi-node scenarios...");
     
@@ -625,7 +625,7 @@ async fn test_dht_multi_node_scenarios() -> Result<()> {
     
     // Test adding peers to routing tables
     for (i, dht) in dhts.iter().enumerate() {
-        for (j, other_id) in node_ids.iter().enumerate() {
+        for (j, _other_id) in node_ids.iter().enumerate() {
             if i != j {
                 let peer_id = format!("peer_{}", j);
                 let addresses = vec![format!("/ip4/127.0.0.1/tcp/{}", 9000 + j)];
@@ -697,7 +697,7 @@ async fn test_dht_multi_node_scenarios() -> Result<()> {
 /// Test Kademlia routing table functionality
 #[tokio::test]
 async fn test_kademlia_routing() -> Result<()> {
-    use p2p_foundation::dht::{DHT, DHTConfig, Key, DHTNode};
+    use p2p_foundation::dht::{DHT, DHTConfig, Key};
     
     println!("Testing Kademlia routing table...");
     
@@ -716,7 +716,7 @@ async fn test_kademlia_routing() -> Result<()> {
     
     // Test node discovery
     let target_key = Key::random();
-    let closest_nodes = dht.find_node(&target_key).await;
+    let _closest_nodes = dht.find_node(&target_key).await;
     
     println!("✅ Bootstrap nodes can be added");
     println!("✅ Node discovery returns closest nodes");
@@ -833,10 +833,9 @@ async fn test_network_functionality() -> Result<()> {
 #[tokio::test]
 async fn test_tunneling_architecture() -> Result<()> {
     use p2p_foundation::tunneling::{
-        TunnelManager, TunnelManagerConfig, TunnelProtocol, TunnelConfig,
-        NetworkCapabilities, detect_network_capabilities, create_tunnel_config, create_tunnel
+        TunnelManager, TunnelProtocol,
+        detect_network_capabilities, create_tunnel_config
     };
-    use std::net::Ipv4Addr;
     
     println!("Testing tunneling architecture...");
     
@@ -1169,7 +1168,7 @@ async fn test_sixto4_tunneling() -> Result<()> {
 async fn test_tunnel_manager() -> Result<()> {
     use p2p_foundation::tunneling::{
         TunnelManager, TunnelManagerConfig, TunnelProtocol, TunnelConfig,
-        NetworkCapabilities, SixToFourTunnel, create_tunnel
+        NetworkCapabilities, create_tunnel
     };
     use std::net::Ipv4Addr;
     

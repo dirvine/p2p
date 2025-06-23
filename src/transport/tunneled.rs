@@ -5,16 +5,16 @@
 //! with the transport layer for seamless IPv6 connectivity.
 
 use super::{Transport, Connection, TransportType, TransportOptions, ConnectionInfo, ConnectionQuality};
-use crate::tunneling::{TunnelManager, TunnelManagerConfig, NetworkCapabilities, detect_network_capabilities};
-use crate::{PeerId, Multiaddr, P2PError, Result};
+use crate::tunneling::{TunnelManager, TunnelManagerConfig, detect_network_capabilities};
+use crate::{Multiaddr, P2PError, Result};
 use async_trait::async_trait;
 use std::net::{SocketAddr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{RwLock, Mutex};
+use tokio::sync::RwLock;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tracing::{debug, info, warn, error};
+use tracing::{debug, info, warn};
 
 /// Tunneled transport that provides IPv6 connectivity over IPv4 networks
 pub struct TunneledTransport {
@@ -51,7 +51,7 @@ struct TunnelInfo {
     /// Tunnel establishment time
     pub established_at: Instant,
     /// Last successful communication
-    pub last_success: Instant,
+    pub _last_success: Instant,
 }
 
 /// Tunneled connection implementation
@@ -65,7 +65,7 @@ pub struct TunneledConnection {
     /// Connection establishment time
     established_at: Instant,
     /// Tunnel information
-    tunnel_info: TunnelInfo,
+    _tunnel_info: TunnelInfo,
 }
 
 impl Default for TunnelTransportConfig {
@@ -124,7 +124,7 @@ impl TunneledTransport {
                 protocol: crate::tunneling::TunnelProtocol::SixToFour, // Placeholder
                 local_ipv6: capabilities.ipv6_addresses[0],
                 established_at: Instant::now(),
-                last_success: Instant::now(),
+                _last_success: Instant::now(),
             });
         }
         
@@ -161,7 +161,7 @@ impl TunneledTransport {
                 protocol: selection.protocol,
                 local_ipv6,
                 established_at: Instant::now(),
-                last_success: Instant::now(),
+                _last_success: Instant::now(),
             };
             
             info!("Tunnel established successfully: {:?} -> {}", 
@@ -271,7 +271,7 @@ impl Transport for TunneledTransport {
             local_addr: format!("/ip6/{}/tcp/{}", local_addr.ip(), local_addr.port()),
             remote_addr: format!("/ip6/{}/tcp/{}", remote_addr.ip(), remote_addr.port()),
             established_at: Instant::now(),
-            tunnel_info,
+            _tunnel_info: tunnel_info,
         };
         
         Ok(Box::new(connection))

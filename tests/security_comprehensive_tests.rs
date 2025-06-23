@@ -9,7 +9,7 @@ use p2p_foundation::security::*;
 use std::collections::HashSet;
 use std::net::Ipv6Addr;
 use std::str::FromStr;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 /// Test IPv6 node ID generation with various inputs
 #[tokio::test]

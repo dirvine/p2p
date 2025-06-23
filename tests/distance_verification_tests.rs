@@ -217,10 +217,10 @@ async fn test_distance_verification_integration() -> Result<()> {
 /// Test witness node selection
 #[tokio::test]
 async fn test_witness_node_selection() -> Result<()> {
-    let dht = create_dht_with_distance_verification().await;
+    let _dht = create_dht_with_distance_verification().await;
     
     let target_peer = "witness_test_peer".to_string();
-    let witness_count = 3;
+    let _witness_count = 3;
     
     // Simulate witness node selection logic
     // Since routing table is empty in test, we expect empty or minimal results
@@ -312,7 +312,7 @@ async fn test_challenge_timeout_handling() -> Result<()> {
 /// Performance test for distance verification operations
 #[tokio::test]
 async fn test_distance_verification_performance() -> Result<()> {
-    let dht = create_dht_with_distance_verification().await;
+    let _dht = create_dht_with_distance_verification().await;
     
     let test_nodes = create_distance_test_nodes(100);
     let _target_key = Key::new(b"performance_test_key");

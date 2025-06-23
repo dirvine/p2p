@@ -52,6 +52,9 @@ pub mod security;
 /// Utility functions and types
 pub mod utils;
 
+/// Production hardening features
+pub mod production;
+
 /// Error types
 pub mod error;
 
@@ -59,10 +62,20 @@ pub mod error;
 pub use network::{P2PNode, NodeConfig, NodeBuilder};
 pub use dht::{Key, Record};
 pub use mcp::{MCPServer, Tool, MCPService};
+pub use production::{ProductionConfig, ResourceManager, ResourceMetrics};
 pub use error::{P2PError, Result};
 
 // Placeholder types (will be replaced with actual libp2p types)
+/// Peer identifier used throughout the P2P Foundation
+/// 
+/// Currently implemented as a String for simplicity, but will be replaced
+/// with proper libp2p PeerId type in future versions.
 pub type PeerId = String;
+
+/// Multiaddress used for network addressing
+/// 
+/// Currently implemented as a String for simplicity, but will be replaced  
+/// with proper libp2p Multiaddr type in future versions.
 pub type Multiaddr = String;
 
 /// P2P Foundation version

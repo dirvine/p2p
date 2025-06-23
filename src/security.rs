@@ -425,13 +425,21 @@ impl IPDiversityEnforcer {
 /// Diversity statistics for monitoring
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiversityStats {
+    /// Number of unique /64 subnets represented
     pub total_64_subnets: usize,
+    /// Number of unique /48 subnets represented
     pub total_48_subnets: usize,
+    /// Number of unique /32 subnets represented
     pub total_32_subnets: usize,
+    /// Number of unique ASNs represented
     pub total_asns: usize,
+    /// Number of unique countries represented
     pub total_countries: usize,
+    /// Maximum nodes in any single /64 subnet
     pub max_nodes_per_64: usize,
+    /// Maximum nodes in any single /48 subnet
     pub max_nodes_per_48: usize,
+    /// Maximum nodes in any single /32 subnet
     pub max_nodes_per_32: usize,
 }
 

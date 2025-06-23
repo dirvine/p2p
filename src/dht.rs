@@ -15,7 +15,6 @@ use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 use futures;
-use anyhow;
 
 // S/Kademlia security extensions
 pub mod skademlia;
@@ -138,7 +137,8 @@ pub struct RoutingTable {
     local_id: Key,
     /// K-buckets indexed by distance
     buckets: Vec<RwLock<KBucket>>,
-    /// Configuration
+    /// Configuration (reserved for future use)
+    #[allow(dead_code)]
     config: DHTConfig,
 }
 
@@ -147,7 +147,8 @@ pub struct RoutingTable {
 pub struct DHTStorage {
     /// Stored records
     records: RwLock<HashMap<Key, Record>>,
-    /// Configuration
+    /// Configuration (reserved for future use)
+    #[allow(dead_code)]
     config: DHTConfig,
 }
 
@@ -160,7 +161,8 @@ pub struct DHT {
     routing_table: RoutingTable,
     /// Local storage
     storage: DHTStorage,
-    /// Configuration
+    /// Configuration (reserved for future use)
+    #[allow(dead_code)]
     config: DHTConfig,
     /// S/Kademlia security extensions
     pub skademlia: Option<skademlia::SKademlia>,
@@ -172,28 +174,61 @@ pub struct DHT {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DHTQuery {
     /// Find nodes close to a key
-    FindNode { key: Key, requester: PeerId },
+    FindNode { 
+        /// The key to find nodes near
+        key: Key, 
+        /// ID of the requesting peer
+        requester: PeerId 
+    },
     /// Find value for a key
-    FindValue { key: Key, requester: PeerId },
+    FindValue { 
+        /// The key to find value for
+        key: Key, 
+        /// ID of the requesting peer
+        requester: PeerId 
+    },
     /// Store a record
-    Store { record: Record, requester: PeerId },
+    Store { 
+        /// The record to store
+        record: Record, 
+        /// ID of the requesting peer
+        requester: PeerId 
+    },
     /// Ping to check node availability
-    Ping { requester: PeerId },
+    Ping { 
+        /// ID of the requesting peer
+        requester: PeerId 
+    },
 }
 
 /// DHT response types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DHTResponse {
     /// Response to FindNode query
-    Nodes { nodes: Vec<SerializableDHTNode> },
+    Nodes { 
+        /// List of nodes near the requested key
+        nodes: Vec<SerializableDHTNode> 
+    },
     /// Response to FindValue query
-    Value { record: Record },
+    Value { 
+        /// The found record
+        record: Record 
+    },
     /// Response to Store query
-    Stored { success: bool },
+    Stored { 
+        /// Whether storage was successful
+        success: bool 
+    },
     /// Response to Ping query
-    Pong { responder: PeerId },
+    Pong { 
+        /// ID of the responding peer
+        responder: PeerId 
+    },
     /// Error response
-    Error { message: String },
+    Error { 
+        /// Error message describing what went wrong
+        message: String 
+    },
 }
 
 /// DHT lookup state for iterative queries
@@ -1049,7 +1084,8 @@ impl DHT {
     }
 
     /// Verify distances of multiple nodes using enhanced consensus
-    async fn verify_node_distances(&self, nodes: &[DHTNode], target_key: &Key, min_reputation: f64) -> Result<Vec<DHTNode>> {
+    #[allow(dead_code)]
+    async fn verify_node_distances(&self, nodes: &[DHTNode], _target_key: &Key, min_reputation: f64) -> Result<Vec<DHTNode>> {
         let mut verified_nodes = Vec::new();
         
         for node in nodes {

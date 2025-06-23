@@ -88,33 +88,49 @@ pub struct IPv6VerificationResult {
 pub enum IPv6SecurityEvent {
     /// Node joined with valid IPv6 identity
     NodeJoined {
+        /// ID of the peer that joined
         peer_id: PeerId,
+        /// IPv6 address of the peer
         ipv6_addr: Ipv6Addr,
+        /// Confidence level of identity verification (0.0-1.0)
         verification_confidence: f64,
     },
     /// Node failed IPv6 verification
     VerificationFailed {
+        /// ID of the peer that failed verification
         peer_id: PeerId,
+        /// IPv6 address that failed verification
         ipv6_addr: Ipv6Addr,
+        /// Reason for verification failure
         reason: String,
     },
     /// IP diversity violation detected
     DiversityViolation {
+        /// ID of the peer causing violation
         peer_id: PeerId,
+        /// IPv6 address involved in violation
         ipv6_addr: Ipv6Addr,
+        /// Type of subnet causing the violation
         subnet_type: String,
     },
     /// Node banned for security violations
     NodeBanned {
+        /// ID of the banned peer
         peer_id: PeerId,
+        /// IPv6 address of the banned peer
         ipv6_addr: Ipv6Addr,
+        /// Reason for banning
         reason: String,
+        /// Duration of the ban
         ban_duration: Duration,
     },
     /// Suspicious activity detected
     SuspiciousActivity {
+        /// ID of the suspicious peer
         peer_id: PeerId,
+        /// IPv6 address of the suspicious peer
         ipv6_addr: Ipv6Addr,
+        /// Type of suspicious activity detected
         activity_type: String,
     },
 }
