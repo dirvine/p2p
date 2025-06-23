@@ -220,9 +220,7 @@ Built on top of excellent open source projects:
 
 ## Support
 
-- 📧 Email: support@p2pfoundation.dev
-- 💬 Discord: [Join our server](https://discord.gg/p2pfoundation)
-- 🐛 Issues: [GitHub Issues](https://github.com/yourusername/p2p/issues)
+- 🐛 Issues: [GitHub Issues](https://github.com/dirvine/p2p/issues)
 
 ---
 
