@@ -214,7 +214,6 @@ at your option.
 ## Acknowledgments
 
 Built on top of excellent open source projects:
-- [libp2p](https://libp2p.io/) - P2P networking stack
 - [Quinn](https://github.com/quinn-rs/quinn) - QUIC implementation
 - [Tokio](https://tokio.rs/) - Async runtime
 
