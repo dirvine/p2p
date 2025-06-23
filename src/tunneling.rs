@@ -496,8 +496,10 @@ pub async fn detect_network_capabilities() -> Result<NetworkCapabilities> {
 
 // Tunneling protocol implementations
 pub mod sixto4;
+pub mod teredo;
 
 pub use sixto4::SixToFourTunnel;
+pub use teredo::TeredoTunnel;
 
 /// Create a tunnel configuration for a specific protocol
 pub fn create_tunnel_config(protocol: TunnelProtocol, capabilities: &NetworkCapabilities) -> TunnelConfig {
@@ -542,8 +544,8 @@ pub fn create_tunnel(config: TunnelConfig) -> Result<Box<dyn Tunnel>> {
             Ok(Box::new(tunnel))
         }
         TunnelProtocol::Teredo => {
-            // TODO: Implement Teredo tunnel
-            Err(P2PError::Network("Teredo tunnel not yet implemented".to_string()).into())
+            let tunnel = TeredoTunnel::new(config)?;
+            Ok(Box::new(tunnel))
         }
         TunnelProtocol::SixInFour => {
             // TODO: Implement 6in4 tunnel

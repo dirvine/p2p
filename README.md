@@ -4,13 +4,14 @@ A next-generation peer-to-peer networking foundation built in Rust, featuring QU
 
 ## Features
 
-- 🚀 **Modern Transport**: QUIC protocol with 0-RTT connections
-- 🌐 **IPv6-First**: Native IPv6 with automatic IPv4 tunneling
-- 🔍 **Kademlia DHT**: Distributed hash table for peer discovery
-- 🤖 **AI-Native**: Built-in MCP server at each node
-- 🔒 **Secure by Default**: End-to-end encryption
-- 📦 **Minimal Dependencies**: Small footprint, pure Rust
-- 🛠️ **Developer Friendly**: Simple API with sensible defaults
+- 🚀 **QUIC Transport**: Modern protocol with 0-RTT connections and built-in encryption
+- 🌐 **Universal IPv6**: Works on any network via intelligent tunneling (6to4, Teredo)
+- 🔍 **Kademlia DHT**: Distributed routing and data storage with k-bucket management
+- 🛡️ **NAT Traversal**: Automatic connectivity behind firewalls and NAT devices
+- 🤖 **AI-Native**: Built-in MCP server integration (planned)
+- 🔒 **Secure by Default**: End-to-end encryption via QUIC/TLS 1.3
+- 📦 **Lightweight**: Minimal dependencies, pure Rust implementation
+- 🛠️ **Developer Friendly**: Trait-based architecture with comprehensive testing
 
 ## Quick Start
 
@@ -70,15 +71,17 @@ p2p-foundation = "0.1.0"
 └─────────────────────────────────────┘
 ```
 
-## Supported Tunneling Protocols
+## IPv6/IPv4 Tunneling Protocols
 
-- **DS-Lite** (Dual-Stack Lite) - ISP-provided
-- **Teredo** - NAT traversal capable
-- **6to4** - Simple but requires public IPv4
-- **ISATAP** - Enterprise networks
-- **MAP-E/MAP-T** - Modern ISPs
-- **464XLAT** - Mobile networks
-- **6rd** - IPv6 Rapid Deployment
+### ✅ Implemented
+- **6to4** (RFC 3056) - Automatic tunneling for public IPv4 addresses
+- **Teredo** (RFC 4380) - NAT traversal with UDP encapsulation
+
+### 🚧 Planned
+- **6in4** (RFC 4213) - Static tunneling with explicit endpoints
+- **DS-Lite** (Dual-Stack Lite) - ISP-provided tunneling
+- **ISATAP** - Enterprise network tunneling
+- **MAP-E/MAP-T** - Modern ISP transition mechanisms
 
 ## Documentation
 
@@ -123,17 +126,22 @@ cargo bench
 ### Testing
 
 ```bash
-# Unit tests
-cargo test
+# Run all tests
+cargo test --all-features
+
+# Module-specific tests
+cargo test --lib dht
+cargo test --lib transport
+cargo test --lib tunneling
 
 # Integration tests
-cargo test --test '*' --features integration
+cargo test --test integration_tests
 
-# Specific module
-cargo test dht::
+# Tunneling tests specifically
+cargo test --test integration_tests test_tunneling
 
-# With logging
-RUST_LOG=debug cargo test
+# With debug logging
+RUST_LOG=debug cargo test test_sixto4_tunneling
 ```
 
 ## Contributing
@@ -162,16 +170,37 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 - Capability-based access control
 - Rate limiting and DoS protection
 
-## Roadmap
+## Implementation Roadmap
 
-- [x] Core P2P networking
-- [x] Kademlia DHT
-- [x] QUIC transport
-- [x] Basic MCP integration
-- [ ] Complete tunneling support
+### ✅ Phase 1: Core Infrastructure (Completed)
+- [x] Core P2P networking foundation
+- [x] QUIC-first transport layer with 0-RTT support
+- [x] Comprehensive integration testing infrastructure
+
+### ✅ Phase 2: DHT Implementation (Completed)  
+- [x] Kademlia DHT with proper distance metrics
+- [x] K-bucket management and routing table
+- [x] Distributed data storage and replication
+- [x] Node discovery and peer management
+
+### ✅ Phase 3: IPv6/IPv4 Tunneling (Completed)
+- [x] Tunneling protocol architecture and trait system
+- [x] 6to4 automatic tunneling (RFC 3056)
+- [x] Teredo NAT traversal tunneling (RFC 4380)
+- [x] Intelligent protocol auto-selection
+- [x] Comprehensive tunneling test suite
+
+### 🚧 Phase 4: Remaining Features (In Progress)
+- [ ] 6in4 static tunneling protocol
+- [ ] Transport layer integration
+- [ ] MCP server implementation
 - [ ] Production hardening
-- [ ] Language bindings
+
+### 📋 Phase 5: Advanced Features (Planned)
+- [ ] Additional tunneling protocols (DS-Lite, ISATAP)
+- [ ] Language bindings (Python, JavaScript)
 - [ ] Mobile optimization
+- [ ] Performance optimizations
 
 ## License
 

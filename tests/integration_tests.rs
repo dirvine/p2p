@@ -869,6 +869,100 @@ async fn test_tunneling_architecture() -> Result<()> {
     Ok(())
 }
 
+/// Test Teredo tunneling protocol functionality  
+#[tokio::test]
+async fn test_teredo_tunneling() -> Result<()> {
+    use p2p_foundation::tunneling::{
+        TunnelProtocol, TunnelConfig, TunnelState, TeredoTunnel, Tunnel
+    };
+    use std::time::Duration;
+    
+    println!("Testing Teredo tunneling protocol...");
+    
+    // Create Teredo tunnel configuration
+    let config = TunnelConfig {
+        protocol: TunnelProtocol::Teredo,
+        mtu: 1280, // Lower MTU for Teredo
+        keepalive_interval: Duration::from_secs(30),
+        establishment_timeout: Duration::from_secs(15), // Longer for NAT traversal
+        ..Default::default()
+    };
+    
+    let mut tunnel = TeredoTunnel::new(config)?;
+    println!("✅ Teredo tunnel created");
+    
+    // Test initial state
+    assert_eq!(tunnel.protocol(), TunnelProtocol::Teredo);
+    assert_eq!(tunnel.state().await, TunnelState::Disconnected);
+    assert!(!tunnel.is_active().await);
+    println!("✅ Initial tunnel state verified");
+    
+    // Test tunnel connection (includes server qualification and NAT traversal)
+    tunnel.connect().await?;
+    assert_eq!(tunnel.state().await, TunnelState::Connected);
+    assert!(tunnel.is_active().await);
+    println!("✅ Teredo tunnel connection established");
+    
+    // Test address assignment
+    let ipv6_addr = tunnel.local_ipv6_addr().await?;
+    let ipv4_addr = tunnel.local_ipv4_addr().await?;
+    
+    // Verify Teredo address format (2001::/32 prefix)
+    assert_eq!(ipv6_addr.segments()[0], 0x2001);
+    println!("✅ Teredo IPv6 address generated: {}", ipv6_addr);
+    println!("✅ External IPv4 address discovered: {}", ipv4_addr);
+    
+    // Test metrics collection
+    let initial_metrics = tunnel.metrics().await;
+    assert_eq!(initial_metrics.bytes_sent, 0);
+    assert_eq!(initial_metrics.bytes_received, 0);
+    assert_eq!(initial_metrics.packets_sent, 0);
+    assert_eq!(initial_metrics.packets_received, 0);
+    println!("✅ Initial metrics verified");
+    
+    // Test packet encapsulation/decapsulation
+    let test_ipv6_packet = create_test_teredo_packet(&ipv6_addr);
+    let encapsulated = tunnel.encapsulate(&test_ipv6_packet).await?;
+    assert!(encapsulated.len() > test_ipv6_packet.len()); // Should include Teredo header
+    println!("✅ Packet encapsulation successful: {} -> {} bytes", 
+             test_ipv6_packet.len(), encapsulated.len());
+    
+    let decapsulated = tunnel.decapsulate(&encapsulated).await?;
+    assert_eq!(decapsulated.len(), test_ipv6_packet.len()); // Should extract original IPv6 packet
+    println!("✅ Packet decapsulation successful");
+    
+    // Test ping functionality (via Teredo server)
+    let ping_timeout = Duration::from_secs(5);
+    let rtt = tunnel.ping(ping_timeout).await?;
+    assert!(rtt < ping_timeout);
+    println!("✅ Teredo tunnel ping successful: RTT = {:?}", rtt);
+    
+    // Test send/receive operations
+    tunnel.send(&test_ipv6_packet).await?;
+    println!("✅ Packet send operation completed");
+    
+    // Test maintenance operations (includes server qualification refresh)
+    tunnel.maintain().await?;
+    println!("✅ Tunnel maintenance completed");
+    
+    // Test updated metrics after operations
+    let final_metrics = tunnel.metrics().await;
+    assert!(final_metrics.bytes_sent > 0);
+    assert!(final_metrics.packets_sent > 0);
+    assert!(final_metrics.rtt.is_some());
+    println!("✅ Metrics updated: {} bytes sent, {} packets sent", 
+             final_metrics.bytes_sent, final_metrics.packets_sent);
+    
+    // Test tunnel disconnection
+    tunnel.disconnect().await?;
+    assert_eq!(tunnel.state().await, TunnelState::Disconnected);
+    assert!(!tunnel.is_active().await);
+    println!("✅ Tunnel disconnection successful");
+    
+    println!("✅ Teredo tunneling test completed successfully!");
+    Ok(())
+}
+
 /// Test 6to4 tunneling protocol functionality
 #[tokio::test]
 async fn test_sixto4_tunneling() -> Result<()> {
@@ -1078,6 +1172,13 @@ async fn test_tunneling_protocol_selection() -> Result<()> {
     };
     manager.add_tunnel(create_tunnel(sixto4_config)?).await;
     
+    // Add Teredo tunnel
+    let teredo_config = TunnelConfig {
+        protocol: TunnelProtocol::Teredo,
+        ..Default::default()
+    };
+    manager.add_tunnel(create_tunnel(teredo_config)?).await;
+    
     // Test 1: IPv6 already available - no tunneling needed
     let ipv6_available = NetworkCapabilities {
         has_ipv4: true,
@@ -1123,10 +1224,12 @@ async fn test_tunneling_protocol_selection() -> Result<()> {
     };
     
     let selection = manager.select_tunnel(&behind_nat).await;
-    // Currently only 6to4 is implemented, so this should return None
-    // When Teredo is implemented, it should select Teredo for NAT scenarios
-    assert!(selection.is_none());
-    println!("✅ No suitable tunnel for NAT scenario (expected until Teredo is implemented)");
+    // With Teredo implemented, it should select Teredo for NAT scenarios
+    assert!(selection.is_some());
+    if let Some(selection) = selection {
+        assert_eq!(selection.protocol, TunnelProtocol::Teredo);
+        println!("✅ Teredo selected for NAT scenario");
+    }
     
     println!("✅ Protocol auto-selection test completed successfully!");
     Ok(())
@@ -1136,13 +1239,13 @@ async fn test_tunneling_protocol_selection() -> Result<()> {
 #[tokio::test]
 async fn test_tunneling_error_handling() -> Result<()> {
     use p2p_foundation::tunneling::{
-        TunnelProtocol, TunnelConfig, SixToFourTunnel, Tunnel
+        TunnelProtocol, TunnelConfig, SixToFourTunnel, TeredoTunnel, Tunnel
     };
     use std::time::Duration;
     
     println!("Testing tunneling error handling...");
     
-    // Test 1: Invalid protocol configuration
+    // Test 1: Invalid protocol configuration for 6to4
     let invalid_config = TunnelConfig {
         protocol: TunnelProtocol::Teredo, // Wrong protocol for SixToFourTunnel
         ..Default::default()
@@ -1150,7 +1253,17 @@ async fn test_tunneling_error_handling() -> Result<()> {
     
     let result = SixToFourTunnel::new(invalid_config);
     assert!(result.is_err());
-    println!("✅ Invalid protocol configuration rejected");
+    println!("✅ Invalid 6to4 protocol configuration rejected");
+    
+    // Test 1b: Invalid protocol configuration for Teredo
+    let invalid_teredo_config = TunnelConfig {
+        protocol: TunnelProtocol::SixToFour, // Wrong protocol for TeredoTunnel
+        ..Default::default()
+    };
+    
+    let result = TeredoTunnel::new(invalid_teredo_config);
+    assert!(result.is_err());
+    println!("✅ Invalid Teredo protocol configuration rejected");
     
     // Test 2: 6to4 tunnel without IPv4 address
     let no_ipv4_config = TunnelConfig {
@@ -1329,6 +1442,11 @@ fn create_test_ipv6_packet_simple() -> Vec<u8> {
     // Create a simple 6to4 destination address for testing
     let dst_addr = std::net::Ipv6Addr::new(0x2002, 0xc000, 0x0201, 0, 0, 0, 0, 1);
     create_test_ipv6_packet(&dst_addr)
+}
+
+fn create_test_teredo_packet(dst_addr: &std::net::Ipv6Addr) -> Vec<u8> {
+    // Create a Teredo-compatible IPv6 packet
+    create_test_ipv6_packet(dst_addr)
 }
 
 fn create_test_ipv6_packet_with_size(size: usize) -> Vec<u8> {
