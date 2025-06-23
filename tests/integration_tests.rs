@@ -828,3 +828,579 @@ async fn test_network_functionality() -> Result<()> {
     
     Ok(())
 }
+
+/// Test tunneling protocol architecture and basic functionality
+#[tokio::test]
+async fn test_tunneling_architecture() -> Result<()> {
+    use p2p_foundation::tunneling::{
+        TunnelManager, TunnelManagerConfig, TunnelProtocol, TunnelConfig,
+        NetworkCapabilities, detect_network_capabilities, create_tunnel_config, create_tunnel
+    };
+    use std::net::Ipv4Addr;
+    
+    println!("Testing tunneling architecture...");
+    
+    // Test network capabilities detection
+    let capabilities = detect_network_capabilities().await?;
+    println!("✅ Network capabilities detected: IPv4={}, IPv6={}, NAT={}", 
+             capabilities.has_ipv4, capabilities.has_ipv6, capabilities.behind_nat);
+    
+    // Test tunnel manager creation
+    let manager = TunnelManager::new();
+    assert!(manager.active_tunnel().await.is_none());
+    println!("✅ Tunnel manager created successfully");
+    
+    // Test tunnel configuration creation for different protocols
+    let protocols = vec![
+        TunnelProtocol::SixToFour,
+        TunnelProtocol::Teredo,
+        TunnelProtocol::SixInFour,
+    ];
+    
+    for protocol in protocols {
+        let config = create_tunnel_config(protocol.clone(), &capabilities);
+        assert_eq!(config.protocol, protocol);
+        assert!(config.mtu > 0);
+        assert!(config.keepalive_interval.as_secs() > 0);
+        println!("✅ Configuration created for {:?} protocol", protocol);
+    }
+    
+    println!("✅ Tunneling architecture test completed successfully!");
+    Ok(())
+}
+
+/// Test 6to4 tunneling protocol functionality
+#[tokio::test]
+async fn test_sixto4_tunneling() -> Result<()> {
+    use p2p_foundation::tunneling::{
+        TunnelProtocol, TunnelConfig, TunnelState, SixToFourTunnel, Tunnel
+    };
+    use std::net::Ipv4Addr;
+    use std::time::Duration;
+    
+    println!("Testing 6to4 tunneling protocol...");
+    
+    // Create 6to4 tunnel configuration
+    let config = TunnelConfig {
+        protocol: TunnelProtocol::SixToFour,
+        local_ipv4: Some(Ipv4Addr::new(203, 0, 113, 1)), // TEST-NET-3
+        mtu: 1480,
+        keepalive_interval: Duration::from_secs(30),
+        establishment_timeout: Duration::from_secs(10),
+        ..Default::default()
+    };
+    
+    let mut tunnel = SixToFourTunnel::new(config)?;
+    println!("✅ 6to4 tunnel created");
+    
+    // Test initial state
+    assert_eq!(tunnel.protocol(), TunnelProtocol::SixToFour);
+    assert_eq!(tunnel.state().await, TunnelState::Disconnected);
+    assert!(!tunnel.is_active().await);
+    println!("✅ Initial tunnel state verified");
+    
+    // Test tunnel connection
+    tunnel.connect().await?;
+    assert_eq!(tunnel.state().await, TunnelState::Connected);
+    assert!(tunnel.is_active().await);
+    println!("✅ Tunnel connection established");
+    
+    // Test address assignment
+    let ipv6_addr = tunnel.local_ipv6_addr().await?;
+    let ipv4_addr = tunnel.local_ipv4_addr().await?;
+    
+    // Verify 6to4 address format (2002::/16 prefix)
+    assert_eq!(ipv6_addr.segments()[0], 0x2002);
+    assert_eq!(ipv4_addr, Ipv4Addr::new(203, 0, 113, 1));
+    println!("✅ IPv6 address generated: {}", ipv6_addr);
+    println!("✅ IPv4 address confirmed: {}", ipv4_addr);
+    
+    // Test metrics collection
+    let initial_metrics = tunnel.metrics().await;
+    assert_eq!(initial_metrics.bytes_sent, 0);
+    assert_eq!(initial_metrics.bytes_received, 0);
+    assert_eq!(initial_metrics.packets_sent, 0);
+    assert_eq!(initial_metrics.packets_received, 0);
+    println!("✅ Initial metrics verified");
+    
+    // Test ping functionality
+    let ping_timeout = Duration::from_secs(5);
+    let rtt = tunnel.ping(ping_timeout).await?;
+    assert!(rtt < ping_timeout);
+    println!("✅ Tunnel ping successful: RTT = {:?}", rtt);
+    
+    // Test packet encapsulation/decapsulation
+    let test_ipv6_packet = create_test_ipv6_packet(&ipv6_addr);
+    let encapsulated = tunnel.encapsulate(&test_ipv6_packet).await?;
+    assert!(encapsulated.len() > test_ipv6_packet.len()); // Should include IPv4 header
+    println!("✅ Packet encapsulation successful: {} -> {} bytes", 
+             test_ipv6_packet.len(), encapsulated.len());
+    
+    let decapsulated = tunnel.decapsulate(&encapsulated).await?;
+    assert_eq!(decapsulated.len(), test_ipv6_packet.len()); // Should extract original IPv6 packet
+    println!("✅ Packet decapsulation successful");
+    
+    // Test send/receive operations
+    tunnel.send(&test_ipv6_packet).await?;
+    println!("✅ Packet send operation completed");
+    
+    // Test maintenance operations
+    tunnel.maintain().await?;
+    println!("✅ Tunnel maintenance completed");
+    
+    // Test updated metrics after operations
+    let final_metrics = tunnel.metrics().await;
+    assert!(final_metrics.bytes_sent > 0);
+    assert!(final_metrics.packets_sent > 0);
+    assert!(final_metrics.rtt.is_some());
+    println!("✅ Metrics updated: {} bytes sent, {} packets sent", 
+             final_metrics.bytes_sent, final_metrics.packets_sent);
+    
+    // Test tunnel disconnection
+    tunnel.disconnect().await?;
+    assert_eq!(tunnel.state().await, TunnelState::Disconnected);
+    assert!(!tunnel.is_active().await);
+    println!("✅ Tunnel disconnection successful");
+    
+    println!("✅ 6to4 tunneling test completed successfully!");
+    Ok(())
+}
+
+/// Test tunnel manager with multiple protocols
+#[tokio::test]
+async fn test_tunnel_manager() -> Result<()> {
+    use p2p_foundation::tunneling::{
+        TunnelManager, TunnelManagerConfig, TunnelProtocol, TunnelConfig,
+        NetworkCapabilities, SixToFourTunnel, create_tunnel
+    };
+    use std::net::Ipv4Addr;
+    
+    println!("Testing tunnel manager functionality...");
+    
+    // Create custom manager configuration
+    let manager_config = TunnelManagerConfig {
+        protocol_preference: vec![
+            TunnelProtocol::SixToFour,
+            TunnelProtocol::Teredo,
+            TunnelProtocol::SixInFour,
+        ],
+        auto_failover: true,
+        max_concurrent_attempts: 2,
+        ..Default::default()
+    };
+    
+    let manager = TunnelManager::with_config(manager_config);
+    println!("✅ Tunnel manager created with custom configuration");
+    
+    // Create and add tunnels
+    let sixto4_config = TunnelConfig {
+        protocol: TunnelProtocol::SixToFour,
+        local_ipv4: Some(Ipv4Addr::new(198, 51, 100, 1)), // TEST-NET-2
+        ..Default::default()
+    };
+    
+    let sixto4_tunnel = create_tunnel(sixto4_config)?;
+    manager.add_tunnel(sixto4_tunnel).await;
+    println!("✅ 6to4 tunnel added to manager");
+    
+    // Test tunnel selection based on network capabilities
+    let capabilities = NetworkCapabilities {
+        has_ipv4: true,
+        has_ipv6: false,
+        behind_nat: false,
+        public_ipv4: Some(Ipv4Addr::new(198, 51, 100, 1)),
+        ipv6_addresses: vec![],
+        has_upnp: false,
+        interface_mtu: 1500,
+    };
+    
+    let selection = manager.select_tunnel(&capabilities).await;
+    assert!(selection.is_some());
+    
+    if let Some(selection) = selection {
+        assert_eq!(selection.protocol, TunnelProtocol::SixToFour);
+        assert!(!selection.is_fallback);
+        println!("✅ Tunnel selection successful: {:?} ({})", 
+                 selection.protocol, selection.reason);
+    }
+    
+    // Test active tunnel
+    let active_protocol = manager.active_tunnel().await;
+    assert_eq!(active_protocol, Some(TunnelProtocol::SixToFour));
+    println!("✅ Active tunnel verified: {:?}", active_protocol);
+    
+    // Test tunnel operations through manager
+    manager.connect().await?;
+    println!("✅ Manager tunnel connection successful");
+    
+    let test_packet = create_test_ipv6_packet_simple();
+    manager.send(&test_packet).await?;
+    println!("✅ Manager packet send successful");
+    
+    let metrics = manager.metrics().await;
+    assert!(metrics.is_some());
+    if let Some(metrics) = metrics {
+        println!("✅ Manager metrics available: {} bytes sent", metrics.bytes_sent);
+    }
+    
+    // Test health check
+    manager.health_check().await?;
+    println!("✅ Manager health check completed");
+    
+    // Test maintenance
+    manager.maintain().await?;
+    println!("✅ Manager maintenance completed");
+    
+    manager.disconnect().await?;
+    println!("✅ Manager tunnel disconnection successful");
+    
+    println!("✅ Tunnel manager test completed successfully!");
+    Ok(())
+}
+
+/// Test tunneling protocol auto-selection logic
+#[tokio::test]
+async fn test_tunneling_protocol_selection() -> Result<()> {
+    use p2p_foundation::tunneling::{
+        TunnelManager, TunnelProtocol, NetworkCapabilities, create_tunnel, TunnelConfig
+    };
+    use std::net::Ipv4Addr;
+    
+    println!("Testing tunneling protocol auto-selection...");
+    
+    let manager = TunnelManager::new();
+    
+    // Add 6to4 tunnel
+    let sixto4_config = TunnelConfig {
+        protocol: TunnelProtocol::SixToFour,
+        local_ipv4: Some(Ipv4Addr::new(203, 0, 113, 1)),
+        ..Default::default()
+    };
+    manager.add_tunnel(create_tunnel(sixto4_config)?).await;
+    
+    // Test 1: IPv6 already available - no tunneling needed
+    let ipv6_available = NetworkCapabilities {
+        has_ipv4: true,
+        has_ipv6: true,
+        behind_nat: false,
+        public_ipv4: Some(Ipv4Addr::new(203, 0, 113, 1)),
+        ipv6_addresses: vec!["2001:db8::1".parse().unwrap()],
+        has_upnp: false,
+        interface_mtu: 1500,
+    };
+    
+    let selection = manager.select_tunnel(&ipv6_available).await;
+    assert!(selection.is_none()); // No tunneling needed
+    println!("✅ No tunnel selected when IPv6 is available");
+    
+    // Test 2: Public IPv4, no NAT - 6to4 should be selected
+    let public_ipv4 = NetworkCapabilities {
+        has_ipv4: true,
+        has_ipv6: false,
+        behind_nat: false,
+        public_ipv4: Some(Ipv4Addr::new(203, 0, 113, 1)),
+        ipv6_addresses: vec![],
+        has_upnp: false,
+        interface_mtu: 1500,
+    };
+    
+    let selection = manager.select_tunnel(&public_ipv4).await;
+    assert!(selection.is_some());
+    if let Some(selection) = selection {
+        assert_eq!(selection.protocol, TunnelProtocol::SixToFour);
+        println!("✅ 6to4 selected for public IPv4 scenario");
+    }
+    
+    // Test 3: Behind NAT - 6to4 should not be suitable
+    let behind_nat = NetworkCapabilities {
+        has_ipv4: true,
+        has_ipv6: false,
+        behind_nat: true,
+        public_ipv4: None,
+        ipv6_addresses: vec![],
+        has_upnp: false,
+        interface_mtu: 1500,
+    };
+    
+    let selection = manager.select_tunnel(&behind_nat).await;
+    // Currently only 6to4 is implemented, so this should return None
+    // When Teredo is implemented, it should select Teredo for NAT scenarios
+    assert!(selection.is_none());
+    println!("✅ No suitable tunnel for NAT scenario (expected until Teredo is implemented)");
+    
+    println!("✅ Protocol auto-selection test completed successfully!");
+    Ok(())
+}
+
+/// Test tunneling error handling and edge cases
+#[tokio::test]
+async fn test_tunneling_error_handling() -> Result<()> {
+    use p2p_foundation::tunneling::{
+        TunnelProtocol, TunnelConfig, SixToFourTunnel, Tunnel
+    };
+    use std::time::Duration;
+    
+    println!("Testing tunneling error handling...");
+    
+    // Test 1: Invalid protocol configuration
+    let invalid_config = TunnelConfig {
+        protocol: TunnelProtocol::Teredo, // Wrong protocol for SixToFourTunnel
+        ..Default::default()
+    };
+    
+    let result = SixToFourTunnel::new(invalid_config);
+    assert!(result.is_err());
+    println!("✅ Invalid protocol configuration rejected");
+    
+    // Test 2: 6to4 tunnel without IPv4 address
+    let no_ipv4_config = TunnelConfig {
+        protocol: TunnelProtocol::SixToFour,
+        local_ipv4: None, // Required for 6to4
+        ..Default::default()
+    };
+    
+    let mut tunnel = SixToFourTunnel::new(no_ipv4_config)?;
+    let connect_result = tunnel.connect().await;
+    assert!(connect_result.is_err());
+    println!("✅ Connection without IPv4 address properly rejected");
+    
+    // Test 3: Operations on disconnected tunnel
+    let valid_config = TunnelConfig {
+        protocol: TunnelProtocol::SixToFour,
+        local_ipv4: Some("192.0.2.1".parse().unwrap()),
+        ..Default::default()
+    };
+    
+    let mut disconnected_tunnel = SixToFourTunnel::new(valid_config)?;
+    
+    // These should fail because tunnel is not connected
+    let encap_result = disconnected_tunnel.encapsulate(&[0u8; 40]).await;
+    assert!(encap_result.is_err());
+    
+    let decap_result = disconnected_tunnel.decapsulate(&[0u8; 60]).await;
+    assert!(decap_result.is_err());
+    
+    let ipv6_result = disconnected_tunnel.local_ipv6_addr().await;
+    assert!(ipv6_result.is_err());
+    
+    let ipv4_result = disconnected_tunnel.local_ipv4_addr().await;
+    assert!(ipv4_result.is_err());
+    
+    let ping_result = disconnected_tunnel.ping(Duration::from_secs(1)).await;
+    assert!(ping_result.is_err());
+    
+    println!("✅ Operations on disconnected tunnel properly rejected");
+    
+    // Test 4: Invalid packet formats
+    disconnected_tunnel.connect().await?;
+    
+    // Too short IPv6 packet
+    let short_packet = vec![0u8; 10];
+    let encap_result = disconnected_tunnel.encapsulate(&short_packet).await;
+    assert!(encap_result.is_err());
+    
+    // Too short IPv4 packet for decapsulation
+    let short_ipv4 = vec![0u8; 10];
+    let decap_result = disconnected_tunnel.decapsulate(&short_ipv4).await;
+    assert!(decap_result.is_err());
+    
+    // IPv4 packet with wrong protocol
+    let wrong_protocol = create_test_ipv4_packet(6); // TCP instead of 41 (IPv6-in-IPv4)
+    let decap_result = disconnected_tunnel.decapsulate(&wrong_protocol).await;
+    assert!(decap_result.is_err());
+    
+    println!("✅ Invalid packet formats properly rejected");
+    
+    disconnected_tunnel.disconnect().await?;
+    println!("✅ Tunneling error handling test completed successfully!");
+    Ok(())
+}
+
+/// Test tunneling performance and metrics
+#[tokio::test]
+async fn test_tunneling_performance() -> Result<()> {
+    use p2p_foundation::tunneling::{TunnelProtocol, TunnelConfig, SixToFourTunnel, Tunnel};
+    use std::net::Ipv4Addr;
+    use std::time::Instant;
+    
+    println!("Testing tunneling performance and metrics...");
+    
+    let config = TunnelConfig {
+        protocol: TunnelProtocol::SixToFour,
+        local_ipv4: Some(Ipv4Addr::new(192, 0, 2, 1)),
+        ..Default::default()
+    };
+    
+    let mut tunnel = SixToFourTunnel::new(config)?;
+    tunnel.connect().await?;
+    
+    // Test packet processing performance
+    let test_packets = vec![
+        create_test_ipv6_packet_with_size(64),
+        create_test_ipv6_packet_with_size(512),
+        create_test_ipv6_packet_with_size(1024),
+        create_test_ipv6_packet_with_size(1400),
+    ];
+    
+    for (i, packet) in test_packets.iter().enumerate() {
+        let start = Instant::now();
+        
+        // Test encapsulation performance
+        let encapsulated = tunnel.encapsulate(packet).await?;
+        let encap_time = start.elapsed();
+        
+        // Test decapsulation performance
+        let decap_start = Instant::now();
+        let _decapsulated = tunnel.decapsulate(&encapsulated).await?;
+        let decap_time = decap_start.elapsed();
+        
+        println!("✅ Packet {} ({} bytes): encap={:?}, decap={:?}", 
+                 i + 1, packet.len(), encap_time, decap_time);
+        
+        // Performance should be reasonable (< 1ms for small packets)
+        assert!(encap_time.as_millis() < 10);
+        assert!(decap_time.as_millis() < 10);
+    }
+    
+    // Test bulk operations
+    let bulk_start = Instant::now();
+    let num_operations = 100;
+    
+    for i in 0..num_operations {
+        let packet = create_test_ipv6_packet_with_size(100 + i);
+        tunnel.send(&packet).await?;
+    }
+    
+    let bulk_time = bulk_start.elapsed();
+    let ops_per_sec = (num_operations as f64) / bulk_time.as_secs_f64();
+    
+    println!("✅ Bulk performance: {} operations in {:?} ({:.1} ops/sec)", 
+             num_operations, bulk_time, ops_per_sec);
+    
+    // Perform a ping to ensure RTT is set
+    tunnel.ping(std::time::Duration::from_secs(1)).await?;
+    
+    // Test metrics accuracy
+    let metrics = tunnel.metrics().await;
+    assert_eq!(metrics.packets_sent, num_operations as u64);
+    assert!(metrics.bytes_sent > 0);
+    assert!(metrics.rtt.is_some());
+    
+    println!("✅ Metrics verification: {} packets, {} bytes, RTT={:?}", 
+             metrics.packets_sent, metrics.bytes_sent, metrics.rtt);
+    
+    tunnel.disconnect().await?;
+    println!("✅ Tunneling performance test completed successfully!");
+    Ok(())
+}
+
+// Helper functions for creating test packets
+
+fn create_test_ipv6_packet(dst_addr: &std::net::Ipv6Addr) -> Vec<u8> {
+    let mut packet = vec![0u8; 60]; // Minimum IPv6 packet with some payload
+    
+    // IPv6 header (40 bytes)
+    packet[0] = 0x60; // Version (6) + Traffic Class (0)
+    packet[1] = 0x00; // Traffic Class + Flow Label
+    packet[2] = 0x00; // Flow Label
+    packet[3] = 0x00; // Flow Label
+    packet[4] = 0x00; // Payload Length (20 bytes)
+    packet[5] = 0x14;
+    packet[6] = 0x11; // Next Header (UDP)
+    packet[7] = 0x40; // Hop Limit (64)
+    
+    // Source address (::1)
+    packet[8..24].fill(0);
+    packet[23] = 1;
+    
+    // Destination address
+    let dst_bytes = dst_addr.octets();
+    packet[24..40].copy_from_slice(&dst_bytes);
+    
+    // Add some UDP payload
+    packet[40..44].copy_from_slice(&[0x80, 0x00, 0x80, 0x01]); // Source port, dest port
+    packet[44..48].copy_from_slice(&[0x00, 0x14, 0x00, 0x00]); // Length, checksum
+    packet[48..].fill(0x42); // Test data
+    
+    packet
+}
+
+fn create_test_ipv6_packet_simple() -> Vec<u8> {
+    // Create a simple 6to4 destination address for testing
+    let dst_addr = std::net::Ipv6Addr::new(0x2002, 0xc000, 0x0201, 0, 0, 0, 0, 1);
+    create_test_ipv6_packet(&dst_addr)
+}
+
+fn create_test_ipv6_packet_with_size(size: usize) -> Vec<u8> {
+    let mut packet = create_test_ipv6_packet_simple();
+    
+    // Adjust packet size if needed
+    if size > packet.len() {
+        packet.resize(size, 0x42);
+        // Update payload length in header
+        let payload_len = size - 40;
+        packet[4] = (payload_len >> 8) as u8;
+        packet[5] = (payload_len & 0xFF) as u8;
+    } else if size >= 40 {
+        packet.truncate(size);
+        // Update payload length in header
+        let payload_len = size - 40;
+        packet[4] = (payload_len >> 8) as u8;
+        packet[5] = (payload_len & 0xFF) as u8;
+    }
+    
+    packet
+}
+
+fn create_test_ipv4_packet(protocol: u8) -> Vec<u8> {
+    let mut packet = vec![0u8; 40]; // IPv4 header + some payload
+    
+    packet[0] = 0x45; // Version + Header Length
+    packet[1] = 0x00; // Type of Service
+    packet[2] = 0x00; // Total Length (high)
+    packet[3] = 0x28; // Total Length (low) = 40 bytes
+    packet[4] = 0x00; // Identification
+    packet[5] = 0x01;
+    packet[6] = 0x40; // Flags (Don't Fragment)
+    packet[7] = 0x00; // Fragment Offset
+    packet[8] = 0x40; // TTL
+    packet[9] = protocol; // Protocol
+    packet[10] = 0x00; // Checksum (high)
+    packet[11] = 0x00; // Checksum (low)
+    
+    // Source IP: 192.0.2.1
+    packet[12] = 192;
+    packet[13] = 0;
+    packet[14] = 2;
+    packet[15] = 1;
+    
+    // Dest IP: 192.0.2.2  
+    packet[16] = 192;
+    packet[17] = 0;
+    packet[18] = 2;
+    packet[19] = 2;
+    
+    // Calculate and set checksum
+    let checksum = calculate_ipv4_checksum(&packet[0..20]);
+    packet[10] = (checksum >> 8) as u8;
+    packet[11] = (checksum & 0xFF) as u8;
+    
+    packet
+}
+
+fn calculate_ipv4_checksum(header: &[u8]) -> u16 {
+    let mut sum: u32 = 0;
+    
+    for i in (0..header.len()).step_by(2) {
+        if i + 1 < header.len() {
+            let word = ((header[i] as u32) << 8) + (header[i + 1] as u32);
+            sum = sum.wrapping_add(word);
+        }
+    }
+    
+    while (sum >> 16) != 0 {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    
+    (!sum) as u16
+}
