@@ -126,6 +126,8 @@ impl Tunnel for MockTunnel {
             TunnelProtocol::SixInFour => Ok("2001:db8::1".parse().unwrap()),
             TunnelProtocol::DsLite => Ok("2001:db8:dsl1:0:0:0:0:1".parse().unwrap()),
             TunnelProtocol::Isatap => Ok("fe80::5efe:c0a8:164".parse().unwrap()),
+            TunnelProtocol::MapE => Ok("2001:db8::c000:264".parse().unwrap()),
+            TunnelProtocol::MapT => Ok("2001:db8::c000:264".parse().unwrap()),
         }
     }
     

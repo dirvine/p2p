@@ -11,6 +11,8 @@
 //! - **6in4**: Configured tunneling for IPv6 over IPv4 with explicit endpoints
 //! - **DS-Lite**: ISP-provided dual-stack lite tunneling
 //! - **ISATAP**: Enterprise network tunneling for corporate environments
+//! - **MAP-E**: ISP IPv4 sharing via encapsulation with mapping rules
+//! - **MAP-T**: ISP IPv4/IPv6 translation with mapping rules
 //!
 //! ## Architecture
 //!
@@ -41,6 +43,10 @@ pub enum TunnelProtocol {
     DsLite,
     /// ISATAP (Intra-Site Automatic Tunnel Addressing Protocol) for enterprise networks (RFC 5214)
     Isatap,
+    /// MAP-E (Mapping of Address and Port - Encapsulation) for ISP IPv4 sharing (RFC 7597)
+    MapE,
+    /// MAP-T (Mapping of Address and Port - Translation) for ISP IPv4/IPv6 translation (RFC 7599)
+    MapT,
 }
 
 /// Configuration for tunneling protocols
@@ -539,6 +545,54 @@ impl TunnelManager {
                 
                 (score, format!("ISATAP suitable: {}", reasons.join(", ")))
             }
+            
+            TunnelProtocol::MapE => {
+                if !capabilities.has_ipv4 {
+                    return (0.0, "MAP-E requires IPv4 connectivity".to_string());
+                }
+                
+                // MAP-E is excellent for ISP deployment scenarios
+                score += 0.9;
+                reasons.push("ISP-grade address sharing");
+                
+                // MAP-E works well with any IPv4 connectivity
+                if capabilities.public_ipv4.is_some() {
+                    score += 0.1;
+                    reasons.push("public IPv4 available");
+                }
+                
+                // MAP-E is stateless and highly scalable
+                if capabilities.interface_mtu >= 1460 {
+                    reasons.push("sufficient MTU for encapsulation");
+                } else {
+                    score -= 0.1; // Slight penalty for low MTU
+                    reasons.push("low MTU may affect performance");
+                }
+                
+                (score, format!("MAP-E suitable: {}", reasons.join(", ")))
+            }
+            
+            TunnelProtocol::MapT => {
+                if !capabilities.has_ipv4 {
+                    return (0.0, "MAP-T requires IPv4 connectivity".to_string());
+                }
+                
+                // MAP-T is excellent for pure IPv6 networks with IPv4 translation
+                score += 0.85;
+                reasons.push("stateless IPv4/IPv6 translation");
+                
+                // MAP-T works well with any IPv4 connectivity
+                if capabilities.public_ipv4.is_some() {
+                    score += 0.1;
+                    reasons.push("public IPv4 available");
+                }
+                
+                // MAP-T has no encapsulation overhead
+                score += 0.05;
+                reasons.push("no encapsulation overhead");
+                
+                (score, format!("MAP-T suitable: {}", reasons.join(", ")))
+            }
         }
     }
     
@@ -596,6 +650,14 @@ impl TunnelManager {
             }
             TunnelProtocol::Isatap => {
                 // ISATAP works with any IPv4 connectivity, ideal for enterprise networks
+                capabilities.has_ipv4
+            }
+            TunnelProtocol::MapE => {
+                // MAP-E requires IPv4 connectivity and is used by ISPs for address sharing
+                capabilities.has_ipv4
+            }
+            TunnelProtocol::MapT => {
+                // MAP-T requires IPv4 connectivity and provides stateless translation
                 capabilities.has_ipv4
             }
         }
@@ -1084,12 +1146,14 @@ pub mod teredo;
 pub mod sixinfour;
 pub mod dslite;
 pub mod isatap;
+pub mod map;
 
 pub use sixto4::SixToFourTunnel;
 pub use teredo::TeredoTunnel;
 pub use sixinfour::SixInFourTunnel;
 pub use dslite::DsLiteTunnel;
 pub use isatap::IsatapTunnel;
+pub use map::{MapTunnel, MapProtocol, MapRule, PortParameters, PortSet};
 
 /// Create a tunnel configuration for a specific protocol
 pub fn create_tunnel_config(protocol: TunnelProtocol, capabilities: &NetworkCapabilities) -> TunnelConfig {
@@ -1140,6 +1204,24 @@ pub fn create_tunnel_config(protocol: TunnelProtocol, capabilities: &NetworkCapa
                 config.local_ipv4 = Some(ipv4);
             }
         }
+        TunnelProtocol::MapE => {
+            // MAP-E uses IPv4-in-IPv6 encapsulation with mapping rules
+            config.mtu = 1460; // Account for IPv6 header overhead (40 bytes)
+            // MAP-E configuration will be provided by ISP via DHCP or configuration
+            if let Some(ipv4) = capabilities.public_ipv4 {
+                config.local_ipv4 = Some(ipv4);
+            }
+            // IPv6 prefix will be calculated based on MAP rules
+        }
+        TunnelProtocol::MapT => {
+            // MAP-T uses stateless IPv4/IPv6 translation with mapping rules
+            config.mtu = 1500; // No encapsulation overhead
+            // MAP-T configuration will be provided by ISP via DHCP or configuration
+            if let Some(ipv4) = capabilities.public_ipv4 {
+                config.local_ipv4 = Some(ipv4);
+            }
+            // IPv6 prefix will be calculated based on MAP rules
+        }
     }
     
     config
@@ -1166,6 +1248,14 @@ pub fn create_tunnel(config: TunnelConfig) -> Result<Box<dyn Tunnel>> {
         }
         TunnelProtocol::Isatap => {
             let tunnel = IsatapTunnel::new(config)?;
+            Ok(Box::new(tunnel))
+        }
+        TunnelProtocol::MapE => {
+            let tunnel = MapTunnel::new(config, MapProtocol::MapE)?;
+            Ok(Box::new(tunnel))
+        }
+        TunnelProtocol::MapT => {
+            let tunnel = MapTunnel::new(config, MapProtocol::MapT)?;
             Ok(Box::new(tunnel))
         }
     }

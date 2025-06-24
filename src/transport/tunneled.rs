@@ -165,6 +165,14 @@ impl TunneledTransport {
                     let ipv4_addr = capabilities.public_ipv4.unwrap_or_else(|| "192.168.1.100".parse().unwrap());
                     IsatapTunnel::generate_isatap_address(ipv4_addr, Some("fe80::".parse().unwrap()))
                 }
+                crate::tunneling::TunnelProtocol::MapE => {
+                    // MAP-E address format: calculated from MAP rules
+                    "2001:db8::c000:264".parse().unwrap()
+                }
+                crate::tunneling::TunnelProtocol::MapT => {
+                    // MAP-T address format: calculated from MAP rules
+                    "2001:db8::c000:264".parse().unwrap()
+                }
             };
             
             let tunnel_info = TunnelInfo {

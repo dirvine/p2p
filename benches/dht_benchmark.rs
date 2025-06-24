@@ -107,6 +107,67 @@ fn tunneling_benchmarks(c: &mut Criterion) {
             black_box(isatap_addr)
         });
     });
+
+    // Benchmark MAP address calculation
+    use p2p_foundation::tunneling::{MapTunnel, MapProtocol, MapRule, PortParameters, TunnelConfig, TunnelProtocol};
+    let map_config = TunnelConfig {
+        protocol: TunnelProtocol::MapE,
+        local_ipv4: Some("192.0.2.100".parse().unwrap()),
+        remote_ipv4: None,
+        ipv6_prefix: Some("2001:db8::".parse().unwrap()),
+        aftr_ipv6: None,
+        aftr_name: None,
+        mtu: 1460,
+        keepalive_interval: std::time::Duration::from_secs(30),
+        establishment_timeout: std::time::Duration::from_secs(10),
+    };
+    let map_tunnel = MapTunnel::new(map_config, MapProtocol::MapE).unwrap();
+    let map_rule = MapRule {
+        ipv6_prefix: "2001:db8::".parse().unwrap(),
+        ipv6_prefix_len: 32,
+        ipv4_prefix: "192.0.2.0".parse().unwrap(),
+        ipv4_prefix_len: 24,
+        port_params: PortParameters {
+            psid_offset: 4,
+            psid_length: 4,
+            excluded_ports: 1024,
+        },
+        border_relay: Some("2001:db8:ffff::1".parse().unwrap()),
+        is_fmr: true,
+    };
+    
+    group.bench_function("map_ipv6_address_calculation", |b| {
+        b.iter(|| {
+            let ipv4_addr = std::net::Ipv4Addr::new(192, 0, 2, 100);
+            let ipv6_addr = map_tunnel.calculate_ipv6_address(
+                black_box(ipv4_addr), 
+                black_box(&map_rule)
+            ).unwrap();
+            black_box(ipv6_addr)
+        });
+    });
+
+    group.bench_function("map_psid_extraction", |b| {
+        b.iter(|| {
+            let ipv4_addr = std::net::Ipv4Addr::new(192, 0, 2, 100);
+            let psid = map_tunnel.extract_psid(
+                black_box(ipv4_addr), 
+                black_box(&map_rule)
+            );
+            black_box(psid)
+        });
+    });
+
+    group.bench_function("map_port_set_calculation", |b| {
+        b.iter(|| {
+            let psid = 5u16;
+            let port_set = map_tunnel.calculate_port_set(
+                black_box(psid), 
+                black_box(&map_rule)
+            );
+            black_box(port_set)
+        });
+    });
     
     group.finish();
 }
