@@ -45,10 +45,12 @@ The benchmarks generate HTML reports in `target/criterion/` directory with detai
 ### 2. Tunneling Operations (`tunneling_operations`)
 - **Tunnel Manager Creation**: Speed of creating tunnel managers
 - **Tunnel Scoring**: Performance of intelligent protocol selection algorithm
+- **ISATAP Address Generation**: Performance of ISATAP IPv6 address generation from IPv4
 
 **Typical Results:**
 - Tunnel manager creation: ~44 ns
 - Tunnel scoring: ~268 µs
+- ISATAP address generation: ~170 ns (for 255 addresses: <5ms)
 
 ### 3. MCP Operations (`mcp_operations`)
 - **MCP Server Creation**: Speed of creating MCP servers

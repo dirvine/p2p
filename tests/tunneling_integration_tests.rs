@@ -125,6 +125,7 @@ impl Tunnel for MockTunnel {
             TunnelProtocol::Teredo => Ok("2001:0000:4136:e378:8000:63bf:3fff:fdd2".parse().unwrap()),
             TunnelProtocol::SixInFour => Ok("2001:db8::1".parse().unwrap()),
             TunnelProtocol::DsLite => Ok("2001:db8:dsl1:0:0:0:0:1".parse().unwrap()),
+            TunnelProtocol::Isatap => Ok("fe80::5efe:c0a8:164".parse().unwrap()),
         }
     }
     

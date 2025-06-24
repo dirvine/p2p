@@ -204,6 +204,11 @@ async fn test_multi_node_dht() {
 - **Alternatives considered**: Chord, Pastry, custom DHT
 - **Trade-offs**: Well-understood but requires careful parameter tuning
 
+#### ISATAP Enterprise Tunneling
+- **Chosen for**: Enterprise IPv6 connectivity over existing IPv4 infrastructure
+- **Alternatives considered**: Manual IPv6 tunnels, VPN overlays, native IPv6 deployment
+- **Trade-offs**: Excellent for corporate environments but requires ISATAP-aware routers
+
 ### Implementation Priorities
 
 1. **Phase 1**: Get basic P2P working (libp2p + Kademlia)
@@ -222,11 +227,12 @@ async fn test_multi_node_dht() {
 - ✅ **CLI Binary**: Functional p2p-node with comprehensive command-line options
 - ✅ **Test Infrastructure**: 72 comprehensive integration tests across all modules
 - ✅ **Build System**: Working Cargo.toml with essential dependencies
+- ✅ **Tunneling Foundation**: Auto-selection system for IPv6/IPv4 connectivity (6to4, Teredo, 6in4, DS-Lite, ISATAP)
+- ✅ **ISATAP Enterprise**: Complete ISATAP implementation for enterprise IPv6 connectivity with comprehensive tests
 
 **NEXT TO IMPLEMENT** (in priority order):
 - 🔄 **Transport Layer**: QUIC/TCP protocol implementations
 - 🔄 **DHT Module**: Kademlia distributed hash table
-- 🔄 **Tunneling Protocols**: IPv6/IPv4 connectivity (6to4, Teredo, 6in4)
 - 🔄 **MCP Integration**: Model Context Protocol for AI capabilities
 - 🔄 **Security Module**: Cryptographic primitives and secure transport
 
@@ -236,6 +242,8 @@ async fn test_multi_node_dht() {
 - Network event broadcasting  
 - Node lifecycle (start/run/stop)
 - CLI with IPv6, MCP, bootstrap options
+- Intelligent tunneling protocol selection for IPv6/IPv4 connectivity
+- ISATAP enterprise tunneling with router discovery and address generation
 
 **EXAMPLE USAGE**:
 ```rust

@@ -9,6 +9,8 @@
 //! - **6to4**: Automatic tunneling of IPv6 traffic over IPv4 networks
 //! - **Teredo**: NAT traversal for IPv6 connectivity through NAT devices
 //! - **6in4**: Configured tunneling for IPv6 over IPv4 with explicit endpoints
+//! - **DS-Lite**: ISP-provided dual-stack lite tunneling
+//! - **ISATAP**: Enterprise network tunneling for corporate environments
 //!
 //! ## Architecture
 //!
@@ -37,6 +39,8 @@ pub enum TunnelProtocol {
     SixInFour,
     /// DS-Lite (Dual-Stack Lite) ISP-provided tunneling (RFC 6333)
     DsLite,
+    /// ISATAP (Intra-Site Automatic Tunnel Addressing Protocol) for enterprise networks (RFC 5214)
+    Isatap,
 }
 
 /// Configuration for tunneling protocols
@@ -244,6 +248,7 @@ impl Default for TunnelManagerConfig {
         Self {
             protocol_preference: vec![
                 TunnelProtocol::DsLite,     // ISP-provided, most reliable
+                TunnelProtocol::Isatap,     // Enterprise networks, excellent for corporate
                 TunnelProtocol::SixToFour,  // Automatic, good for public IPv4
                 TunnelProtocol::Teredo,     // NAT traversal capable
                 TunnelProtocol::SixInFour,  // Manual configuration fallback
@@ -499,6 +504,41 @@ impl TunnelManager {
                 
                 (score, format!("DS-Lite suitable: {}", reasons.join(", ")))
             }
+            
+            TunnelProtocol::Isatap => {
+                if !capabilities.has_ipv4 {
+                    return (0.0, "ISATAP requires IPv4 connectivity".to_string());
+                }
+                
+                // ISATAP is excellent for enterprise environments
+                score += 0.8;
+                reasons.push("enterprise-grade tunneling");
+                
+                // ISATAP works well in corporate networks with or without NAT
+                if capabilities.behind_nat {
+                    score += 0.1; // Works fine behind corporate NAT
+                    reasons.push("corporate NAT compatible");
+                } else {
+                    score += 0.15; // Even better with direct connectivity
+                    reasons.push("direct enterprise connectivity");
+                }
+                
+                // ISATAP benefits from good MTU for enterprise traffic
+                if capabilities.interface_mtu >= 1500 {
+                    score += 0.1;
+                    reasons.push("enterprise MTU");
+                }
+                
+                // Check for enterprise network indicators (private IP ranges)
+                if let Some(ipv4) = capabilities.public_ipv4 {
+                    if ipv4.is_private() {
+                        score += 0.2; // Bonus for private networks (enterprise indicator)
+                        reasons.push("private network detected");
+                    }
+                }
+                
+                (score, format!("ISATAP suitable: {}", reasons.join(", ")))
+            }
         }
     }
     
@@ -553,6 +593,10 @@ impl TunnelManager {
             TunnelProtocol::DsLite => {
                 // DS-Lite requires IPv6 connectivity (native or tunneled)
                 capabilities.has_ipv6
+            }
+            TunnelProtocol::Isatap => {
+                // ISATAP works with any IPv4 connectivity, ideal for enterprise networks
+                capabilities.has_ipv4
             }
         }
     }
@@ -1039,11 +1083,13 @@ pub mod sixto4;
 pub mod teredo;
 pub mod sixinfour;
 pub mod dslite;
+pub mod isatap;
 
 pub use sixto4::SixToFourTunnel;
 pub use teredo::TeredoTunnel;
 pub use sixinfour::SixInFourTunnel;
 pub use dslite::DsLiteTunnel;
+pub use isatap::IsatapTunnel;
 
 /// Create a tunnel configuration for a specific protocol
 pub fn create_tunnel_config(protocol: TunnelProtocol, capabilities: &NetworkCapabilities) -> TunnelConfig {
@@ -1084,6 +1130,16 @@ pub fn create_tunnel_config(protocol: TunnelProtocol, capabilities: &NetworkCapa
             // For now, use a placeholder AFTR name that could be configured
             config.aftr_name = Some("aftr.example.com".to_string());
         }
+        TunnelProtocol::Isatap => {
+            // ISATAP uses link-local or site-local prefix with ::0:5EFE:x.x.x.x interface ID
+            config.mtu = 1500; // Standard MTU for enterprise networks
+            // Use link-local prefix by default, can be overridden by enterprise configuration
+            config.ipv6_prefix = Some("fe80::".parse().unwrap());
+            // Local IPv4 will be auto-detected or can be configured
+            if let Some(ipv4) = capabilities.public_ipv4 {
+                config.local_ipv4 = Some(ipv4);
+            }
+        }
     }
     
     config
@@ -1106,6 +1162,10 @@ pub fn create_tunnel(config: TunnelConfig) -> Result<Box<dyn Tunnel>> {
         }
         TunnelProtocol::DsLite => {
             let tunnel = DsLiteTunnel::new(config)?;
+            Ok(Box::new(tunnel))
+        }
+        TunnelProtocol::Isatap => {
+            let tunnel = IsatapTunnel::new(config)?;
             Ok(Box::new(tunnel))
         }
     }

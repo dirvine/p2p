@@ -159,6 +159,12 @@ impl TunneledTransport {
                     // DS-Lite: Client gets IPv6 address for tunnel endpoint
                     "2001:db8:dslite::1".parse().unwrap()
                 }
+                crate::tunneling::TunnelProtocol::Isatap => {
+                    // ISATAP address format: fe80::0:5efe:x.x.x.x
+                    use crate::tunneling::IsatapTunnel;
+                    let ipv4_addr = capabilities.public_ipv4.unwrap_or_else(|| "192.168.1.100".parse().unwrap());
+                    IsatapTunnel::generate_isatap_address(ipv4_addr, Some("fe80::".parse().unwrap()))
+                }
             };
             
             let tunnel_info = TunnelInfo {

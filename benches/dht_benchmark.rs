@@ -94,6 +94,20 @@ fn tunneling_benchmarks(c: &mut Criterion) {
         });
     });
     
+    // Benchmark ISATAP address generation
+    use p2p_foundation::tunneling::IsatapTunnel;
+    let prefix: std::net::Ipv6Addr = "fe80::".parse().unwrap();
+    group.bench_function("isatap_address_generation", |b| {
+        b.iter(|| {
+            let ipv4_addr = std::net::Ipv4Addr::new(192, 168, 1, 100);
+            let isatap_addr = IsatapTunnel::generate_isatap_address(
+                black_box(ipv4_addr), 
+                black_box(Some(prefix))
+            );
+            black_box(isatap_addr)
+        });
+    });
+    
     group.finish();
 }
 
