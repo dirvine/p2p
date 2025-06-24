@@ -1,117 +1,326 @@
 //! DHT Performance Benchmarks
 //!
-//! Benchmarks for measuring DHT performance under various conditions.
+//! Comprehensive benchmarks for measuring P2P Foundation DHT performance.
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use std::time::Duration;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, black_box};
+use p2p_foundation::dht::Key;
 
-/// Benchmark DHT operations
-pub fn dht_benchmarks(c: &mut Criterion) {
-    // This is a placeholder benchmark since the actual P2P Foundation
-    // library is not yet implemented
+/// Benchmark DHT key operations
+fn dht_key_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("dht_key_operations");
     
-    let mut group = c.benchmark_group("dht_operations");
-    
-    // Benchmark different data sizes
-    for size in [1024, 4096, 16384, 65536].iter() {
+    // Benchmark key creation from different data sizes
+    for size in [32, 64, 128, 256, 512].iter() {
+        let data = vec![0u8; *size];
         group.bench_with_input(
-            BenchmarkId::new("put_operation", size),
-            size,
-            |b, &size| {
+            BenchmarkId::new("key_creation", size),
+            &data,
+            |b, data| {
                 b.iter(|| {
-                    // Placeholder - would benchmark actual DHT put operation
-                    std::thread::sleep(Duration::from_micros(100));
-                    format!("data_{}", size)
+                    Key::new(black_box(data))
+                });
+            },
+        );
+    }
+    
+    // Benchmark key comparison operations
+    let key1 = Key::new(b"benchmark_key_1");
+    let key2 = Key::new(b"benchmark_key_2");
+    
+    group.bench_function("key_comparison", |b| {
+        b.iter(|| {
+            black_box(&key1) == black_box(&key2)
+        });
+    });
+    
+    // Benchmark key serialization
+    let key = Key::new(b"serialization_test_key");
+    group.bench_function("key_serialization", |b| {
+        b.iter(|| {
+            let serialized = serde_json::to_vec(black_box(&key)).unwrap();
+            black_box(serialized)
+        });
+    });
+    
+    // Benchmark key deserialization  
+    let serialized = serde_json::to_vec(&key).unwrap();
+    group.bench_function("key_deserialization", |b| {
+        b.iter(|| {
+            let key: Key = serde_json::from_slice(black_box(&serialized)).unwrap();
+            black_box(key)
+        });
+    });
+    
+    group.finish();
+}
+
+/// Benchmark tunneling protocol operations
+fn tunneling_benchmarks(c: &mut Criterion) {
+    use p2p_foundation::tunneling::{TunnelManager, TunnelManagerConfig, NetworkCapabilities};
+    
+    let mut group = c.benchmark_group("tunneling_operations");
+    
+    let capabilities = NetworkCapabilities {
+        has_ipv4: true,
+        has_ipv6: false,
+        behind_nat: true,
+        public_ipv4: Some("203.0.113.1".parse().unwrap()),
+        ipv6_addresses: vec![],
+        has_upnp: true,
+        interface_mtu: 1500,
+    };
+    
+    // Benchmark tunnel manager creation
+    group.bench_function("tunnel_manager_creation", |b| {
+        b.iter(|| {
+            let config = TunnelManagerConfig::default();
+            let manager = TunnelManager::with_config(black_box(config));
+            black_box(manager)
+        });
+    });
+    
+    // Benchmark tunnel selection (synchronous part)
+    group.bench_function("tunnel_scoring", |b| {
+        let config = TunnelManagerConfig::default();
+        let manager = TunnelManager::with_config(config);
+        
+        b.iter(|| {
+            // This tests the synchronous scoring logic
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let selection = rt.block_on(async {
+                manager.select_tunnel(black_box(&capabilities)).await
+            });
+            black_box(selection)
+        });
+    });
+    
+    group.finish();
+}
+
+/// Benchmark MCP operations
+fn mcp_benchmarks(c: &mut Criterion) {
+    use p2p_foundation::mcp::{MCPServer, MCPServerConfig};
+    use serde_json::json;
+    
+    let mut group = c.benchmark_group("mcp_operations");
+    
+    // Benchmark MCP server creation
+    group.bench_function("mcp_server_creation", |b| {
+        b.iter(|| {
+            let config = MCPServerConfig::default();
+            let server = MCPServer::new(black_box(config));
+            black_box(server)
+        });
+    });
+    
+    // Benchmark JSON message processing
+    let messages = vec![
+        ("small", json!({"method": "list_tools", "params": {}})),
+        ("medium", json!({
+            "method": "call_tool", 
+            "params": {
+                "name": "test", 
+                "args": {"data": [1, 2, 3, 4, 5]}
+            }
+        })),
+        ("large", json!({
+            "method": "call_tool",
+            "params": {
+                "name": "process_data",
+                "args": {
+                    "data": (0..1000).collect::<Vec<i32>>(),
+                    "options": {"format": "json", "compress": true}
+                }
+            }
+        })),
+    ];
+    
+    for (size, message) in messages {
+        group.bench_with_input(
+            BenchmarkId::new("json_serialization", size),
+            &message,
+            |b, message| {
+                b.iter(|| {
+                    let serialized = serde_json::to_vec(black_box(message)).unwrap();
+                    black_box(serialized)
                 });
             },
         );
         
+        let serialized = serde_json::to_vec(&message).unwrap();
         group.bench_with_input(
-            BenchmarkId::new("get_operation", size),
-            size,
-            |b, &size| {
+            BenchmarkId::new("json_deserialization", size),
+            &serialized,
+            |b, serialized| {
                 b.iter(|| {
-                    // Placeholder - would benchmark actual DHT get operation
-                    std::thread::sleep(Duration::from_micros(50));
-                    format!("data_{}", size)
+                    let parsed: serde_json::Value = serde_json::from_slice(black_box(serialized)).unwrap();
+                    black_box(parsed)
                 });
             },
         );
     }
     
     group.finish();
+}
+
+/// Benchmark network operations
+fn network_benchmarks(c: &mut Criterion) {
+    use p2p_foundation::{NodeConfig, NodeBuilder};
     
-    // Benchmark concurrent operations
-    let mut concurrent_group = c.benchmark_group("dht_concurrent");
+    let mut group = c.benchmark_group("network_operations");
     
-    for thread_count in [1, 2, 4, 8].iter() {
-        concurrent_group.bench_with_input(
-            BenchmarkId::new("concurrent_puts", thread_count),
+    // Benchmark node configuration creation
+    group.bench_function("node_config_creation", |b| {
+        b.iter(|| {
+            let config = NodeConfig::default();
+            black_box(config)
+        });
+    });
+    
+    // Benchmark node builder creation
+    group.bench_function("node_builder_creation", |b| {
+        b.iter(|| {
+            let builder = NodeBuilder::new();
+            black_box(builder)
+        });
+    });
+    
+    group.finish();
+}
+
+/// Benchmark concurrent operations
+fn concurrent_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("concurrent_operations");
+    
+    // Benchmark concurrent key operations
+    for thread_count in [1, 2, 4, 8, 16].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("concurrent_key_creation", thread_count),
             thread_count,
             |b, &thread_count| {
                 b.iter(|| {
-                    // Placeholder - would benchmark concurrent DHT operations
-                    std::thread::sleep(Duration::from_micros(100 / thread_count as u64));
-                    thread_count
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    rt.block_on(async {
+                        let handles: Vec<_> = (0..thread_count)
+                            .map(|i| {
+                                tokio::spawn(async move {
+                                    let key = Key::new(format!("key_{}", i).as_bytes());
+                                    black_box(key)
+                                })
+                            })
+                            .collect();
+                        
+                        for handle in handles {
+                            handle.await.unwrap();
+                        }
+                    });
                 });
             },
         );
     }
     
-    concurrent_group.finish();
+    // Benchmark concurrent JSON processing
+    for thread_count in [1, 2, 4, 8].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("concurrent_json_processing", thread_count),
+            thread_count,
+            |b, &thread_count| {
+                b.iter(|| {
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    rt.block_on(async {
+                        let handles: Vec<_> = (0..thread_count)
+                            .map(|i| {
+                                tokio::spawn(async move {
+                                    let data = serde_json::json!({
+                                        "id": i,
+                                        "data": (0..100).collect::<Vec<i32>>()
+                                    });
+                                    let serialized = serde_json::to_vec(&data).unwrap();
+                                    let _parsed: serde_json::Value = serde_json::from_slice(&serialized).unwrap();
+                                    black_box(())
+                                })
+                            })
+                            .collect();
+                        
+                        for handle in handles {
+                            handle.await.unwrap();
+                        }
+                    });
+                });
+            },
+        );
+    }
+    
+    group.finish();
 }
 
-criterion_group!(benches, dht_benchmarks);
-criterion_main!(benches);
+/// Benchmark cryptographic operations
+fn crypto_benchmarks(c: &mut Criterion) {
+    use sha2::{Sha256, Digest};
+    use ed25519_dalek::{Keypair, Signer, Verifier};
+    use rand::rngs::OsRng;
+    
+    let mut group = c.benchmark_group("crypto_operations");
+    
+    // Benchmark SHA256 hashing
+    for size in [64, 256, 1024, 4096].iter() {
+        let data = vec![0u8; *size];
+        group.bench_with_input(
+            BenchmarkId::new("sha256_hash", size),
+            &data,
+            |b, data| {
+                b.iter(|| {
+                    let mut hasher = Sha256::new();
+                    hasher.update(black_box(data));
+                    let hash = hasher.finalize();
+                    black_box(hash)
+                });
+            },
+        );
+    }
+    
+    // Benchmark Ed25519 key generation
+    group.bench_function("ed25519_keygen", |b| {
+        b.iter(|| {
+            let mut csprng = OsRng{};
+            let keypair = Keypair::generate(&mut csprng);
+            black_box(keypair)
+        });
+    });
+    
+    // Benchmark Ed25519 signing
+    let mut csprng = OsRng{};
+    let keypair = Keypair::generate(&mut csprng);
+    let message = b"benchmark message for signing";
+    
+    group.bench_function("ed25519_sign", |b| {
+        b.iter(|| {
+            let signature = keypair.sign(black_box(message));
+            black_box(signature)
+        });
+    });
+    
+    // Benchmark Ed25519 verification
+    let signature = keypair.sign(message);
+    
+    group.bench_function("ed25519_verify", |b| {
+        b.iter(|| {
+            let result = keypair.public.verify(black_box(message), black_box(&signature));
+            black_box(result)
+        });
+    });
+    
+    group.finish();
+}
 
-// Real implementation would look like this:
-//
-// use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-// use p2p_foundation::{P2PNode, NodeConfig, Key};
-// use std::time::Duration;
-// use tokio::runtime::Runtime;
-//
-// fn dht_benchmarks(c: &mut Criterion) {
-//     let rt = Runtime::new().unwrap();
-//     
-//     // Setup test network
-//     let network = rt.block_on(async {
-//         let mut nodes = Vec::new();
-//         for i in 0..3 {
-//             let config = NodeConfig {
-//                 listen_addrs: vec![format!("/ip4/127.0.0.1/tcp/{}", 9000 + i).parse().unwrap()],
-//                 ..Default::default()
-//             };
-//             nodes.push(P2PNode::new(config).await.unwrap());
-//         }
-//         
-//         // Connect nodes
-//         for i in 1..nodes.len() {
-//             let addr = nodes[0].listen_addrs().await.unwrap()[0].clone();
-//             nodes[i].connect(addr).await.unwrap();
-//         }
-//         
-//         nodes
-//     });
-//     
-//     let mut group = c.benchmark_group("dht_operations");
-//     
-//     // Benchmark put operations
-//     group.bench_function("dht_put", |b| {
-//         b.to_async(&rt).iter(|| async {
-//             let key = Key::new(b"benchmark_key");
-//             let value = b"benchmark_value".to_vec();
-//             network[0].dht_put(key, value).await.unwrap();
-//         });
-//     });
-//     
-//     // Benchmark get operations
-//     group.bench_function("dht_get", |b| {
-//         b.to_async(&rt).iter(|| async {
-//             let key = Key::new(b"benchmark_key");
-//             network[1].dht_get(&key).await.unwrap();
-//         });
-//     });
-//     
-//     group.finish();
-// }
+criterion_group!(
+    benches,
+    dht_key_benchmarks,
+    tunneling_benchmarks,
+    mcp_benchmarks,
+    network_benchmarks,
+    concurrent_benchmarks,
+    crypto_benchmarks
+);
+
+criterion_main!(benches);
