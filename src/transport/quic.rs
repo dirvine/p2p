@@ -19,8 +19,8 @@ use tracing::{debug, info};
 
 /// QUIC transport implementation
 pub struct QuicTransport {
-    /// QUIC endpoint
-    endpoint: Option<Endpoint>,
+    /// QUIC endpoint (for both client and server)
+    endpoint: Arc<Mutex<Option<Endpoint>>>,
     /// Client configuration
     client_config: ClientConfig,
     /// Whether 0-RTT is enabled
@@ -52,7 +52,7 @@ impl QuicTransport {
         let client_config = Self::create_client_config(enable_0rtt)?;
         
         Ok(Self {
-            endpoint: None,
+            endpoint: Arc::new(Mutex::new(None)),
             client_config,
             enable_0rtt,
         })
@@ -110,6 +110,12 @@ impl Transport for QuicTransport {
         
         info!("QUIC transport listening on {}", local_addr);
         
+        // Store the endpoint for accepting connections
+        {
+            let mut endpoint_guard = self.endpoint.lock().await;
+            *endpoint_guard = Some(endpoint);
+        }
+        
         // Convert to multiaddr format
         let multiaddr = if local_addr.is_ipv6() {
             format!("/ip6/{}/udp/{}/quic", local_addr.ip(), local_addr.port())
@@ -118,6 +124,65 @@ impl Transport for QuicTransport {
         };
         
         Ok(vec![multiaddr])
+    }
+    
+    async fn accept(&self) -> Result<Box<dyn Connection>> {
+        debug!("QUIC waiting for incoming connection");
+        
+        // Get the endpoint
+        let endpoint = {
+            let endpoint_guard = self.endpoint.lock().await;
+            endpoint_guard.as_ref().ok_or_else(|| {
+                P2PError::Transport("QUIC transport not listening - call listen() first".to_string())
+            })?.clone()
+        };
+        
+        // Accept incoming connection
+        let connecting = endpoint.accept().await.ok_or_else(|| {
+            P2PError::Transport("No incoming QUIC connections available".to_string())
+        })?;
+        
+        let connection = connecting.await
+            .map_err(|e| P2PError::Transport(format!("QUIC connection handshake failed: {}", e)))?;
+        
+        let local_addr = connection.local_ip().unwrap_or_else(|| "0.0.0.0".parse().unwrap());
+        let remote_addr = connection.remote_address();
+        
+        // Convert addresses to multiaddr format
+        let local_multiaddr = if local_addr.is_ipv6() {
+            format!("/ip6/{}/udp/{}/quic", local_addr, remote_addr.port())
+        } else {
+            format!("/ip4/{}/udp/{}/quic", local_addr, remote_addr.port())
+        };
+        
+        let remote_multiaddr = if remote_addr.is_ipv6() {
+            format!("/ip6/{}/udp/{}/quic", remote_addr.ip(), remote_addr.port())
+        } else {
+            format!("/ip4/{}/udp/{}/quic", remote_addr.ip(), remote_addr.port())
+        };
+        
+        let connection_info = ConnectionInfo {
+            transport_type: TransportType::QUIC,
+            local_addr: local_multiaddr.clone(),
+            remote_addr: remote_multiaddr.clone(),
+            is_encrypted: true,
+            cipher_suite: "TLS_AES_256_GCM_SHA384".to_string(),
+            used_0rtt: false, // For incoming connections, we can't determine 0-RTT easily
+            established_at: Instant::now(),
+            last_activity: Instant::now(),
+        };
+        
+        let quic_connection = QuicConnection {
+            connection,
+            local_addr: local_multiaddr,
+            remote_addr: remote_multiaddr,
+            info: connection_info,
+            active_streams: Arc::new(Mutex::new(HashMap::new())),
+            stream_counter: Arc::new(Mutex::new(0)),
+        };
+        
+        info!("QUIC accepted incoming connection from {}", remote_addr);
+        Ok(Box::new(quic_connection))
     }
     
     async fn connect(&self, addr: &Multiaddr) -> Result<Box<dyn Connection>> {
@@ -131,14 +196,18 @@ impl Transport for QuicTransport {
         let socket_addr = self.parse_multiaddr(addr)?;
         
         // Create client endpoint if not exists
-        let endpoint = if let Some(ref ep) = self.endpoint {
-            ep.clone()
-        } else {
-            let mut endpoint = Endpoint::client("0.0.0.0:0".parse().unwrap())
-                .map_err(|e| P2PError::Transport(format!("Failed to create client endpoint: {}", e)))?;
-            
-            endpoint.set_default_client_config(self.client_config.clone());
-            endpoint
+        let endpoint = {
+            let endpoint_guard = self.endpoint.lock().await;
+            if let Some(ref ep) = *endpoint_guard {
+                ep.clone()
+            } else {
+                drop(endpoint_guard); // Release lock before creating new endpoint
+                let mut endpoint = Endpoint::client("0.0.0.0:0".parse().unwrap())
+                    .map_err(|e| P2PError::Transport(format!("Failed to create client endpoint: {}", e)))?;
+                
+                endpoint.set_default_client_config(self.client_config.clone());
+                endpoint
+            }
         };
         
         // Connect with timeout

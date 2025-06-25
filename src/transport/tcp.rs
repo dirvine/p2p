@@ -11,12 +11,16 @@ use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Mutex;
+use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 /// TCP transport implementation (minimal fallback)
 pub struct TcpTransport {
     /// Whether to require TLS encryption (simplified - always false for fallback)
     require_tls: bool,
+    /// TCP listener for accepting incoming connections
+    listener: Arc<Mutex<Option<Arc<TcpListener>>>>,
 }
 
 /// TCP connection implementation
@@ -37,7 +41,10 @@ impl TcpTransport {
     /// Create a new TCP transport (fallback only - TLS disabled for simplicity)
     pub fn new(_require_tls: bool) -> Self {
         warn!("TCP transport created as fallback. QUIC is preferred for P2P networking.");
-        Self { require_tls: false } // Always disable TLS in fallback mode
+        Self { 
+            require_tls: false, // Always disable TLS in fallback mode
+            listener: Arc::new(Mutex::new(None)),
+        }
     }
 }
 
@@ -52,6 +59,12 @@ impl Transport for TcpTransport {
         
         info!("TCP transport listening on {}", local_addr);
         
+        // Store the listener for accepting connections
+        {
+            let mut listener_guard = self.listener.lock().await;
+            *listener_guard = Some(Arc::new(listener));
+        }
+        
         // Convert to multiaddr format
         let multiaddr = if local_addr.is_ipv6() {
             format!("/ip6/{}/tcp/{}", local_addr.ip(), local_addr.port())
@@ -60,6 +73,60 @@ impl Transport for TcpTransport {
         };
         
         Ok(vec![multiaddr])
+    }
+    
+    async fn accept(&self) -> Result<Box<dyn Connection>> {
+        debug!("TCP waiting for incoming connection");
+        
+        // Get the listener
+        let listener = {
+            let listener_guard = self.listener.lock().await;
+            listener_guard.as_ref().ok_or_else(|| {
+                P2PError::Transport("TCP transport not listening - call listen() first".to_string())
+            })?.clone()
+        };
+        
+        // Accept incoming connection
+        let (stream, remote_addr) = listener.accept().await
+            .map_err(|e| P2PError::Transport(format!("Failed to accept TCP connection: {}", e)))?;
+        
+        let local_addr = stream.local_addr()
+            .map_err(|e| P2PError::Transport(format!("Failed to get local address: {}", e)))?;
+        
+        // Convert addresses to multiaddr format
+        let local_multiaddr = if local_addr.is_ipv6() {
+            format!("/ip6/{}/tcp/{}", local_addr.ip(), local_addr.port())
+        } else {
+            format!("/ip4/{}/tcp/{}", local_addr.ip(), local_addr.port())
+        };
+        
+        let remote_multiaddr = if remote_addr.is_ipv6() {
+            format!("/ip6/{}/tcp/{}", remote_addr.ip(), remote_addr.port())
+        } else {
+            format!("/ip4/{}/tcp/{}", remote_addr.ip(), remote_addr.port())
+        };
+        
+        let connection_info = ConnectionInfo {
+            transport_type: TransportType::TCP,
+            local_addr: local_multiaddr.clone(),
+            remote_addr: remote_multiaddr.clone(),
+            is_encrypted: false,
+            cipher_suite: String::new(),
+            used_0rtt: false,
+            established_at: Instant::now(),
+            last_activity: Instant::now(),
+        };
+        
+        let connection = TcpConnection {
+            stream,
+            local_addr: local_multiaddr,
+            remote_addr: remote_multiaddr,
+            info: connection_info,
+            _encrypted: false,
+        };
+        
+        info!("TCP accepted incoming connection from {}", remote_addr);
+        Ok(Box::new(connection))
     }
     
     async fn connect(&self, addr: &Multiaddr) -> Result<Box<dyn Connection>> {

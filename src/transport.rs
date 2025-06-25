@@ -118,6 +118,9 @@ pub trait Transport: Send + Sync {
     /// Start listening on the given address
     async fn listen(&self, addr: SocketAddr) -> Result<Vec<Multiaddr>>;
     
+    /// Accept incoming connections (for server-side)
+    async fn accept(&self) -> Result<Box<dyn Connection>>;
+    
     /// Connect to a remote peer
     async fn connect(&self, addr: &Multiaddr) -> Result<Box<dyn Connection>>;
     

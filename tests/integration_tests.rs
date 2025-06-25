@@ -804,7 +804,7 @@ async fn test_network_functionality() -> Result<()> {
     
     if let Ok(Ok(event)) = event_received {
         match event {
-            network::NetworkEvent::PeerConnected { peer_id, .. } => {
+            P2PEvent::PeerConnected(peer_id) => {
                 println!("✅ Received PeerConnected event for: {}", peer_id);
             }
             _ => println!("✅ Received network event: {:?}", event),

@@ -62,7 +62,7 @@ pub mod bootstrap;
 pub mod error;
 
 // Re-export main types
-pub use network::{P2PNode, NodeConfig, NodeBuilder};
+pub use network::{P2PNode, NodeConfig, NodeBuilder, P2PEvent};
 pub use dht::{Key, Record};
 pub use mcp::{MCPServer, Tool, MCPService};
 pub use production::{ProductionConfig, ResourceManager, ResourceMetrics};

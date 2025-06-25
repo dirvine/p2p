@@ -244,6 +244,11 @@ impl Transport for TunneledTransport {
         Ok(vec![multiaddr])
     }
     
+    async fn accept(&self) -> Result<Box<dyn Connection>> {
+        // For now, return an error since tunneled accept isn't implemented
+        Err(P2PError::Transport("Tunneled transport accept not yet implemented".to_string()))
+    }
+    
     async fn connect(&self, addr: &Multiaddr) -> Result<Box<dyn Connection>> {
         self.connect_with_options(addr, TransportOptions::default()).await
     }

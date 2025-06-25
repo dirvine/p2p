@@ -77,6 +77,10 @@ name = "dht_storage"
 [[example]]
 name = "mcp_service"
 
+[[example]]
+name = "chat"
+required-features = ["cli"]
+
 [[bench]]
 name = "dht_benchmark"
 harness = false
