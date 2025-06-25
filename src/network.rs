@@ -26,8 +26,14 @@ pub struct NodeConfig {
     /// Addresses to listen on for incoming connections
     pub listen_addrs: Vec<Multiaddr>,
     
-    /// Bootstrap peers to connect to on startup
+    /// Primary listen address (for compatibility)
+    pub listen_addr: std::net::SocketAddr,
+    
+    /// Bootstrap peers to connect to on startup (legacy)
     pub bootstrap_peers: Vec<Multiaddr>,
+    
+    /// Bootstrap peers as strings (for integration tests)
+    pub bootstrap_peers_str: Vec<String>,
     
     /// Enable IPv6 support
     pub enable_ipv6: bool,
@@ -58,6 +64,9 @@ pub struct NodeConfig {
     
     /// Production hardening configuration
     pub production_config: Option<ProductionConfig>,
+    
+    /// Bootstrap cache configuration
+    pub bootstrap_cache_config: Option<crate::bootstrap::CacheConfig>,
 }
 
 /// DHT-specific configuration
@@ -108,7 +117,9 @@ impl Default for NodeConfig {
                 "/ip6/::/tcp/9000".to_string(),
                 "/ip4/0.0.0.0/tcp/9000".to_string(),
             ],
+            listen_addr: "127.0.0.1:9000".parse().unwrap(),
             bootstrap_peers: Vec::new(),
+            bootstrap_peers_str: Vec::new(),
             enable_ipv6: true,
             enable_mcp_server: true,
             mcp_server_config: None, // Use default config if None
@@ -119,6 +130,7 @@ impl Default for NodeConfig {
             dht_config: DHTConfig::default(),
             security_config: SecurityConfig::default(),
             production_config: None, // Use default production config if enabled
+            bootstrap_cache_config: None,
         }
     }
 }
@@ -151,7 +163,7 @@ pub struct PeerInfo {
     pub peer_id: PeerId,
     
     /// Peer's addresses
-    pub addresses: Vec<Multiaddr>,
+    pub addresses: Vec<String>,
     
     /// Connection timestamp
     pub connected_at: Instant,
@@ -189,7 +201,7 @@ pub enum NetworkEvent {
         /// The identifier of the newly connected peer
         peer_id: PeerId,
         /// The network addresses where the peer can be reached
-        addresses: Vec<Multiaddr>,
+        addresses: Vec<String>,
     },
     
     /// A peer has disconnected
@@ -215,7 +227,7 @@ pub enum NetworkEvent {
         /// The identifier of the peer (if known)
         peer_id: Option<PeerId>,
         /// The address where connection was attempted
-        address: Multiaddr,
+        address: String,
         /// The error message describing the failure
         error: String,
     },
@@ -332,11 +344,21 @@ impl P2PNode {
         };
         
         // Initialize bootstrap cache manager
-        let bootstrap_manager = match BootstrapManager::new().await {
-            Ok(manager) => Some(Arc::new(RwLock::new(manager))),
-            Err(e) => {
-                warn!("Failed to initialize bootstrap manager: {}, continuing without cache", e);
-                None
+        let bootstrap_manager = if let Some(ref cache_config) = config.bootstrap_cache_config {
+            match BootstrapManager::with_config(cache_config.clone()).await {
+                Ok(manager) => Some(Arc::new(RwLock::new(manager))),
+                Err(e) => {
+                    warn!("Failed to initialize bootstrap manager: {}, continuing without cache", e);
+                    None
+                }
+            }
+        } else {
+            match BootstrapManager::new().await {
+                Ok(manager) => Some(Arc::new(RwLock::new(manager))),
+                Err(e) => {
+                    warn!("Failed to initialize bootstrap manager: {}, continuing without cache", e);
+                    None
+                }
             }
         };
         
@@ -493,7 +515,7 @@ impl P2PNode {
     }
     
     /// Connect to a peer
-    pub async fn connect_peer(&self, address: &Multiaddr) -> Result<PeerId> {
+    pub async fn connect_peer(&self, address: &str) -> Result<PeerId> {
         info!("Connecting to peer at: {}", address);
         
         // Check production limits if resource manager is enabled
@@ -514,7 +536,7 @@ impl P2PNode {
         
         let peer_info = PeerInfo {
             peer_id: peer_id.clone(),
-            addresses: vec![address.clone()],
+            addresses: vec![address.to_string()],
             connected_at: Instant::now(),
             last_seen: Instant::now(),
             status: ConnectionStatus::Connected,
@@ -531,7 +553,7 @@ impl P2PNode {
         // Emit event
         let _ = self.event_tx.send(NetworkEvent::PeerConnected {
             peer_id: peer_id.clone(),
-            addresses: vec![address.clone()],
+            addresses: vec![address.to_string()],
         });
         
         info!("Connected to peer: {}", peer_id);
@@ -789,6 +811,45 @@ impl P2PNode {
         self.dht.as_ref()
     }
     
+    /// Store a value in the DHT
+    pub async fn dht_put(&self, key: crate::dht::Key, value: Vec<u8>) -> Result<()> {
+        if let Some(ref dht) = self.dht {
+            let mut dht_instance = dht.write().await;
+            dht_instance.put(key.clone(), value.clone()).await
+                .map_err(|e| P2PError::DHT(format!("DHT put failed: {}", e)))?;
+            
+            // Emit event
+            let _ = self.event_tx.send(NetworkEvent::DHTRecordStored {
+                key: key.as_bytes().to_vec(),
+                value,
+            });
+            
+            Ok(())
+        } else {
+            Err(P2PError::DHT("DHT not enabled".to_string()))
+        }
+    }
+    
+    /// Retrieve a value from the DHT
+    pub async fn dht_get(&self, key: crate::dht::Key) -> Result<Option<Vec<u8>>> {
+        if let Some(ref dht) = self.dht {
+            let dht_instance = dht.write().await;
+            let record_result = dht_instance.get(&key).await;
+            
+            let value = record_result.as_ref().map(|record| record.value.clone());
+            
+            // Emit event
+            let _ = self.event_tx.send(NetworkEvent::DHTRecordRetrieved {
+                key: key.as_bytes().to_vec(),
+                value: value.clone(),
+            });
+            
+            Ok(value)
+        } else {
+            Err(P2PError::DHT("DHT not enabled".to_string()))
+        }
+    }
+    
     /// Add a discovered peer to the bootstrap cache
     pub async fn add_discovered_peer(&self, peer_id: PeerId, addresses: Vec<String>) -> Result<()> {
         if let Some(ref bootstrap_manager) = self.bootstrap_manager {
@@ -822,7 +883,7 @@ impl P2PNode {
     }
     
     /// Get bootstrap cache statistics
-    pub async fn get_bootstrap_stats(&self) -> Result<Option<crate::bootstrap::CacheStats>> {
+    pub async fn get_bootstrap_cache_stats(&self) -> Result<Option<crate::bootstrap::CacheStats>> {
         if let Some(ref bootstrap_manager) = self.bootstrap_manager {
             let manager = bootstrap_manager.read().await;
             let stats = manager.get_stats().await
@@ -836,7 +897,7 @@ impl P2PNode {
     /// Get the number of cached bootstrap peers
     pub async fn cached_peer_count(&self) -> usize {
         if let Some(ref bootstrap_manager) = self.bootstrap_manager {
-            if let Ok(stats) = self.get_bootstrap_stats().await {
+            if let Ok(stats) = self.get_bootstrap_cache_stats().await {
                 if let Some(stats) = stats {
                     return stats.total_contacts;
                 }
@@ -869,14 +930,21 @@ impl P2PNode {
         
         // Fallback to configured bootstrap peers if no cache or cache is empty
         if bootstrap_contacts.is_empty() {
-            if self.config.bootstrap_peers.is_empty() {
+            let bootstrap_peers = if !self.config.bootstrap_peers_str.is_empty() {
+                &self.config.bootstrap_peers_str
+            } else {
+                // Convert Multiaddr to strings for fallback
+                &self.config.bootstrap_peers.iter().map(|addr| addr.to_string()).collect::<Vec<_>>()
+            };
+            
+            if bootstrap_peers.is_empty() {
                 info!("No bootstrap peers configured and no cached peers available");
                 return Ok(());
             }
             
-            info!("Using {} configured bootstrap peers", self.config.bootstrap_peers.len());
+            info!("Using {} configured bootstrap peers", bootstrap_peers.len());
             
-            for addr in &self.config.bootstrap_peers {
+            for addr in bootstrap_peers {
                 let contact = ContactEntry::new(
                     format!("unknown_peer_{}", addr.chars().take(8).collect::<String>()),
                     vec![addr.clone()]
@@ -1090,7 +1158,9 @@ mod tests {
                 "/ip6/::1/tcp/9001".to_string(),
                 "/ip4/127.0.0.1/tcp/9001".to_string(),
             ],
+            listen_addr: "127.0.0.1:9001".parse().unwrap(),
             bootstrap_peers: vec![],
+            bootstrap_peers_str: vec![],
             enable_ipv6: true,
             enable_mcp_server: true,
             mcp_server_config: Some(MCPServerConfig {
@@ -1105,6 +1175,7 @@ mod tests {
             dht_config: DHTConfig::default(),
             security_config: SecurityConfig::default(),
             production_config: None,
+            bootstrap_cache_config: None,
         }
     }
 
