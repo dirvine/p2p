@@ -7,6 +7,7 @@ use crate::{PeerId, Multiaddr, P2PError, Result};
 use crate::mcp::{MCPServer, MCPServerConfig, Tool, MCPCallContext, MCP_PROTOCOL};
 use crate::dht::{DHT, DHTConfig as DHTConfigInner};
 use crate::production::{ProductionConfig, ResourceManager, ResourceMetrics};
+use crate::bootstrap::{BootstrapManager, ContactEntry, QualityMetrics};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -267,6 +268,9 @@ pub struct P2PNode {
     
     /// Production resource manager (optional)
     resource_manager: Option<Arc<ResourceManager>>,
+    
+    /// Bootstrap cache manager for peer discovery
+    bootstrap_manager: Option<Arc<RwLock<BootstrapManager>>>,
 }
 
 impl P2PNode {
@@ -327,6 +331,15 @@ impl P2PNode {
             None
         };
         
+        // Initialize bootstrap cache manager
+        let bootstrap_manager = match BootstrapManager::new().await {
+            Ok(manager) => Some(Arc::new(RwLock::new(manager))),
+            Err(e) => {
+                warn!("Failed to initialize bootstrap manager: {}, continuing without cache", e);
+                None
+            }
+        };
+        
         let node = Self {
             config,
             peer_id,
@@ -338,6 +351,7 @@ impl P2PNode {
             mcp_server,
             dht,
             resource_manager,
+            bootstrap_manager,
         };
         
         info!("Created P2P node with peer ID: {}", node.peer_id);
@@ -368,6 +382,14 @@ impl P2PNode {
             resource_manager.start().await
                 .map_err(|e| P2PError::Network(format!("Failed to start resource manager: {}", e)))?;
             info!("Production resource manager started");
+        }
+        
+        // Start bootstrap manager background tasks
+        if let Some(ref bootstrap_manager) = self.bootstrap_manager {
+            let mut manager = bootstrap_manager.write().await;
+            manager.start_background_tasks().await
+                .map_err(|e| P2PError::Network(format!("Failed to start bootstrap manager: {}", e)))?;
+            info!("Bootstrap cache manager started");
         }
         
         // Set running state
@@ -767,24 +789,148 @@ impl P2PNode {
         self.dht.as_ref()
     }
     
-    /// Connect to bootstrap peers
-    async fn connect_bootstrap_peers(&self) -> Result<()> {
-        if self.config.bootstrap_peers.is_empty() {
-            info!("No bootstrap peers configured");
-            return Ok(());
+    /// Add a discovered peer to the bootstrap cache
+    pub async fn add_discovered_peer(&self, peer_id: PeerId, addresses: Vec<String>) -> Result<()> {
+        if let Some(ref bootstrap_manager) = self.bootstrap_manager {
+            let mut manager = bootstrap_manager.write().await;
+            let contact = ContactEntry::new(peer_id, addresses);
+            manager.add_contact(contact).await
+                .map_err(|e| P2PError::Network(format!("Failed to add peer to bootstrap cache: {}", e)))?;
         }
-        
-        info!("Connecting to {} bootstrap peers", self.config.bootstrap_peers.len());
-        
-        for addr in &self.config.bootstrap_peers {
-            match self.connect_peer(addr).await {
-                Ok(peer_id) => {
-                    info!("Connected to bootstrap peer: {}", peer_id);
-                }
-                Err(e) => {
-                    warn!("Failed to connect to bootstrap peer {}: {}", addr, e);
+        Ok(())
+    }
+    
+    /// Update connection metrics for a peer in the bootstrap cache
+    pub async fn update_peer_metrics(&self, peer_id: &PeerId, success: bool, latency_ms: Option<u64>, error: Option<String>) -> Result<()> {
+        if let Some(ref bootstrap_manager) = self.bootstrap_manager {
+            let mut manager = bootstrap_manager.write().await;
+            
+            // Create quality metrics based on the connection result
+            let metrics = QualityMetrics {
+                success_rate: if success { 1.0 } else { 0.0 },
+                avg_latency_ms: latency_ms.unwrap_or(0) as f64,
+                quality_score: if success { 0.8 } else { 0.2 }, // Initial score
+                last_connection_attempt: chrono::Utc::now(),
+                last_successful_connection: if success { chrono::Utc::now() } else { chrono::Utc::now() - chrono::Duration::hours(1) },
+                uptime_score: 0.5,
+            };
+            
+            manager.update_contact_metrics(peer_id, metrics).await
+                .map_err(|e| P2PError::Network(format!("Failed to update peer metrics: {}", e)))?;
+        }
+        Ok(())
+    }
+    
+    /// Get bootstrap cache statistics
+    pub async fn get_bootstrap_stats(&self) -> Result<Option<crate::bootstrap::CacheStats>> {
+        if let Some(ref bootstrap_manager) = self.bootstrap_manager {
+            let manager = bootstrap_manager.read().await;
+            let stats = manager.get_stats().await
+                .map_err(|e| P2PError::Network(format!("Failed to get bootstrap stats: {}", e)))?;
+            Ok(Some(stats))
+        } else {
+            Ok(None)
+        }
+    }
+    
+    /// Get the number of cached bootstrap peers
+    pub async fn cached_peer_count(&self) -> usize {
+        if let Some(ref bootstrap_manager) = self.bootstrap_manager {
+            if let Ok(stats) = self.get_bootstrap_stats().await {
+                if let Some(stats) = stats {
+                    return stats.total_contacts;
                 }
             }
+        }
+        0
+    }
+    
+    /// Connect to bootstrap peers
+    async fn connect_bootstrap_peers(&self) -> Result<()> {
+        let mut bootstrap_contacts = Vec::new();
+        let mut used_cache = false;
+        
+        // Try to get peers from bootstrap cache first
+        if let Some(ref bootstrap_manager) = self.bootstrap_manager {
+            let manager = bootstrap_manager.read().await;
+            match manager.get_bootstrap_peers(20).await { // Try to get top 20 quality peers
+                Ok(contacts) => {
+                    if !contacts.is_empty() {
+                        info!("Using {} cached bootstrap peers", contacts.len());
+                        bootstrap_contacts = contacts;
+                        used_cache = true;
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to get cached bootstrap peers: {}", e);
+                }
+            }
+        }
+        
+        // Fallback to configured bootstrap peers if no cache or cache is empty
+        if bootstrap_contacts.is_empty() {
+            if self.config.bootstrap_peers.is_empty() {
+                info!("No bootstrap peers configured and no cached peers available");
+                return Ok(());
+            }
+            
+            info!("Using {} configured bootstrap peers", self.config.bootstrap_peers.len());
+            
+            for addr in &self.config.bootstrap_peers {
+                let contact = ContactEntry::new(
+                    format!("unknown_peer_{}", addr.chars().take(8).collect::<String>()),
+                    vec![addr.clone()]
+                );
+                bootstrap_contacts.push(contact);
+            }
+        }
+        
+        // Connect to bootstrap peers
+        let mut successful_connections = 0;
+        for contact in bootstrap_contacts {
+            for addr in &contact.addresses {
+                match self.connect_peer(addr).await {
+                    Ok(peer_id) => {
+                        info!("Connected to bootstrap peer: {} ({})", peer_id, addr);
+                        successful_connections += 1;
+                        
+                        // Update bootstrap cache with successful connection
+                        if let Some(ref bootstrap_manager) = self.bootstrap_manager {
+                            let mut manager = bootstrap_manager.write().await;
+                            let mut updated_contact = contact.clone();
+                            updated_contact.peer_id = peer_id.clone();
+                            updated_contact.update_connection_result(true, Some(100), None); // Assume 100ms latency for now
+                            
+                            if let Err(e) = manager.add_contact(updated_contact).await {
+                                warn!("Failed to update bootstrap cache: {}", e);
+                            }
+                        }
+                        break; // Successfully connected, move to next contact
+                    }
+                    Err(e) => {
+                        warn!("Failed to connect to bootstrap peer {}: {}", addr, e);
+                        
+                        // Update bootstrap cache with failed connection
+                        if used_cache {
+                            if let Some(ref bootstrap_manager) = self.bootstrap_manager {
+                                let mut manager = bootstrap_manager.write().await;
+                                let mut updated_contact = contact.clone();
+                                updated_contact.update_connection_result(false, None, Some(e.to_string()));
+                                
+                                if let Err(e) = manager.add_contact(updated_contact).await {
+                                    warn!("Failed to update bootstrap cache: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if successful_connections == 0 && !used_cache {
+            warn!("Failed to connect to any bootstrap peers");
+        } else {
+            info!("Successfully connected to {} bootstrap peers", successful_connections);
         }
         
         Ok(())

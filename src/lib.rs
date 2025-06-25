@@ -55,6 +55,9 @@ pub mod utils;
 /// Production hardening features
 pub mod production;
 
+/// Bootstrap cache for decentralized peer discovery
+pub mod bootstrap;
+
 /// Error types
 pub mod error;
 
@@ -63,6 +66,7 @@ pub use network::{P2PNode, NodeConfig, NodeBuilder};
 pub use dht::{Key, Record};
 pub use mcp::{MCPServer, Tool, MCPService};
 pub use production::{ProductionConfig, ResourceManager, ResourceMetrics};
+pub use bootstrap::{BootstrapManager, BootstrapCache, ContactEntry, CacheConfig};
 pub use error::{P2PError, Result};
 
 // Placeholder types (will be replaced with actual libp2p types)

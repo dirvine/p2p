@@ -25,6 +25,10 @@ pub enum P2PError {
     #[error("MCP error: {0}")]
     MCP(String),
     
+    /// Bootstrap cache error (peer discovery, cache management)
+    #[error("Bootstrap error: {0}")]
+    Bootstrap(String),
+    
     /// Configuration error (invalid settings, missing parameters)
     #[error("Configuration error: {0}")]
     Config(String),
