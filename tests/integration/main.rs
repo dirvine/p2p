@@ -418,6 +418,6 @@ pub mod utils {
     
     /// Check if IPv6 tests should run
     pub fn should_run_ipv6_tests() -> bool {
-        env::var("P2P_TEST_ENABLE_IPV6").as_deref() != Some("false")
+        env::var("P2P_TEST_ENABLE_IPV6").as_deref().unwrap_or("true") != "false"
     }
 }

@@ -558,7 +558,6 @@ pub mod security_types {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str::FromStr;
 
     fn create_test_keypair() -> Keypair {
         let mut csprng = rand::rngs::OsRng {};
@@ -1079,7 +1078,7 @@ mod tests {
         };
         let mut enforcer = IPDiversityEnforcer::new(config);
 
-        let base_addr = Ipv6Addr::new(0x2001, 0xdb8, 0x85a3, 0x1234, 0x5678, 0x8a2e, 0x0370, 0x0000);
+        let _base_addr = Ipv6Addr::new(0x2001, 0xdb8, 0x85a3, 0x1234, 0x5678, 0x8a2e, 0x0370, 0x0000);
         
         // Add 3 nodes in same /64 subnet
         for i in 1..=3 {

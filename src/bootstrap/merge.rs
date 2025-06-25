@@ -9,13 +9,16 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn, error};
+use tracing::{debug, info, warn};
 
 /// Merge coordinator for handling multi-instance cache coordination
 #[derive(Clone)]
 pub struct MergeCoordinator {
+    /// Main cache directory path
     cache_dir: PathBuf,
+    /// Directory containing instance-specific cache files
     instance_cache_dir: PathBuf,
+    /// Strategy used for resolving merge conflicts
     merge_strategy: MergeStrategy,
 }
 
@@ -45,11 +48,17 @@ struct InstanceCacheData {
 /// Merge operation result
 #[derive(Debug)]
 pub struct MergeResult {
+    /// Number of contacts that were merged from other instances
     pub contacts_merged: usize,
+    /// Number of existing contacts that were updated
     pub contacts_updated: usize,
+    /// Number of new contacts that were added
     pub contacts_added: usize,
+    /// Number of conflicts that were resolved during merge
     pub conflicts_resolved: usize,
+    /// Number of instance cache files that were processed
     pub instances_processed: usize,
+    /// Total time taken for the merge operation in milliseconds
     pub merge_duration_ms: u64,
 }
 
@@ -466,7 +475,6 @@ impl std::fmt::Display for MergeResult {
 mod tests {
     use super::*;
     use tempfile::TempDir;
-    use crate::bootstrap::CacheConfig;
 
     #[tokio::test]
     async fn test_merge_coordinator_creation() {

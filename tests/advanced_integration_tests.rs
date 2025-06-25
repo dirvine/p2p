@@ -12,14 +12,14 @@
 use p2p_foundation::{P2PNode, NodeConfig, Result, P2PError};
 use p2p_foundation::mcp::{Tool, FunctionToolHandler, MCPServerConfig};
 use p2p_foundation::dht::Key;
-use p2p_foundation::security::{IPv6NodeID, ReputationManager};
+use p2p_foundation::security::ReputationManager;
 use p2p_foundation::production::{ResourceManager, ProductionConfig};
 use std::sync::Arc;
 use std::time::Duration;
 use std::collections::HashMap;
 use tokio::time::{timeout, sleep, Instant};
 use serde_json::{json, Value};
-use tracing::{info, debug, warn, error};
+use tracing::{info, debug, warn};
 use rand::Rng;
 
 /// Advanced test suite for complex integration scenarios
@@ -701,7 +701,7 @@ async fn test_rate_limiting_protection(test_suite: &AdvancedTestSuite) -> Result
     
     // Make rapid calls to test rate limiting
     for i in 0..20 {
-        if let Some(mcp_server) = target_node.mcp_server().await {
+        if let Some(mcp_server) = target_node.mcp_server() {
             let context = p2p_foundation::mcp::MCPCallContext {
                 caller_id: "rate_test_client".to_string(),
                 timestamp: std::time::SystemTime::now(),
@@ -747,16 +747,16 @@ async fn test_reputation_system_behavior(_test_suite: &AdvancedTestSuite) -> Res
     info!("Testing reputation system behavior");
     
     let mut reputation_manager = ReputationManager::new(0.1, 0.1);
-    let test_peer = "test_peer_reputation";
+    let test_peer = PeerId::from("test_peer_reputation");
     
     // Simulate mixed interactions
     for i in 0..10 {
         let success = i % 3 != 0; // 2/3 success rate
         let response_time = Duration::from_millis(100 + i * 10);
-        reputation_manager.update_reputation(test_peer, success, response_time);
+        reputation_manager.update_reputation(&test_peer, success, response_time);
     }
     
-    let reputation = reputation_manager.get_reputation(test_peer);
+    let reputation = reputation_manager.get_reputation(&test_peer);
     assert!(reputation.is_some(), "Reputation should be tracked");
     
     let rep = reputation.unwrap();

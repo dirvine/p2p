@@ -19,10 +19,14 @@ use std::time::Duration;
 
 /// Default cache configuration
 pub const DEFAULT_MAX_CONTACTS: usize = 30_000;
+/// Default directory for storing bootstrap cache files
 pub const DEFAULT_CACHE_DIR: &str = ".cache/p2p_foundation";
+/// Default interval for merging instance cache files
 pub const DEFAULT_MERGE_INTERVAL: Duration = Duration::from_secs(30);
-pub const DEFAULT_CLEANUP_INTERVAL: Duration = Duration::from_secs(3600); // 1 hour
-pub const DEFAULT_QUALITY_UPDATE_INTERVAL: Duration = Duration::from_secs(300); // 5 minutes
+/// Default interval for cleaning up stale contacts (1 hour)
+pub const DEFAULT_CLEANUP_INTERVAL: Duration = Duration::from_secs(3600);
+/// Default interval for updating contact quality scores (5 minutes)
+pub const DEFAULT_QUALITY_UPDATE_INTERVAL: Duration = Duration::from_secs(300);
 
 /// Bootstrap cache initialization and management
 pub struct BootstrapManager {
@@ -130,12 +134,19 @@ impl BootstrapManager {
 /// Cache statistics for monitoring
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CacheStats {
+    /// Total number of contacts in the cache
     pub total_contacts: usize,
+    /// Number of contacts with high quality scores
     pub high_quality_contacts: usize,
+    /// Number of contacts with verified IPv6 identity
     pub verified_contacts: usize,
+    /// Timestamp of the last cache merge operation
     pub last_merge: chrono::DateTime<chrono::Utc>,
+    /// Timestamp of the last cache cleanup operation
     pub last_cleanup: chrono::DateTime<chrono::Utc>,
+    /// Cache hit rate for peer discovery operations
     pub cache_hit_rate: f64,
+    /// Average quality score across all contacts
     pub average_quality_score: f64,
 }
 

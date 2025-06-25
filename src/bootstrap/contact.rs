@@ -3,44 +3,64 @@
 //! Manages peer contact information with comprehensive quality metrics for
 //! intelligent bootstrap peer selection.
 
-use crate::{PeerId, Result, P2PError};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use crate::PeerId;
+use std::time::Duration;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// A contact entry representing a known peer
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ContactEntry {
+    /// Unique identifier for this peer
     pub peer_id: PeerId,
+    /// List of network addresses where this peer can be reached
     pub addresses: Vec<String>,
+    /// Timestamp when this peer was last seen online
     pub last_seen: chrono::DateTime<chrono::Utc>,
+    /// Quality metrics for connection performance evaluation
     pub quality_metrics: QualityMetrics,
+    /// List of capabilities supported by this peer
     pub capabilities: Vec<String>,
+    /// Whether this peer's IPv6 identity has been verified
     pub ipv6_identity_verified: bool,
+    /// Overall reputation score (0.0 to 1.0)
     pub reputation_score: f64,
+    /// Historical connection data for this peer
     pub connection_history: ConnectionHistory,
 }
 
 /// Quality metrics for peer evaluation
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct QualityMetrics {
-    pub success_rate: f64,           // 0.0 to 1.0
-    pub avg_latency_ms: f64,        // Average connection latency
-    pub quality_score: f64,         // Computed overall quality
+    /// Connection success rate (0.0 to 1.0)
+    pub success_rate: f64,
+    /// Average connection latency in milliseconds
+    pub avg_latency_ms: f64,
+    /// Computed overall quality score (0.0 to 1.0)
+    pub quality_score: f64,
+    /// Timestamp of the last connection attempt
     pub last_connection_attempt: chrono::DateTime<chrono::Utc>,
+    /// Timestamp of the last successful connection
     pub last_successful_connection: chrono::DateTime<chrono::Utc>,
-    pub uptime_score: f64,          // Estimated uptime reliability
+    /// Estimated uptime reliability score (0.0 to 1.0)
+    pub uptime_score: f64,
 }
 
 /// Connection history tracking
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ConnectionHistory {
+    /// Total number of connection attempts made
     pub total_attempts: u64,
+    /// Number of successful connections established
     pub successful_connections: u64,
+    /// Number of failed connection attempts
     pub failed_connections: u64,
+    /// Total time spent in successful sessions
     pub total_session_time: Duration,
-    pub recent_latencies: Vec<u64>, // Last 10 latency measurements in ms
-    pub connection_failures: HashMap<String, u64>, // Failure reasons and counts
+    /// Last 10 latency measurements in milliseconds
+    pub recent_latencies: Vec<u64>,
+    /// Failure reasons and their occurrence counts
+    pub connection_failures: HashMap<String, u64>,
 }
 
 impl ContactEntry {

@@ -380,7 +380,7 @@ async fn test_high_load_concurrent_operations() -> Result<()> {
     info!("Starting concurrent operations with {} active nodes", active_node_indices.len());
     
     // DHT write operations
-    for worker_id in 0..5 { // Reduced worker count to avoid too much concurrency
+    for _worker_id in 0..5 { // Reduced worker count to avoid too much concurrency
         let completed = operations_completed.clone();
         let failed = operations_failed.clone();
         let stop = stop_flag.clone();
@@ -388,8 +388,8 @@ async fn test_high_load_concurrent_operations() -> Result<()> {
         let task = tokio::spawn(async move {
             let mut operation_count = 0;
             while !stop.load(Ordering::Relaxed) && operation_count < 50 {
-                let key = Key::new(format!("load_test_{}_{}", worker_id, operation_count).as_bytes());
-                let value = format!("data_{}_{}", worker_id, operation_count).into_bytes();
+                let _key = Key::new(format!("load_test_{}_{}", worker_id, operation_count).as_bytes());
+                let _value = format!("data_{}_{}", worker_id, operation_count).into_bytes();
                 
                 // Simulate DHT operation (we'll track success/failure)
                 match tokio::time::timeout(Duration::from_secs(5), tokio::time::sleep(Duration::from_millis(10))).await {
@@ -410,7 +410,7 @@ async fn test_high_load_concurrent_operations() -> Result<()> {
     }
     
     // DHT read operations
-    for worker_id in 0..5 { // Reduced worker count
+    for _worker_id in 0..5 { // Reduced worker count
         let completed = operations_completed.clone();
         let failed = operations_failed.clone();
         let stop = stop_flag.clone();
@@ -418,7 +418,7 @@ async fn test_high_load_concurrent_operations() -> Result<()> {
         let task = tokio::spawn(async move {
             let mut operation_count = 0;
             while !stop.load(Ordering::Relaxed) && operation_count < 25 {
-                let key = Key::new(format!("load_test_{}_{}", 
+                let _key = Key::new(format!("load_test_{}_{}", 
                                           rand::random::<usize>() % 5, 
                                           rand::random::<usize>() % 50).as_bytes());
                 
@@ -449,7 +449,7 @@ async fn test_high_load_concurrent_operations() -> Result<()> {
         let task = tokio::spawn(async move {
             let mut operation_count = 0;
             while !stop.load(Ordering::Relaxed) && operation_count < 20 {
-                let peer_id = PeerId::from(format!("stress_peer_{}_{}", worker_id, operation_count));
+                let _peer_id = PeerId::from(format!("stress_peer_{}_{}", _worker_id, operation_count));
                 let _addr = format!("127.0.0.1:{}", 30000 + operation_count);
                 
                 // Simulate peer discovery operation

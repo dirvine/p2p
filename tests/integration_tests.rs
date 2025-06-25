@@ -731,6 +731,7 @@ async fn test_kademlia_routing() -> Result<()> {
 #[tokio::test]
 async fn test_network_functionality() -> Result<()> {
     use p2p_foundation::*;
+    use tokio::time::sleep;
     
     println!("Testing P2P network functionality...");
     
@@ -776,9 +777,15 @@ async fn test_network_functionality() -> Result<()> {
     
     println!("✅ Both nodes started successfully");
     
-    // Test peer connection (simulated since we don't have real networking yet)
+    // Wait for nodes to discover each other through bootstrap process
+    sleep(Duration::from_secs(2)).await;
+    
+    // Test peer connection (nodes should have connected via bootstrap)
+    let initial_peer_count = node1.peer_count().await;
+    assert!(initial_peer_count >= 1, "Node1 should have at least 1 peer connection");
+    
+    // Test manual peer connection
     let peer_id = node1.connect_peer(&"/ip4/127.0.0.1/tcp/9002".to_string()).await?;
-    assert_eq!(node1.peer_count().await, 1);
     assert!(node1.peer_info(&peer_id).await.is_some());
     
     println!("✅ Peer connection established");
@@ -811,8 +818,12 @@ async fn test_network_functionality() -> Result<()> {
     println!("✅ Message sending works");
     
     // Test peer disconnection
+    let peer_count_before_disconnect = node1.peer_count().await;
     node1.disconnect_peer(&peer_id).await?;
-    assert_eq!(node1.peer_count().await, 1); // One peer should remain
+    let peer_count_after_disconnect = node1.peer_count().await;
+    assert!(peer_count_after_disconnect < peer_count_before_disconnect, 
+           "Peer count should decrease after disconnection: before={}, after={}", 
+           peer_count_before_disconnect, peer_count_after_disconnect);
     
     println!("✅ Peer disconnection works");
     

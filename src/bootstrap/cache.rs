@@ -16,13 +16,21 @@ use tracing::{debug, info, warn, error};
 /// Bootstrap cache configuration
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CacheConfig {
+    /// Directory where cache files are stored
     pub cache_dir: PathBuf,
+    /// Maximum number of contacts to keep in cache
     pub max_contacts: usize,
+    /// Interval between cache merge operations
     pub merge_interval: Duration,
+    /// Interval between cache cleanup operations
     pub cleanup_interval: Duration,
+    /// Interval between quality score updates
     pub quality_update_interval: Duration,
+    /// Age threshold for considering contacts stale
     pub stale_threshold: Duration,
+    /// Interval between connectivity checks
     pub connectivity_check_interval: Duration,
+    /// Number of peers to check connectivity with
     pub connectivity_check_count: usize,
 }
 
@@ -44,18 +52,23 @@ impl Default for CacheConfig {
 /// Bootstrap cache errors
 #[derive(Debug, thiserror::Error)]
 pub enum CacheError {
+    /// File I/O operation failed
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     
+    /// JSON serialization/deserialization failed
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
     
+    /// Failed to acquire lock on cache
     #[error("Lock error: {0}")]
     Lock(String),
     
+    /// Cache file corruption detected
     #[error("Cache corruption: {0}")]
     Corruption(String),
     
+    /// Configuration error
     #[error("Configuration error: {0}")]
     Configuration(String),
 }

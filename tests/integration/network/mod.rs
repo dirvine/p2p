@@ -41,7 +41,7 @@ async fn test_node_creation_default() -> Result<()> {
 /// Test node creation with custom configuration
 #[tokio::test]
 async fn test_node_creation_custom() -> Result<()> {
-    let config = TestNodeConfig::builder()
+    let config = NodeConfig::builder()
         .port(9001)
         .enable_ipv6(true)
         .enable_metrics(true)
@@ -200,7 +200,7 @@ async fn test_network_resilience() -> Result<()> {
 /// Test bandwidth and connection limits
 #[tokio::test]
 async fn test_connection_limits() -> Result<()> {
-    let config = TestNodeConfig::builder()
+    let config = NodeConfig::builder()
         .port(9010)
         .build();
     
@@ -212,7 +212,7 @@ async fn test_connection_limits() -> Result<()> {
     // Create 3 other nodes and try to connect all to the limited node
     let mut other_nodes = Vec::new();
     for i in 0..3 {
-        let other_config = TestNodeConfig::builder()
+        let other_config = NodeConfig::builder()
             .port(9011 + i as u16)
             .build();
         other_nodes.push(P2PNode::new(other_config).await?);
@@ -317,14 +317,14 @@ async fn test_connection_performance() -> Result<()> {
 #[tokio::test]
 async fn test_mixed_ipv4_ipv6_network() -> Result<()> {
     // Create IPv4 node
-    let ipv4_config = TestNodeConfig::builder()
+    let ipv4_config = NodeConfig::builder()
         .port(9020)
         .enable_ipv6(false)
         .build();
     let ipv4_node = P2PNode::new(ipv4_config).await?;
     
     // Create IPv6 node
-    let ipv6_config = TestNodeConfig::builder()
+    let ipv6_config = NodeConfig::builder()
         .port(9021)
         .enable_ipv6(true)
         .build();
@@ -399,8 +399,8 @@ async fn test_keep_alive() -> Result<()> {
 /// Stress test with rapid connection/disconnection
 #[tokio::test]
 async fn test_connection_stress() -> Result<()> {
-    let node1 = P2PNode::new(TestNodeConfig::builder().port(9030).build()).await?;
-    let node2 = P2PNode::new(TestNodeConfig::builder().port(9031).build()).await?;
+    let node1 = P2PNode::new(NodeConfig::builder().port(9030).build()).await?;
+    let node2 = P2PNode::new(NodeConfig::builder().port(9031).build()).await?;
     
     let node1_addr = node1.listen_addrs().await?[0].clone();
     let node2_id = node2.peer_id();
