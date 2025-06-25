@@ -126,8 +126,8 @@ async fn test_isatap_address_prefixes() -> Result<()> {
 #[tokio::test]
 async fn test_isatap_address_validation() -> Result<()> {
     // Valid ISATAP addresses
-    let valid_isatap1: Ipv6Addr = "fe80::5efe:c0a8:164".parse().unwrap(); // Missing leading zeros
-    let valid_isatap2: Ipv6Addr = "2001:db8::0:5efe:a00:1".parse().unwrap();
+    let _valid_isatap1: Ipv6Addr = "fe80::5efe:c0a8:164".parse().unwrap(); // Missing leading zeros
+    let _valid_isatap2: Ipv6Addr = "2001:db8::0:5efe:a00:1".parse().unwrap();
     
     // Create properly formatted ISATAP address
     let ipv4: Ipv4Addr = "192.168.1.100".parse().unwrap();
@@ -531,7 +531,7 @@ async fn test_isatap_multi_site_enterprise() -> Result<()> {
     for (site_name, _network, router_addr) in sites {
         println!("Testing ISATAP for {}", site_name);
         
-        let router_ipv4: Ipv4Addr = router_addr.parse().unwrap();
+        let _router_ipv4: Ipv4Addr = router_addr.parse().unwrap();
         let config = TunnelConfig {
             protocol: TunnelProtocol::Isatap,
             local_ipv4: Some("192.168.1.100".parse().unwrap()),

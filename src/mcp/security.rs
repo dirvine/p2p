@@ -573,3 +573,636 @@ impl SecurityAuditLogger {
         entries.iter().filter(|e| e.severity == severity).cloned().collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    /// Helper function to create a test PeerId
+    fn create_test_peer() -> PeerId {
+        format!("test_peer_{}", rand::random::<u32>())
+    }
+
+    /// Helper function to create a test security manager
+    fn create_test_security_manager() -> MCPSecurityManager {
+        let secret_key = b"test_secret_key_1234567890123456".to_vec();
+        MCPSecurityManager::new(secret_key, 60) // 60 RPM limit
+    }
+
+    #[test]
+    fn test_mcp_permission_string_conversion() {
+        let permissions = vec![
+            (MCPPermission::ReadTools, "read:tools"),
+            (MCPPermission::ExecuteTools, "execute:tools"),
+            (MCPPermission::RegisterTools, "register:tools"),
+            (MCPPermission::ModifyTools, "modify:tools"),
+            (MCPPermission::DeleteTools, "delete:tools"),
+            (MCPPermission::AccessPrompts, "access:prompts"),
+            (MCPPermission::AccessResources, "access:resources"),
+            (MCPPermission::Admin, "admin"),
+        ];
+
+        for (permission, expected_str) in permissions {
+            assert_eq!(permission.as_str(), expected_str);
+            assert_eq!(MCPPermission::from_str(expected_str), Some(permission));
+        }
+
+        // Test custom permission
+        let custom = MCPPermission::Custom("custom:action".to_string());
+        assert_eq!(custom.as_str(), "custom:action");
+        assert_eq!(MCPPermission::from_str("custom:action"), Some(custom));
+
+        // Test unknown permission defaults to custom
+        let unknown = MCPPermission::from_str("unknown:permission");
+        match unknown {
+            Some(MCPPermission::Custom(s)) => assert_eq!(s, "unknown:permission"),
+            _ => panic!("Expected custom permission"),
+        }
+    }
+
+    #[test]
+    fn test_security_level_ordering() {
+        // Test security level ordering
+        assert!(SecurityLevel::Public < SecurityLevel::Basic);
+        assert!(SecurityLevel::Basic < SecurityLevel::Strong);
+        assert!(SecurityLevel::Strong < SecurityLevel::Admin);
+
+        // Test equality
+        assert_eq!(SecurityLevel::Public, SecurityLevel::Public);
+        assert_eq!(SecurityLevel::Basic, SecurityLevel::Basic);
+        assert_eq!(SecurityLevel::Strong, SecurityLevel::Strong);
+        assert_eq!(SecurityLevel::Admin, SecurityLevel::Admin);
+    }
+
+    #[test]
+    fn test_peer_acl_creation() {
+        let peer_id = create_test_peer();
+        let acl = PeerACL::new(peer_id.clone());
+
+        assert_eq!(acl.peer_id, peer_id);
+        assert_eq!(acl.permissions.len(), 2); // Default: ReadTools, ExecuteTools
+        assert!(acl.permissions.contains(&MCPPermission::ReadTools));
+        assert!(acl.permissions.contains(&MCPPermission::ExecuteTools));
+        assert_eq!(acl.security_level, SecurityLevel::Basic);
+        assert_eq!(acl.reputation, 0.5);
+        assert_eq!(acl.access_count, 0);
+        assert_eq!(acl.rate_violations, 0);
+        assert!(acl.banned_until.is_none());
+        assert!(!acl.is_banned());
+    }
+
+    #[test]
+    fn test_peer_acl_permissions() {
+        let peer_id = create_test_peer();
+        let mut acl = PeerACL::new(peer_id);
+
+        // Test default permissions
+        assert!(acl.has_permission(&MCPPermission::ReadTools));
+        assert!(acl.has_permission(&MCPPermission::ExecuteTools));
+        assert!(!acl.has_permission(&MCPPermission::RegisterTools));
+        assert!(!acl.has_permission(&MCPPermission::Admin));
+
+        // Grant admin permission
+        acl.grant_permission(MCPPermission::Admin);
+        // Admin permission grants all access
+        assert!(acl.has_permission(&MCPPermission::ReadTools));
+        assert!(acl.has_permission(&MCPPermission::ExecuteTools));
+        assert!(acl.has_permission(&MCPPermission::RegisterTools));
+        assert!(acl.has_permission(&MCPPermission::DeleteTools));
+        assert!(acl.has_permission(&MCPPermission::Admin));
+
+        // Revoke admin permission
+        acl.revoke_permission(&MCPPermission::Admin);
+        assert!(!acl.has_permission(&MCPPermission::RegisterTools));
+        assert!(!acl.has_permission(&MCPPermission::Admin));
+
+        // Grant specific permission
+        acl.grant_permission(MCPPermission::RegisterTools);
+        assert!(acl.has_permission(&MCPPermission::RegisterTools));
+
+        // Revoke specific permission
+        acl.revoke_permission(&MCPPermission::RegisterTools);
+        assert!(!acl.has_permission(&MCPPermission::RegisterTools));
+    }
+
+    #[test]
+    fn test_peer_acl_ban_functionality() {
+        let peer_id = create_test_peer();
+        let mut acl = PeerACL::new(peer_id);
+
+        // Initially not banned
+        assert!(!acl.is_banned());
+        assert!(acl.has_permission(&MCPPermission::ReadTools));
+
+        // Record violations (but not enough to trigger auto-ban)
+        for _ in 0..5 {
+            acl.record_rate_violation();
+        }
+        assert_eq!(acl.rate_violations, 5);
+        assert!(!acl.is_banned());
+
+        // Record enough violations to trigger auto-ban
+        for _ in 0..5 {
+            acl.record_rate_violation();
+        }
+        assert_eq!(acl.rate_violations, 10);
+        assert!(acl.is_banned());
+
+        // Banned peers have no permissions
+        assert!(!acl.has_permission(&MCPPermission::ReadTools));
+        assert!(!acl.has_permission(&MCPPermission::ExecuteTools));
+    }
+
+    #[test]
+    fn test_peer_acl_access_tracking() {
+        let peer_id = create_test_peer();
+        let mut acl = PeerACL::new(peer_id);
+
+        let initial_time = acl.last_access;
+        assert_eq!(acl.access_count, 0);
+
+        // Record access
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        acl.record_access();
+
+        assert_eq!(acl.access_count, 1);
+        assert!(acl.last_access > initial_time);
+
+        // Record more access
+        acl.record_access();
+        assert_eq!(acl.access_count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiter_creation() {
+        let limiter = RateLimiter::new(60);
+        assert_eq!(limiter.rpm_limit, 60);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiter_basic_functionality() {
+        let limiter = RateLimiter::new(2); // 2 requests per minute
+        let peer_id = create_test_peer();
+
+        // First request should be allowed
+        assert!(limiter.is_allowed(&peer_id).await);
+
+        // Second request should be allowed
+        assert!(limiter.is_allowed(&peer_id).await);
+
+        // Third request should be denied (over limit)
+        assert!(!limiter.is_allowed(&peer_id).await);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiter_different_peers() {
+        let limiter = RateLimiter::new(1); // 1 request per minute
+        let peer1 = create_test_peer();
+        let peer2 = create_test_peer();
+
+        // Each peer should have their own limit
+        assert!(limiter.is_allowed(&peer1).await);
+        assert!(limiter.is_allowed(&peer2).await);
+
+        // Both should be over their individual limits now
+        assert!(!limiter.is_allowed(&peer1).await);
+        assert!(!limiter.is_allowed(&peer2).await);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiter_reset() {
+        let limiter = RateLimiter::new(1);
+        let peer_id = create_test_peer();
+
+        // Use up the limit
+        assert!(limiter.is_allowed(&peer_id).await);
+        assert!(!limiter.is_allowed(&peer_id).await);
+
+        // Reset the peer
+        limiter.reset_peer(&peer_id).await;
+
+        // Should be allowed again
+        assert!(limiter.is_allowed(&peer_id).await);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiter_cleanup() {
+        let limiter = RateLimiter::new(10);
+        let peer_id = create_test_peer();
+
+        // Make some requests
+        limiter.is_allowed(&peer_id).await;
+        limiter.is_allowed(&peer_id).await;
+
+        // Cleanup shouldn't affect recent requests
+        limiter.cleanup().await;
+
+        // Should still have request history
+        let requests = limiter.requests.read().await;
+        assert!(requests.contains_key(&peer_id));
+        let peer_requests = requests.get(&peer_id).unwrap();
+        assert_eq!(peer_requests.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_security_manager_creation() {
+        let secret_key = b"test_secret_key".to_vec();
+        let manager = MCPSecurityManager::new(secret_key.clone(), 60);
+
+        // Verify configuration
+        assert_eq!(manager.secret_key, secret_key);
+        assert_eq!(manager.rate_limiter.rpm_limit, 60);
+    }
+
+    #[tokio::test]
+    async fn test_token_generation_and_verification() -> Result<()> {
+        let manager = create_test_security_manager();
+        let peer_id = create_test_peer();
+        let permissions = vec![MCPPermission::ReadTools, MCPPermission::ExecuteTools];
+        let ttl = Duration::from_secs(3600); // 1 hour
+
+        // Generate token
+        let token = manager.generate_token(&peer_id, permissions.clone(), ttl).await?;
+        assert!(!token.is_empty());
+
+        // Verify token
+        let payload = manager.verify_token(&token).await?;
+        assert_eq!(payload.iss, peer_id);
+        assert_eq!(payload.sub, peer_id);
+        assert_eq!(payload.aud, "mcp-server");
+
+        // Check permissions in claims
+        let permissions_claim = payload.claims.get("permissions").unwrap();
+        let permission_strings: Vec<String> = serde_json::from_value(permissions_claim.clone()).unwrap();
+        assert_eq!(permission_strings.len(), 2);
+        assert!(permission_strings.contains(&"read:tools".to_string()));
+        assert!(permission_strings.contains(&"execute:tools".to_string()));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_token_verification_invalid() {
+        let manager = create_test_security_manager();
+
+        // Test invalid token format
+        let result = manager.verify_token("invalid.token").await;
+        assert!(result.is_err());
+
+        // Test malformed token
+        let result = manager.verify_token("invalid.token.format.extra").await;
+        assert!(result.is_err());
+
+        // Test empty token
+        let result = manager.verify_token("").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_token_signature_verification() -> Result<()> {
+        let manager1 = create_test_security_manager();
+        let manager2 = MCPSecurityManager::new(b"different_secret".to_vec(), 60);
+
+        let peer_id = create_test_peer();
+        let permissions = vec![MCPPermission::ReadTools];
+        let ttl = Duration::from_secs(3600);
+
+        // Generate token with manager1
+        let token = manager1.generate_token(&peer_id, permissions, ttl).await?;
+
+        // Verify with manager1 should succeed
+        assert!(manager1.verify_token(&token).await.is_ok());
+
+        // Verify with manager2 should fail (different secret)
+        assert!(manager2.verify_token(&token).await.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_permission_management() -> Result<()> {
+        let manager = create_test_security_manager();
+        let peer_id = create_test_peer();
+
+        // Initially should have no permissions (new peer starts with false)
+        assert!(!manager.check_permission(&peer_id, &MCPPermission::ExecuteTools).await?);
+
+        // Grant permission
+        manager.grant_permission(&peer_id, MCPPermission::ExecuteTools).await?;
+        assert!(manager.check_permission(&peer_id, &MCPPermission::ExecuteTools).await?);
+
+        // Revoke permission
+        manager.revoke_permission(&peer_id, &MCPPermission::ExecuteTools).await?;
+        assert!(!manager.check_permission(&peer_id, &MCPPermission::ExecuteTools).await?);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_checking() -> Result<()> {
+        let manager = MCPSecurityManager::new(b"test_key".to_vec(), 2); // 2 RPM limit
+        let peer_id = create_test_peer();
+
+        // Grant permission first to create ACL entry
+        manager.grant_permission(&peer_id, MCPPermission::ReadTools).await?;
+
+        // First two requests should pass
+        assert!(manager.check_rate_limit(&peer_id).await?);
+        assert!(manager.check_rate_limit(&peer_id).await?);
+
+        // Third request should fail
+        assert!(!manager.check_rate_limit(&peer_id).await?);
+
+        // Check that violation was recorded
+        let stats = manager.get_peer_stats(&peer_id).await;
+        assert!(stats.is_some());
+        let acl = stats.unwrap();
+        assert_eq!(acl.rate_violations, 1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_trusted_peer_management() -> Result<()> {
+        let manager = create_test_security_manager();
+        let peer_id = create_test_peer();
+
+        // Initially not trusted
+        assert!(!manager.is_trusted_peer(&peer_id).await);
+
+        // Add as trusted
+        manager.add_trusted_peer(peer_id.clone()).await?;
+        assert!(manager.is_trusted_peer(&peer_id).await);
+
+        // Adding same peer again should be idempotent
+        manager.add_trusted_peer(peer_id.clone()).await?;
+        assert!(manager.is_trusted_peer(&peer_id).await);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tool_security_policies() -> Result<()> {
+        let manager = create_test_security_manager();
+
+        // Default policy should be Basic
+        let policy = manager.get_tool_policy("test_tool").await;
+        assert_eq!(policy, SecurityLevel::Basic);
+
+        // Set custom policy
+        manager.set_tool_policy("test_tool".to_string(), SecurityLevel::Strong).await?;
+        let policy = manager.get_tool_policy("test_tool").await;
+        assert_eq!(policy, SecurityLevel::Strong);
+
+        // Set admin policy
+        manager.set_tool_policy("admin_tool".to_string(), SecurityLevel::Admin).await?;
+        let policy = manager.get_tool_policy("admin_tool").await;
+        assert_eq!(policy, SecurityLevel::Admin);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_reputation_management() -> Result<()> {
+        let manager = create_test_security_manager();
+        let peer_id = create_test_peer();
+
+        // Grant permission to create ACL entry
+        manager.grant_permission(&peer_id, MCPPermission::ReadTools).await?;
+
+        let stats = manager.get_peer_stats(&peer_id).await.unwrap();
+        assert_eq!(stats.reputation, 0.5); // Default reputation
+
+        // Increase reputation
+        manager.update_reputation(&peer_id, 0.2).await?;
+        let stats = manager.get_peer_stats(&peer_id).await.unwrap();
+        assert_eq!(stats.reputation, 0.7);
+
+        // Decrease reputation
+        manager.update_reputation(&peer_id, -0.3).await?;
+        let stats = manager.get_peer_stats(&peer_id).await.unwrap();
+        assert!((stats.reputation - 0.4).abs() < 0.001); // Use epsilon for float comparison
+
+        // Test bounds (should clamp to 0.0-1.0)
+        manager.update_reputation(&peer_id, -1.0).await?;
+        let stats = manager.get_peer_stats(&peer_id).await.unwrap();
+        assert_eq!(stats.reputation, 0.0);
+
+        manager.update_reputation(&peer_id, 2.0).await?;
+        let stats = manager.get_peer_stats(&peer_id).await.unwrap();
+        assert_eq!(stats.reputation, 1.0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_security_manager_cleanup() -> Result<()> {
+        let manager = create_test_security_manager();
+        let peer_id = create_test_peer();
+
+        // Create some data
+        manager.grant_permission(&peer_id, MCPPermission::ReadTools).await?;
+        manager.check_rate_limit(&peer_id).await?;
+
+        // Cleanup should work without errors
+        manager.cleanup().await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_audit_logger_creation() {
+        let logger = SecurityAuditLogger::new(100);
+        assert_eq!(logger.max_entries, 100);
+
+        let entries = logger.get_recent_entries(None).await;
+        assert!(entries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_audit_logger_logging() {
+        let logger = SecurityAuditLogger::new(10);
+        let peer_id = create_test_peer();
+
+        let mut details = HashMap::new();
+        details.insert("action".to_string(), "test_action".to_string());
+        details.insert("result".to_string(), "success".to_string());
+
+        // Log an event
+        logger.log_event(
+            "test_event".to_string(),
+            peer_id.clone(),
+            details.clone(),
+            AuditSeverity::Info,
+        ).await;
+
+        let entries = logger.get_recent_entries(None).await;
+        assert_eq!(entries.len(), 1);
+
+        let entry = &entries[0];
+        assert_eq!(entry.event_type, "test_event");
+        assert_eq!(entry.peer_id, peer_id);
+        assert_eq!(entry.severity, AuditSeverity::Info);
+        assert_eq!(entry.details.get("action"), Some(&"test_action".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_audit_logger_severity_filtering() {
+        let logger = SecurityAuditLogger::new(10);
+        let peer_id = create_test_peer();
+
+        // Log events with different severities
+        logger.log_event("info_event".to_string(), peer_id.clone(), HashMap::new(), AuditSeverity::Info).await;
+        logger.log_event("warning_event".to_string(), peer_id.clone(), HashMap::new(), AuditSeverity::Warning).await;
+        logger.log_event("error_event".to_string(), peer_id.clone(), HashMap::new(), AuditSeverity::Error).await;
+        logger.log_event("critical_event".to_string(), peer_id.clone(), HashMap::new(), AuditSeverity::Critical).await;
+
+        // Test filtering by severity
+        let info_entries = logger.get_entries_by_severity(AuditSeverity::Info).await;
+        assert_eq!(info_entries.len(), 1);
+        assert_eq!(info_entries[0].event_type, "info_event");
+
+        let warning_entries = logger.get_entries_by_severity(AuditSeverity::Warning).await;
+        assert_eq!(warning_entries.len(), 1);
+        assert_eq!(warning_entries[0].event_type, "warning_event");
+
+        let error_entries = logger.get_entries_by_severity(AuditSeverity::Error).await;
+        assert_eq!(error_entries.len(), 1);
+
+        let critical_entries = logger.get_entries_by_severity(AuditSeverity::Critical).await;
+        assert_eq!(critical_entries.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_audit_logger_max_entries() {
+        let logger = SecurityAuditLogger::new(3); // Limit to 3 entries
+        let peer_id = create_test_peer();
+
+        // Log 5 events
+        for i in 0..5 {
+            logger.log_event(
+                format!("event_{}", i),
+                peer_id.clone(),
+                HashMap::new(),
+                AuditSeverity::Info,
+            ).await;
+        }
+
+        let entries = logger.get_recent_entries(None).await;
+        assert_eq!(entries.len(), 3); // Should only keep 3 most recent
+
+        // Check that we have the most recent events (2, 3, 4)
+        assert_eq!(entries[0].event_type, "event_4"); // Most recent first
+        assert_eq!(entries[1].event_type, "event_3");
+        assert_eq!(entries[2].event_type, "event_2");
+    }
+
+    #[tokio::test]
+    async fn test_audit_logger_recent_entries_limit() {
+        let logger = SecurityAuditLogger::new(10);
+        let peer_id = create_test_peer();
+
+        // Log 5 events
+        for i in 0..5 {
+            logger.log_event(
+                format!("event_{}", i),
+                peer_id.clone(),
+                HashMap::new(),
+                AuditSeverity::Info,
+            ).await;
+        }
+
+        // Get limited number of recent entries
+        let entries = logger.get_recent_entries(Some(3)).await;
+        assert_eq!(entries.len(), 3);
+
+        // Should be most recent first
+        assert_eq!(entries[0].event_type, "event_4");
+        assert_eq!(entries[1].event_type, "event_3");
+        assert_eq!(entries[2].event_type, "event_2");
+    }
+
+    #[test]
+    fn test_audit_severity_equality() {
+        assert_eq!(AuditSeverity::Info, AuditSeverity::Info);
+        assert_eq!(AuditSeverity::Warning, AuditSeverity::Warning);
+        assert_eq!(AuditSeverity::Error, AuditSeverity::Error);
+        assert_eq!(AuditSeverity::Critical, AuditSeverity::Critical);
+
+        assert_ne!(AuditSeverity::Info, AuditSeverity::Warning);
+        assert_ne!(AuditSeverity::Warning, AuditSeverity::Error);
+        assert_ne!(AuditSeverity::Error, AuditSeverity::Critical);
+    }
+
+    #[test]
+    fn test_token_header_structure() {
+        let header = TokenHeader {
+            alg: "HS256".to_string(),
+            typ: "JWT".to_string(),
+            kid: Some("key123".to_string()),
+        };
+
+        assert_eq!(header.alg, "HS256");
+        assert_eq!(header.typ, "JWT");
+        assert_eq!(header.kid, Some("key123".to_string()));
+    }
+
+    #[test]
+    fn test_token_payload_structure() {
+        let peer_id = create_test_peer();
+        let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+
+        let mut claims = HashMap::new();
+        claims.insert("custom".to_string(), serde_json::json!("value"));
+
+        let payload = TokenPayload {
+            iss: peer_id.clone(),
+            sub: peer_id.to_string(),
+            aud: "test-audience".to_string(),
+            exp: now + 3600,
+            nbf: now,
+            iat: now,
+            jti: "unique-id".to_string(),
+            claims,
+        };
+
+        assert_eq!(payload.iss, peer_id);
+        assert_eq!(payload.aud, "test-audience");
+        assert_eq!(payload.jti, "unique-id");
+        assert!(payload.exp > payload.iat);
+        assert_eq!(payload.claims.get("custom"), Some(&serde_json::json!("value")));
+    }
+
+    #[test]
+    fn test_mcp_token_structure() {
+        let peer_id = create_test_peer();
+
+        let header = TokenHeader {
+            alg: "HS256".to_string(),
+            typ: "JWT".to_string(),
+            kid: None,
+        };
+
+        let payload = TokenPayload {
+            iss: peer_id.clone(),
+            sub: peer_id.to_string(),
+            aud: "test".to_string(),
+            exp: 1234567890,
+            nbf: 1234567800,
+            iat: 1234567800,
+            jti: "test-id".to_string(),
+            claims: HashMap::new(),
+        };
+
+        let token = MCPToken {
+            header: header.clone(),
+            payload: payload.clone(),
+            signature: "test-signature".to_string(),
+        };
+
+        assert_eq!(token.header.alg, header.alg);
+        assert_eq!(token.payload.iss, payload.iss);
+        assert_eq!(token.signature, "test-signature");
+    }
+}

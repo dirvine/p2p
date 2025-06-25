@@ -81,6 +81,14 @@ name = "mcp_service"
 name = "dht_benchmark"
 harness = false
 
+[[bench]]
+name = "security_benchmark"
+harness = false
+
+[[bench]]
+name = "production_benchmark"
+harness = false
+
 [profile.release]
 lto = true
 codegen-units = 1

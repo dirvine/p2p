@@ -492,3 +492,634 @@ pub mod transport_types {
 // Re-export transport implementations
 pub use tcp::TcpTransport;
 pub use quic::QuicTransport;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::time::Duration;
+
+    /// Mock transport implementation for testing
+    struct MockTransport {
+        transport_type: TransportType,
+        should_fail: bool,
+        supports_all: bool,
+    }
+
+    impl MockTransport {
+        fn new(transport_type: TransportType) -> Self {
+            Self {
+                transport_type,
+                should_fail: false,
+                supports_all: true,
+            }
+        }
+
+        fn with_failure(mut self) -> Self {
+            self.should_fail = true;
+            self
+        }
+
+        fn with_limited_support(mut self) -> Self {
+            self.supports_all = false;
+            self
+        }
+    }
+
+    #[async_trait]
+    impl Transport for MockTransport {
+        async fn listen(&self, _addr: SocketAddr) -> Result<Vec<Multiaddr>> {
+            if self.should_fail {
+                return Err(P2PError::Transport("Listen failed".to_string()));
+            }
+            Ok(vec!["/ip4/127.0.0.1/tcp/9000".to_string()])
+        }
+
+        async fn connect(&self, addr: &Multiaddr) -> Result<Box<dyn Connection>> {
+            if self.should_fail {
+                return Err(P2PError::Transport("Connection failed".to_string()));
+            }
+            Ok(Box::new(MockConnection::new(addr.clone())))
+        }
+
+        async fn connect_with_options(&self, addr: &Multiaddr, _options: TransportOptions) -> Result<Box<dyn Connection>> {
+            self.connect(addr).await
+        }
+
+        fn supported_addresses(&self) -> Vec<String> {
+            if self.supports_all {
+                vec!["/ip4/0.0.0.0/tcp/0".to_string(), "/ip6/::/tcp/0".to_string()]
+            } else {
+                vec!["/ip4/0.0.0.0/tcp/0".to_string()]
+            }
+        }
+
+        fn transport_type(&self) -> TransportType {
+            self.transport_type
+        }
+
+        fn supports_address(&self, addr: &Multiaddr) -> bool {
+            if !self.supports_all && addr.contains("ip6") {
+                return false;
+            }
+            addr.contains("tcp") || addr.contains("quic")
+        }
+    }
+
+    /// Mock connection implementation for testing
+    struct MockConnection {
+        remote_addr: Multiaddr,
+        is_alive: bool,
+        bytes_sent: AtomicUsize,
+        bytes_received: AtomicUsize,
+    }
+
+    impl MockConnection {
+        fn new(remote_addr: Multiaddr) -> Self {
+            Self {
+                remote_addr,
+                is_alive: true,
+                bytes_sent: AtomicUsize::new(0),
+                bytes_received: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Connection for MockConnection {
+        async fn send(&mut self, data: &[u8]) -> Result<()> {
+            if !self.is_alive {
+                return Err(P2PError::Network("Connection closed".to_string()));
+            }
+            self.bytes_sent.fetch_add(data.len(), Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn receive(&mut self) -> Result<Vec<u8>> {
+            if !self.is_alive {
+                return Err(P2PError::Network("Connection closed".to_string()));
+            }
+            let data = b"mock_response".to_vec();
+            self.bytes_received.fetch_add(data.len(), Ordering::Relaxed);
+            Ok(data)
+        }
+
+        async fn info(&self) -> ConnectionInfo {
+            ConnectionInfo {
+                transport_type: TransportType::QUIC,
+                local_addr: "/ip4/127.0.0.1/tcp/9000".to_string(),
+                remote_addr: self.remote_addr.clone(),
+                is_encrypted: true,
+                cipher_suite: "TLS_AES_256_GCM_SHA384".to_string(),
+                used_0rtt: false,
+                established_at: Instant::now(),
+                last_activity: Instant::now(),
+            }
+        }
+
+        async fn close(&mut self) -> Result<()> {
+            self.is_alive = false;
+            Ok(())
+        }
+
+        async fn is_alive(&self) -> bool {
+            self.is_alive
+        }
+
+        async fn measure_quality(&self) -> Result<ConnectionQuality> {
+            Ok(ConnectionQuality {
+                latency: Duration::from_millis(10),
+                throughput_mbps: 1000.0,
+                packet_loss: 0.1,
+                jitter: Duration::from_millis(2),
+                connect_time: Duration::from_millis(50),
+            })
+        }
+
+        fn local_addr(&self) -> Multiaddr {
+            "/ip4/127.0.0.1/tcp/9000".to_string()
+        }
+
+        fn remote_addr(&self) -> Multiaddr {
+            self.remote_addr.clone()
+        }
+    }
+
+    fn create_test_transport_manager() -> TransportManager {
+        let options = TransportOptions::default();
+        TransportManager::new(TransportSelection::Auto, options)
+    }
+
+    #[test]
+    fn test_transport_type_display() {
+        assert_eq!(format!("{}", TransportType::QUIC), "quic");
+        assert_eq!(format!("{}", TransportType::TCP), "tcp");
+    }
+
+    #[test]
+    fn test_transport_type_serialization() {
+        let quic_type = TransportType::QUIC;
+        let tcp_type = TransportType::TCP;
+
+        assert_eq!(quic_type, TransportType::QUIC);
+        assert_eq!(tcp_type, TransportType::TCP);
+        assert_ne!(quic_type, tcp_type);
+    }
+
+    #[test]
+    fn test_transport_selection_variants() {
+        let auto = TransportSelection::Auto;
+        let prefer_quic = TransportSelection::Prefer(TransportType::QUIC);
+        let force_tcp = TransportSelection::Force(TransportType::TCP);
+
+        assert!(matches!(auto, TransportSelection::Auto));
+        assert!(matches!(prefer_quic, TransportSelection::Prefer(TransportType::QUIC)));
+        assert!(matches!(force_tcp, TransportSelection::Force(TransportType::TCP)));
+    }
+
+    #[test]
+    fn test_transport_selection_default() {
+        let default = TransportSelection::default();
+        assert!(matches!(default, TransportSelection::Prefer(TransportType::QUIC)));
+    }
+
+    #[test]
+    fn test_transport_options_default() {
+        let options = TransportOptions::default();
+        
+        assert!(options.enable_0rtt);
+        assert!(options.require_encryption);
+        assert_eq!(options.connect_timeout, Duration::from_secs(30));
+        assert_eq!(options.keep_alive, Duration::from_secs(60));
+        assert_eq!(options.max_message_size, 64 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_connection_quality_default() {
+        let quality = ConnectionQuality::default();
+        
+        assert_eq!(quality.latency, Duration::from_millis(50));
+        assert_eq!(quality.throughput_mbps, 100.0);
+        assert_eq!(quality.packet_loss, 0.0);
+        assert_eq!(quality.jitter, Duration::from_millis(5));
+        assert_eq!(quality.connect_time, Duration::from_millis(100));
+    }
+
+    #[tokio::test]
+    async fn test_transport_manager_creation() {
+        let manager = create_test_transport_manager();
+        assert!(manager.transports.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_transport_registration() {
+        let mut manager = create_test_transport_manager();
+        let quic_transport = Arc::new(MockTransport::new(TransportType::QUIC));
+        let tcp_transport = Arc::new(MockTransport::new(TransportType::TCP));
+
+        manager.register_transport(quic_transport.clone());
+        manager.register_transport(tcp_transport.clone());
+
+        assert_eq!(manager.transports.len(), 2);
+        assert!(manager.transports.contains_key(&TransportType::QUIC));
+        assert!(manager.transports.contains_key(&TransportType::TCP));
+    }
+
+    #[tokio::test]
+    async fn test_connection_establishment() -> Result<()> {
+        let mut manager = create_test_transport_manager();
+        let transport = Arc::new(MockTransport::new(TransportType::QUIC));
+        manager.register_transport(transport);
+
+        let peer_id = manager.connect(&"/ip4/127.0.0.1/tcp/9001".to_string()).await?;
+        assert_eq!(peer_id, "peer_from_/ip4/127.0.0.1/tcp/9001");
+
+        let connections = manager.connections.read().await;
+        assert!(connections.contains_key(&peer_id));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_connection_with_specific_transport() -> Result<()> {
+        let mut manager = create_test_transport_manager();
+        let transport = Arc::new(MockTransport::new(TransportType::TCP));
+        manager.register_transport(transport);
+
+        let peer_id = manager.connect_with_transport(
+            &"/ip4/127.0.0.1/tcp/9002".to_string(),
+            TransportType::TCP
+        ).await?;
+
+        assert_eq!(peer_id, "peer_from_/ip4/127.0.0.1/tcp/9002");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_connection_failure_handling() {
+        let mut manager = create_test_transport_manager();
+        let failing_transport = Arc::new(MockTransport::new(TransportType::QUIC).with_failure());
+        manager.register_transport(failing_transport);
+
+        let result = manager.connect(&"/ip4/127.0.0.1/tcp/9003".to_string()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Connection failed"));
+    }
+
+    #[tokio::test]
+    async fn test_message_sending() -> Result<()> {
+        let mut manager = create_test_transport_manager();
+        let transport = Arc::new(MockTransport::new(TransportType::QUIC));
+        manager.register_transport(transport);
+
+        let peer_id = manager.connect(&"/ip4/127.0.0.1/tcp/9004".to_string()).await?;
+        let message = b"Hello, transport!".to_vec();
+        
+        manager.send_message(&peer_id, message.clone()).await?;
+
+        // Verify message was processed
+        let pool_info = manager.get_connection_pool_info(&peer_id).await?;
+        assert_eq!(pool_info.active_connections, 1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_message_sending_no_connection() {
+        let manager = create_test_transport_manager();
+        let result = manager.send_message(&"nonexistent_peer".to_string(), vec![1, 2, 3]).await;
+        
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No connection to peer"));
+    }
+
+    #[tokio::test]
+    async fn test_connection_info_retrieval() -> Result<()> {
+        let mut manager = create_test_transport_manager();
+        let transport = Arc::new(MockTransport::new(TransportType::QUIC));
+        manager.register_transport(transport);
+
+        let peer_id = manager.connect(&"/ip4/127.0.0.1/tcp/9005".to_string()).await?;
+        let info = manager.get_connection_info(&peer_id).await?;
+
+        assert_eq!(info.transport_type, TransportType::QUIC);
+        assert_eq!(info.remote_addr, "/ip4/127.0.0.1/tcp/9005");
+        assert!(info.is_encrypted);
+        assert_eq!(info.cipher_suite, "TLS_AES_256_GCM_SHA384");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_connection_pool_info() -> Result<()> {
+        let mut manager = create_test_transport_manager();
+        let transport = Arc::new(MockTransport::new(TransportType::QUIC));
+        manager.register_transport(transport);
+
+        let peer_id = manager.connect(&"/ip4/127.0.0.1/tcp/9006".to_string()).await?;
+        let pool_info = manager.get_connection_pool_info(&peer_id).await?;
+
+        assert_eq!(pool_info.active_connections, 1);
+        assert_eq!(pool_info.total_connections, 1);
+        assert_eq!(pool_info.bytes_sent, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_connection_pool_stats() -> Result<()> {
+        let mut manager = create_test_transport_manager();
+        let transport = Arc::new(MockTransport::new(TransportType::QUIC));
+        manager.register_transport(transport);
+
+        let peer_id = manager.connect(&"/ip4/127.0.0.1/tcp/9007".to_string()).await?;
+        let stats = manager.get_connection_pool_stats(&peer_id).await?;
+
+        assert_eq!(stats.messages_per_connection.len(), 1);
+        assert_eq!(stats.bytes_per_connection.len(), 1);
+        assert_eq!(stats.latency_per_connection.len(), 1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_connection_quality_measurement() -> Result<()> {
+        let mut manager = create_test_transport_manager();
+        let transport = Arc::new(MockTransport::new(TransportType::QUIC));
+        manager.register_transport(transport);
+
+        let peer_id = manager.connect(&"/ip4/127.0.0.1/tcp/9008".to_string()).await?;
+        let quality = manager.measure_connection_quality(&peer_id).await?;
+
+        assert_eq!(quality.latency, Duration::from_millis(10));
+        assert_eq!(quality.throughput_mbps, 1000.0);
+        assert_eq!(quality.packet_loss, 0.1);
+        assert_eq!(quality.jitter, Duration::from_millis(2));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_transport_switching() -> Result<()> {
+        let mut manager = create_test_transport_manager();
+        let transport = Arc::new(MockTransport::new(TransportType::QUIC));
+        manager.register_transport(transport);
+
+        let peer_id = manager.connect(&"/ip4/127.0.0.1/tcp/9009".to_string()).await?;
+        
+        // Transport switching is not fully implemented, but should not error
+        let result = manager.switch_transport(&peer_id, TransportType::TCP).await;
+        assert!(result.is_ok());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_auto_transport_selection_prefer_quic() -> Result<()> {
+        let mut manager = create_test_transport_manager();
+        let quic_transport = Arc::new(MockTransport::new(TransportType::QUIC));
+        let tcp_transport = Arc::new(MockTransport::new(TransportType::TCP));
+        
+        manager.register_transport(quic_transport);
+        manager.register_transport(tcp_transport);
+
+        let addr = "/ip4/127.0.0.1/tcp/9010".to_string();
+        let selected = manager.auto_select_transport(&addr).await?;
+        
+        // Should prefer QUIC when available
+        assert_eq!(selected, TransportType::QUIC);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_transport_selection_fallback_to_tcp() -> Result<()> {
+        let mut manager = create_test_transport_manager();
+        let tcp_transport = Arc::new(MockTransport::new(TransportType::TCP));
+        
+        manager.register_transport(tcp_transport);
+
+        let addr = "/ip4/127.0.0.1/tcp/9011".to_string();
+        let selected = manager.auto_select_transport(&addr).await?;
+        
+        // Should fall back to TCP when QUIC not available
+        assert_eq!(selected, TransportType::TCP);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_transport_selection_no_suitable_transport() {
+        let manager = create_test_transport_manager();
+        let addr = "/ip4/127.0.0.1/tcp/9012".to_string();
+        
+        let result = manager.auto_select_transport(&addr).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No suitable transport available"));
+    }
+
+    #[tokio::test]
+    async fn test_forced_transport_selection() -> Result<()> {
+        let mut manager = TransportManager::new(
+            TransportSelection::Force(TransportType::TCP),
+            TransportOptions::default()
+        );
+        let tcp_transport = Arc::new(MockTransport::new(TransportType::TCP));
+        
+        manager.register_transport(tcp_transport);
+
+        let addr = "/ip4/127.0.0.1/tcp/9013".to_string();
+        let selected = manager.select_transport(&addr).await?;
+        
+        assert_eq!(selected, TransportType::TCP);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_forced_transport_unavailable() {
+        let manager = TransportManager::new(
+            TransportSelection::Force(TransportType::QUIC),
+            TransportOptions::default()
+        );
+
+        let addr = "/ip4/127.0.0.1/tcp/9014".to_string();
+        let result = manager.select_transport(&addr).await;
+        
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Forced transport QUIC not available"));
+    }
+
+    #[tokio::test]
+    async fn test_preferred_transport_with_fallback() -> Result<()> {
+        let mut manager = TransportManager::new(
+            TransportSelection::Prefer(TransportType::QUIC),
+            TransportOptions::default()
+        );
+        let tcp_transport = Arc::new(MockTransport::new(TransportType::TCP));
+        
+        manager.register_transport(tcp_transport);
+
+        let addr = "/ip4/127.0.0.1/tcp/9015".to_string();
+        let selected = manager.select_transport(&addr).await?;
+        
+        // Should fall back to TCP when preferred QUIC is not available
+        assert_eq!(selected, TransportType::TCP);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_mock_connection_lifecycle() -> Result<()> {
+        let mut conn = MockConnection::new("/ip4/127.0.0.1/tcp/9016".to_string());
+
+        assert!(conn.is_alive().await);
+
+        // Test sending
+        conn.send(b"test message").await?;
+        assert_eq!(conn.bytes_sent.load(Ordering::Relaxed), 12);
+
+        // Test receiving
+        let received = conn.receive().await?;
+        assert_eq!(received, b"mock_response");
+        assert_eq!(conn.bytes_received.load(Ordering::Relaxed), 13);
+
+        // Test connection info
+        let info = conn.info().await;
+        assert_eq!(info.transport_type, TransportType::QUIC);
+        assert!(info.is_encrypted);
+
+        // Test quality measurement
+        let quality = conn.measure_quality().await?;
+        assert_eq!(quality.latency, Duration::from_millis(10));
+
+        // Test close
+        conn.close().await?;
+        assert!(!conn.is_alive().await);
+
+        // Operations should fail after close
+        let result = conn.send(b"test").await;
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_connection_pool_max_connections() -> Result<()> {
+        let mut pool = ConnectionPool::new(2); // Max 2 connections
+
+        // Add first connection
+        let conn1 = Box::new(MockConnection::new("/ip4/127.0.0.1/tcp/9017".to_string()));
+        pool.add_connection(conn1).await?;
+        assert_eq!(pool.connections.len(), 1);
+
+        // Add second connection
+        let conn2 = Box::new(MockConnection::new("/ip4/127.0.0.1/tcp/9018".to_string()));
+        pool.add_connection(conn2).await?;
+        assert_eq!(pool.connections.len(), 2);
+
+        // Add third connection (should remove first)
+        let conn3 = Box::new(MockConnection::new("/ip4/127.0.0.1/tcp/9019".to_string()));
+        pool.add_connection(conn3).await?;
+        assert_eq!(pool.connections.len(), 2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_connection_pool_round_robin() -> Result<()> {
+        let mut pool = ConnectionPool::new(3);
+
+        // Add connections
+        for i in 0..3 {
+            let conn = Box::new(MockConnection::new(format!("/ip4/127.0.0.1/tcp/{}", 9020 + i)));
+            pool.add_connection(conn).await?;
+        }
+
+        // Test round-robin selection
+        let conn1 = pool.get_connection()?;
+        let conn2 = pool.get_connection()?;
+        let conn3 = pool.get_connection()?;
+        let conn4 = pool.get_connection()?; // Should wrap around
+
+        // All connections should be different (until wraparound)
+        assert_ne!(Arc::as_ptr(&conn1), Arc::as_ptr(&conn2));
+        assert_ne!(Arc::as_ptr(&conn2), Arc::as_ptr(&conn3));
+        // Fourth should be same as first (round-robin)
+        assert_eq!(Arc::as_ptr(&conn1), Arc::as_ptr(&conn4));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_connection_pool_empty() {
+        let mut pool = ConnectionPool::new(3);
+        let result = pool.get_connection();
+        
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert!(e.to_string().contains("No connections available"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_transport_message_structure() {
+        let message = TransportMessage {
+            sender: "test_peer".to_string(),
+            data: vec![1, 2, 3, 4],
+            protocol: "/p2p/test/1.0.0".to_string(),
+            received_at: Instant::now(),
+        };
+
+        assert_eq!(message.sender, "test_peer");
+        assert_eq!(message.data, vec![1, 2, 3, 4]);
+        assert_eq!(message.protocol, "/p2p/test/1.0.0");
+    }
+
+    #[tokio::test]
+    async fn test_mock_transport_address_support() {
+        let transport = MockTransport::new(TransportType::QUIC);
+        
+        assert!(transport.supports_address(&"/ip4/127.0.0.1/tcp/9000".to_string()));
+        assert!(transport.supports_address(&"/ip6/::1/tcp/9000".to_string()));
+        assert!(!transport.supports_address(&"/ip4/127.0.0.1/udp/9000".to_string()));
+
+        let limited_transport = MockTransport::new(TransportType::QUIC).with_limited_support();
+        assert!(limited_transport.supports_address(&"/ip4/127.0.0.1/tcp/9000".to_string()));
+        assert!(!limited_transport.supports_address(&"/ip6/::1/tcp/9000".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_mock_transport_supported_addresses() {
+        let transport = MockTransport::new(TransportType::QUIC);
+        let addresses = transport.supported_addresses();
+        
+        assert_eq!(addresses.len(), 2);
+        assert!(addresses.contains(&"/ip4/0.0.0.0/tcp/0".to_string()));
+        assert!(addresses.contains(&"/ip6/::/tcp/0".to_string()));
+
+        let limited_transport = MockTransport::new(TransportType::QUIC).with_limited_support();
+        let limited_addresses = limited_transport.supported_addresses();
+        
+        assert_eq!(limited_addresses.len(), 1);
+        assert!(limited_addresses.contains(&"/ip4/0.0.0.0/tcp/0".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_transport_options_configuration() {
+        let options = TransportOptions {
+            enable_0rtt: false,
+            require_encryption: false,
+            connect_timeout: Duration::from_secs(10),
+            keep_alive: Duration::from_secs(30),
+            max_message_size: 1024,
+        };
+
+        assert!(!options.enable_0rtt);
+        assert!(!options.require_encryption);
+        assert_eq!(options.connect_timeout, Duration::from_secs(10));
+        assert_eq!(options.keep_alive, Duration::from_secs(30));
+        assert_eq!(options.max_message_size, 1024);
+    }
+}

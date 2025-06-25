@@ -5,12 +5,12 @@
 //! and integration with the P2P Foundation tunneling system.
 
 use p2p_foundation::tunneling::{
-    MapTunnel, MapProtocol, MapRule, PortParameters, PortSet,
+    MapTunnel, MapProtocol, MapRule, PortParameters,
     TunnelConfig, TunnelProtocol, TunnelState, Tunnel,
     NetworkCapabilities, create_tunnel_config, create_tunnel
 };
 use p2p_foundation::Result;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::Ipv4Addr;
 use std::time::Duration;
 use tokio;
 

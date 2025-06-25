@@ -431,7 +431,7 @@ pub struct MCPResourceContent {
 }
 
 /// MCP log levels
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum MCPLogLevel {
     /// Debug level
@@ -1881,6 +1881,748 @@ impl Default for MCPCapabilities {
                     MCPLogLevel::Error,
                 ]),
             }),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dht::{DHT, DHTConfig, Key};
+    use std::pin::Pin;
+    use std::future::Future;
+    use tokio::time::timeout;
+
+    /// Test implementation of ToolHandler for unit tests
+    struct TestTool {
+        name: String,
+        should_error: bool,
+        execution_time: Duration,
+    }
+
+    impl TestTool {
+        fn new(name: &str) -> Self {
+            Self {
+                name: name.to_string(),
+                should_error: false,
+                execution_time: Duration::from_millis(10),
+            }
+        }
+
+        fn with_error(mut self) -> Self {
+            self.should_error = true;
+            self
+        }
+
+        fn with_execution_time(mut self, duration: Duration) -> Self {
+            self.execution_time = duration;
+            self
+        }
+    }
+
+    impl ToolHandler for TestTool {
+        fn execute(&self, arguments: Value) -> Pin<Box<dyn Future<Output = Result<Value>> + Send + '_>> {
+            let should_error = self.should_error;
+            let execution_time = self.execution_time;
+            let name = self.name.clone();
+
+            Box::pin(async move {
+                tokio::time::sleep(execution_time).await;
+
+                if should_error {
+                    return Err(P2PError::MCP(format!("Test error from tool {}", name)).into());
+                }
+
+                // Echo back the arguments with a response marker
+                Ok(json!({
+                    "tool": name,
+                    "arguments": arguments,
+                    "result": "success"
+                }))
+            })
+        }
+
+        fn validate(&self, arguments: &Value) -> Result<()> {
+            if !arguments.is_object() {
+                return Err(P2PError::MCP("Arguments must be an object".to_string()).into());
+            }
+            Ok(())
+        }
+
+        fn get_requirements(&self) -> ToolRequirements {
+            ToolRequirements {
+                max_memory: Some(1024 * 1024), // 1MB
+                max_execution_time: Some(Duration::from_secs(5)),
+                required_capabilities: vec!["test".to_string()],
+                requires_network: false,
+                requires_filesystem: false,
+            }
+        }
+    }
+
+    /// Helper function to create a test MCP server
+    async fn create_test_mcp_server() -> MCPServer {
+        let config = MCPServerConfig {
+            server_name: "test_server".to_string(),
+            server_version: "1.0.0".to_string(),
+            enable_auth: false,
+            enable_rate_limiting: false,
+            max_concurrent_requests: 10,
+            request_timeout: Duration::from_secs(30),
+            enable_dht_discovery: true,
+            rate_limit_rpm: 60,
+            enable_logging: true,
+            max_tool_execution_time: Duration::from_secs(30),
+            tool_memory_limit: 100 * 1024 * 1024,
+        };
+
+        MCPServer::new(config)
+    }
+
+    /// Helper function to create a test tool
+    fn create_test_tool(name: &str) -> Tool {
+        Tool {
+            definition: MCPTool {
+                name: name.to_string(),
+                description: format!("Test tool: {}", name),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "input": { "type": "string" }
+                    }
+                }),
+            },
+            handler: Box::new(TestTool::new(name)),
+            metadata: ToolMetadata {
+                created_at: SystemTime::now(),
+                last_called: None,
+                call_count: 0,
+                avg_execution_time: Duration::from_millis(0),
+                health_status: ToolHealthStatus::Healthy,
+                tags: vec!["test".to_string()],
+            },
+        }
+    }
+
+    /// Helper function to create a test DHT
+    async fn create_test_dht() -> DHT {
+        let local_id = Key::new(b"test_node_id");
+        let config = DHTConfig::default();
+        DHT::new(local_id, config)
+    }
+
+    /// Helper function to create an MCP call context
+    fn create_test_context(caller_id: PeerId) -> MCPCallContext {
+        MCPCallContext {
+            caller_id,
+            timestamp: SystemTime::now(),
+            timeout: Duration::from_secs(30),
+            auth_info: None,
+            metadata: HashMap::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mcp_server_creation() {
+        let server = create_test_mcp_server().await;
+        assert_eq!(server.config.server_name, "test_server");
+        assert_eq!(server.config.server_version, "1.0.0");
+        assert!(!server.config.enable_auth);
+        assert!(!server.config.enable_rate_limiting);
+    }
+
+    #[tokio::test]
+    async fn test_tool_registration() -> Result<()> {
+        let server = create_test_mcp_server().await;
+        let tool = create_test_tool("test_calculator");
+
+        // Register the tool
+        server.register_tool(tool).await?;
+
+        // Verify tool is registered
+        let tools = server.tools.read().await;
+        assert!(tools.contains_key("test_calculator"));
+        assert_eq!(tools.get("test_calculator").unwrap().definition.name, "test_calculator");
+
+        // Verify stats updated
+        let stats = server.stats.read().await;
+        assert_eq!(stats.total_tools, 1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tool_registration_duplicate() -> Result<()> {
+        let server = create_test_mcp_server().await;
+        let tool1 = create_test_tool("duplicate_tool");
+        let tool2 = create_test_tool("duplicate_tool");
+
+        // Register first tool
+        server.register_tool(tool1).await?;
+
+        // Try to register duplicate - should fail
+        let result = server.register_tool(tool2).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Tool already exists"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tool_validation() {
+        let server = create_test_mcp_server().await;
+
+        // Test invalid tool name (empty)
+        let mut invalid_tool = create_test_tool("");
+        let result = server.validate_tool(&invalid_tool).await;
+        assert!(result.is_err());
+
+        // Test invalid tool name (too long)
+        invalid_tool.definition.name = "a".repeat(200);
+        let result = server.validate_tool(&invalid_tool).await;
+        assert!(result.is_err());
+
+        // Test invalid schema (not an object)
+        let mut invalid_schema_tool = create_test_tool("valid_name");
+        invalid_schema_tool.definition.input_schema = json!("not an object");
+        let result = server.validate_tool(&invalid_schema_tool).await;
+        assert!(result.is_err());
+
+        // Test valid tool
+        let valid_tool = create_test_tool("valid_tool");
+        let result = server.validate_tool(&valid_tool).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_tool_call_success() -> Result<()> {
+        let server = create_test_mcp_server().await;
+        let tool = create_test_tool("success_tool");
+        server.register_tool(tool).await?;
+
+        let caller_id = "test_peer_123".to_string();
+        let context = create_test_context(caller_id);
+        let arguments = json!({"input": "test data"});
+
+        let result = server.call_tool("success_tool", arguments.clone(), context).await?;
+
+        // Verify response structure
+        assert_eq!(result["tool"], "success_tool");
+        assert_eq!(result["arguments"], arguments);
+        assert_eq!(result["result"], "success");
+
+        // Verify tool metadata updated
+        let tools = server.tools.read().await;
+        let tool_metadata = &tools.get("success_tool").unwrap().metadata;
+        assert_eq!(tool_metadata.call_count, 1);
+        assert!(tool_metadata.last_called.is_some());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tool_call_nonexistent() -> Result<()> {
+        let server = create_test_mcp_server().await;
+        let caller_id = "test_peer_456".to_string();
+        let context = create_test_context(caller_id);
+        let arguments = json!({"input": "test"});
+
+        let result = server.call_tool("nonexistent_tool", arguments, context).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Tool not found"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tool_call_handler_error() -> Result<()> {
+        let server = create_test_mcp_server().await;
+        let tool = Tool {
+            definition: MCPTool {
+                name: "error_tool".to_string(),
+                description: "Tool that always errors".to_string(),
+                input_schema: json!({"type": "object"}),
+            },
+            handler: Box::new(TestTool::new("error_tool").with_error()),
+            metadata: ToolMetadata {
+                created_at: SystemTime::now(),
+                last_called: None,
+                call_count: 0,
+                avg_execution_time: Duration::from_millis(0),
+                health_status: ToolHealthStatus::Healthy,
+                tags: vec![],
+            },
+        };
+
+        server.register_tool(tool).await?;
+
+        let caller_id = "test_peer_error".to_string();
+        let context = create_test_context(caller_id);
+        let arguments = json!({"input": "test"});
+
+        let result = server.call_tool("error_tool", arguments, context).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Test error from tool error_tool"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tool_call_timeout() -> Result<()> {
+        let server = create_test_mcp_server().await;
+        let slow_tool = Tool {
+            definition: MCPTool {
+                name: "slow_tool".to_string(),
+                description: "Tool that takes too long".to_string(),
+                input_schema: json!({"type": "object"}),
+            },
+            handler: Box::new(TestTool::new("slow_tool").with_execution_time(Duration::from_secs(2))),
+            metadata: ToolMetadata {
+                created_at: SystemTime::now(),
+                last_called: None,
+                call_count: 0,
+                avg_execution_time: Duration::from_millis(0),
+                health_status: ToolHealthStatus::Healthy,
+                tags: vec![],
+            },
+        };
+
+        server.register_tool(slow_tool).await?;
+
+        let caller_id = "test_peer_error".to_string();
+        let context = create_test_context(caller_id);
+        let arguments = json!({"input": "test"});
+
+        // Test with very short timeout
+        let result = timeout(
+            Duration::from_millis(100),
+            server.call_tool("slow_tool", arguments, context)
+        ).await;
+
+        assert!(result.is_err()); // Should timeout
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tool_requirements() {
+        let tool = TestTool::new("req_tool");
+        let requirements = tool.get_requirements();
+
+        assert_eq!(requirements.max_memory, Some(1024 * 1024));
+        assert_eq!(requirements.max_execution_time, Some(Duration::from_secs(5)));
+        assert_eq!(requirements.required_capabilities, vec!["test"]);
+        assert!(!requirements.requires_network);
+        assert!(!requirements.requires_filesystem);
+    }
+
+    #[tokio::test]
+    async fn test_tool_validation_handler() {
+        let tool = TestTool::new("validation_tool");
+
+        // Valid arguments (object)
+        let valid_args = json!({"key": "value"});
+        assert!(tool.validate(&valid_args).is_ok());
+
+        // Invalid arguments (not an object)
+        let invalid_args = json!("not an object");
+        assert!(tool.validate(&invalid_args).is_err());
+
+        let invalid_args = json!(123);
+        assert!(tool.validate(&invalid_args).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_tool_health_status() {
+        let mut metadata = ToolMetadata {
+            created_at: SystemTime::now(),
+            last_called: None,
+            call_count: 0,
+            avg_execution_time: Duration::from_millis(0),
+            health_status: ToolHealthStatus::Healthy,
+            tags: vec![],
+        };
+
+        // Test different health statuses
+        assert_eq!(metadata.health_status, ToolHealthStatus::Healthy);
+
+        metadata.health_status = ToolHealthStatus::Degraded;
+        assert_eq!(metadata.health_status, ToolHealthStatus::Degraded);
+
+        metadata.health_status = ToolHealthStatus::Unhealthy;
+        assert_eq!(metadata.health_status, ToolHealthStatus::Unhealthy);
+
+        metadata.health_status = ToolHealthStatus::Disabled;
+        assert_eq!(metadata.health_status, ToolHealthStatus::Disabled);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_capabilities() {
+        let server = create_test_mcp_server().await;
+        let capabilities = server.get_server_capabilities().await;
+
+        assert!(capabilities.tools.is_some());
+        assert!(capabilities.prompts.is_some());
+        assert!(capabilities.resources.is_some());
+        assert!(capabilities.logging.is_some());
+
+        let tools_cap = capabilities.tools.unwrap();
+        assert_eq!(tools_cap.list_changed, Some(true));
+
+        let logging_cap = capabilities.logging.unwrap();
+        let levels = logging_cap.levels.unwrap();
+        assert!(levels.contains(&MCPLogLevel::Debug));
+        assert!(levels.contains(&MCPLogLevel::Info));
+        assert!(levels.contains(&MCPLogLevel::Warning));
+        assert!(levels.contains(&MCPLogLevel::Error));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_message_serialization() {
+        // Test Initialize message
+        let init_msg = MCPMessage::Initialize {
+            protocol_version: MCP_VERSION.to_string(),
+            capabilities: MCPCapabilities {
+                experimental: None,
+                sampling: None,
+                tools: Some(MCPToolsCapability { list_changed: Some(true) }),
+                prompts: None,
+                resources: None,
+                logging: None,
+            },
+            client_info: MCPClientInfo {
+                name: "test_client".to_string(),
+                version: "1.0.0".to_string(),
+            },
+        };
+
+        let serialized = serde_json::to_string(&init_msg).unwrap();
+        let deserialized: MCPMessage = serde_json::from_str(&serialized).unwrap();
+
+        match deserialized {
+            MCPMessage::Initialize { protocol_version, client_info, .. } => {
+                assert_eq!(protocol_version, MCP_VERSION);
+                assert_eq!(client_info.name, "test_client");
+                assert_eq!(client_info.version, "1.0.0");
+            }
+            _ => panic!("Wrong message type after deserialization"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mcp_content_types() {
+        // Test text content
+        let text_content = MCPContent::Text {
+            text: "Hello, world!".to_string(),
+        };
+
+        let serialized = serde_json::to_string(&text_content).unwrap();
+        let deserialized: MCPContent = serde_json::from_str(&serialized).unwrap();
+
+        match deserialized {
+            MCPContent::Text { text } => assert_eq!(text, "Hello, world!"),
+            _ => panic!("Wrong content type"),
+        }
+
+        // Test image content
+        let image_content = MCPContent::Image {
+            data: "base64data".to_string(),
+            mime_type: "image/png".to_string(),
+        };
+
+        let serialized = serde_json::to_string(&image_content).unwrap();
+        let deserialized: MCPContent = serde_json::from_str(&serialized).unwrap();
+
+        match deserialized {
+            MCPContent::Image { data, mime_type } => {
+                assert_eq!(data, "base64data");
+                assert_eq!(mime_type, "image/png");
+            }
+            _ => panic!("Wrong content type"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_service_health_status() {
+        let mut metrics = ServiceLoadMetrics {
+            active_requests: 0,
+            requests_per_second: 0.0,
+            avg_response_time_ms: 0.0,
+            error_rate: 0.0,
+            cpu_usage: 0.0,
+            memory_usage: 0,
+        };
+
+        // Test healthy service
+        let metadata = MCPServiceMetadata {
+            name: "test_service".to_string(),
+            version: "1.0.0".to_string(),
+            description: Some("Test service".to_string()),
+            tags: vec!["test".to_string()],
+            health_status: ServiceHealthStatus::Healthy,
+            load_metrics: metrics.clone(),
+        };
+
+        assert_eq!(metadata.health_status, ServiceHealthStatus::Healthy);
+
+        // Test different health statuses
+        metrics.error_rate = 0.5; // 50% error rate
+        let degraded_metadata = MCPServiceMetadata {
+            health_status: ServiceHealthStatus::Degraded,
+            load_metrics: metrics.clone(),
+            ..metadata.clone()
+        };
+
+        assert_eq!(degraded_metadata.health_status, ServiceHealthStatus::Degraded);
+
+        let unhealthy_metadata = MCPServiceMetadata {
+            health_status: ServiceHealthStatus::Unhealthy,
+            ..metadata.clone()
+        };
+
+        assert_eq!(unhealthy_metadata.health_status, ServiceHealthStatus::Unhealthy);
+    }
+
+    #[tokio::test]
+    async fn test_p2p_mcp_message() {
+        let source_peer = "source_peer_123".to_string();
+        let target_peer = "target_peer_456".to_string();
+
+        let p2p_message = P2PMCPMessage {
+            message_type: P2PMCPMessageType::Request,
+            message_id: uuid::Uuid::new_v4().to_string(),
+            source_peer: source_peer.clone(),
+            target_peer: Some(target_peer.clone()),
+            timestamp: SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            payload: MCPMessage::ListTools { cursor: None },
+            ttl: 10,
+        };
+
+        // Test serialization
+        let serialized = serde_json::to_string(&p2p_message).unwrap();
+        let deserialized: P2PMCPMessage = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.message_type, P2PMCPMessageType::Request);
+        assert_eq!(deserialized.source_peer, source_peer);
+        assert_eq!(deserialized.target_peer, Some(target_peer));
+        assert_eq!(deserialized.ttl, 10);
+
+        match deserialized.payload {
+            MCPMessage::ListTools { cursor } => assert_eq!(cursor, None),
+            _ => panic!("Wrong message payload type"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tool_requirements_default() {
+        let default_requirements = ToolRequirements::default();
+
+        assert_eq!(default_requirements.max_memory, Some(100 * 1024 * 1024));
+        assert_eq!(default_requirements.max_execution_time, Some(Duration::from_secs(30)));
+        assert!(default_requirements.required_capabilities.is_empty());
+        assert!(!default_requirements.requires_network);
+        assert!(!default_requirements.requires_filesystem);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_server_stats() {
+        let server = create_test_mcp_server().await;
+
+        // Initial stats should be zero
+        let stats = server.stats.read().await;
+        assert_eq!(stats.total_tools, 0);
+        assert_eq!(stats.total_requests, 0);
+        assert_eq!(stats.total_responses, 0);
+        assert_eq!(stats.total_errors, 0);
+
+        drop(stats);
+
+        // Register a tool and verify stats update
+        let tool = create_test_tool("stats_test_tool");
+        server.register_tool(tool).await.unwrap();
+
+        let stats = server.stats.read().await;
+        assert_eq!(stats.total_tools, 1);
+    }
+
+    #[tokio::test]
+    async fn test_log_levels() {
+        // Test all log levels serialize/deserialize correctly
+        let levels = vec![
+            MCPLogLevel::Debug,
+            MCPLogLevel::Info,
+            MCPLogLevel::Notice,
+            MCPLogLevel::Warning,
+            MCPLogLevel::Error,
+            MCPLogLevel::Critical,
+            MCPLogLevel::Alert,
+            MCPLogLevel::Emergency,
+        ];
+
+        for level in levels {
+            let serialized = serde_json::to_string(&level).unwrap();
+            let deserialized: MCPLogLevel = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(level as u8, deserialized as u8);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mcp_endpoint() {
+        let endpoint = MCPEndpoint {
+            protocol: "p2p".to_string(),
+            address: "127.0.0.1".to_string(),
+            port: Some(9000),
+            tls: true,
+            auth_required: true,
+        };
+
+        let serialized = serde_json::to_string(&endpoint).unwrap();
+        let deserialized: MCPEndpoint = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.protocol, "p2p");
+        assert_eq!(deserialized.address, "127.0.0.1");
+        assert_eq!(deserialized.port, Some(9000));
+        assert!(deserialized.tls);
+        assert!(deserialized.auth_required);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_service_metadata() {
+        let load_metrics = ServiceLoadMetrics {
+            active_requests: 5,
+            requests_per_second: 10.5,
+            avg_response_time_ms: 250.0,
+            error_rate: 0.01,
+            cpu_usage: 45.5,
+            memory_usage: 1024 * 1024 * 100, // 100MB
+        };
+
+        let metadata = MCPServiceMetadata {
+            name: "test_service".to_string(),
+            version: "2.1.0".to_string(),
+            description: Some("A test service for unit testing".to_string()),
+            tags: vec!["test".to_string(), "unit".to_string(), "mcp".to_string()],
+            health_status: ServiceHealthStatus::Healthy,
+            load_metrics,
+        };
+
+        // Test serialization
+        let serialized = serde_json::to_string(&metadata).unwrap();
+        let deserialized: MCPServiceMetadata = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.name, "test_service");
+        assert_eq!(deserialized.version, "2.1.0");
+        assert_eq!(deserialized.description, Some("A test service for unit testing".to_string()));
+        assert_eq!(deserialized.tags, vec!["test", "unit", "mcp"]);
+        assert_eq!(deserialized.health_status, ServiceHealthStatus::Healthy);
+        assert_eq!(deserialized.load_metrics.active_requests, 5);
+        assert_eq!(deserialized.load_metrics.requests_per_second, 10.5);
+    }
+
+    #[tokio::test]
+    async fn test_function_tool_handler() {
+        // Test function tool handler creation and execution
+        let handler = FunctionToolHandler::new(|args: Value| async move {
+            let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("world");
+            Ok(json!({"greeting": format!("Hello, {}!", name)}))
+        });
+
+        let args = json!({"name": "Alice"});
+        let result = handler.execute(args).await.unwrap();
+        assert_eq!(result["greeting"], "Hello, Alice!");
+
+        // Test with missing argument
+        let empty_args = json!({});
+        let result = handler.execute(empty_args).await.unwrap();
+        assert_eq!(result["greeting"], "Hello, world!");
+    }
+
+    #[tokio::test]
+    async fn test_mcp_service_creation() {
+        let service_id = "test_service_123".to_string();
+        let node_id = "test_node_789".to_string();
+
+        let service = MCPService::new(service_id.clone(), node_id.clone());
+
+        assert_eq!(service.service_id, service_id);
+        assert_eq!(service.node_id, node_id);
+        assert!(service.tools.is_empty());
+        assert_eq!(service.metadata.name, "MCP Service");
+        assert_eq!(service.metadata.version, "1.0.0");
+        assert_eq!(service.metadata.health_status, ServiceHealthStatus::Healthy);
+        assert_eq!(service.endpoint.protocol, "p2p");
+        assert!(!service.endpoint.tls);
+        assert!(!service.endpoint.auth_required);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_capabilities_default() {
+        let capabilities = MCPCapabilities::default();
+
+        assert!(capabilities.tools.is_some());
+        assert!(capabilities.prompts.is_some());
+        assert!(capabilities.resources.is_some());
+        assert!(capabilities.logging.is_some());
+
+        let tools_cap = capabilities.tools.unwrap();
+        assert_eq!(tools_cap.list_changed, Some(true));
+
+        let resources_cap = capabilities.resources.unwrap();
+        assert_eq!(resources_cap.subscribe, Some(true));
+        assert_eq!(resources_cap.list_changed, Some(true));
+
+        let logging_cap = capabilities.logging.unwrap();
+        let levels = logging_cap.levels.unwrap();
+        assert!(levels.contains(&MCPLogLevel::Debug));
+        assert!(levels.contains(&MCPLogLevel::Info));
+        assert!(levels.contains(&MCPLogLevel::Warning));
+        assert!(levels.contains(&MCPLogLevel::Error));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_request_creation() {
+        let source_peer = "source_peer_123".to_string();
+        let target_peer = "target_peer_456".to_string();
+
+        let request = MCPRequest {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            source_peer: source_peer.clone(),
+            target_peer: target_peer.clone(),
+            message: MCPMessage::ListTools { cursor: None },
+            timestamp: SystemTime::now(),
+            timeout: Duration::from_secs(30),
+            auth_token: Some("test_token".to_string()),
+        };
+
+        assert_eq!(request.source_peer, source_peer);
+        assert_eq!(request.target_peer, target_peer);
+        assert_eq!(request.timeout, Duration::from_secs(30));
+        assert_eq!(request.auth_token, Some("test_token".to_string()));
+
+        match request.message {
+            MCPMessage::ListTools { cursor } => assert_eq!(cursor, None),
+            _ => panic!("Wrong message type"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_p2p_message_types() {
+        // Test all P2P message types
+        assert_eq!(P2PMCPMessageType::Request, P2PMCPMessageType::Request);
+        assert_eq!(P2PMCPMessageType::Response, P2PMCPMessageType::Response);
+        assert_eq!(P2PMCPMessageType::ServiceAdvertisement, P2PMCPMessageType::ServiceAdvertisement);
+        assert_eq!(P2PMCPMessageType::ServiceDiscovery, P2PMCPMessageType::ServiceDiscovery);
+
+        // Test serialization of each type
+        for msg_type in [
+            P2PMCPMessageType::Request,
+            P2PMCPMessageType::Response,
+            P2PMCPMessageType::ServiceAdvertisement,
+            P2PMCPMessageType::ServiceDiscovery,
+        ] {
+            let serialized = serde_json::to_string(&msg_type).unwrap();
+            let deserialized: P2PMCPMessageType = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(msg_type, deserialized);
         }
     }
 }

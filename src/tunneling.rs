@@ -1155,6 +1155,816 @@ pub use dslite::DsLiteTunnel;
 pub use isatap::IsatapTunnel;
 pub use map::{MapTunnel, MapProtocol, MapRule, PortParameters, PortSet};
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::sync::Mutex;
+
+    /// Mock tunnel implementation for testing
+    struct MockTunnel {
+        protocol: TunnelProtocol,
+        config: TunnelConfig,
+        state: Arc<Mutex<TunnelState>>,
+        metrics: Arc<Mutex<TunnelMetrics>>,
+        should_fail: bool,
+        packet_counter: AtomicUsize,
+    }
+
+    impl MockTunnel {
+        fn new(config: TunnelConfig) -> Self {
+            Self {
+                protocol: config.protocol.clone(),
+                config,
+                state: Arc::new(Mutex::new(TunnelState::Disconnected)),
+                metrics: Arc::new(Mutex::new(TunnelMetrics::default())),
+                should_fail: false,
+                packet_counter: AtomicUsize::new(0),
+            }
+        }
+
+        fn with_failure(mut self) -> Self {
+            self.should_fail = true;
+            self
+        }
+
+        async fn set_state(&self, new_state: TunnelState) {
+            let mut state = self.state.lock().await;
+            *state = new_state;
+        }
+    }
+
+    #[async_trait]
+    impl Tunnel for MockTunnel {
+        fn protocol(&self) -> TunnelProtocol {
+            self.protocol.clone()
+        }
+
+        fn config(&self) -> &TunnelConfig {
+            &self.config
+        }
+
+        async fn state(&self) -> TunnelState {
+            self.state.lock().await.clone()
+        }
+
+        async fn metrics(&self) -> TunnelMetrics {
+            self.metrics.lock().await.clone()
+        }
+
+        async fn connect(&mut self) -> Result<()> {
+            if self.should_fail {
+                let mut state = self.state.lock().await;
+                *state = TunnelState::Failed("Connection failed".to_string());
+                return Err(P2PError::Network("Mock connection failure".to_string()));
+            }
+
+            let mut state = self.state.lock().await;
+            *state = TunnelState::Connecting;
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            *state = TunnelState::Connected;
+
+            let mut metrics = self.metrics.lock().await;
+            metrics.establishment_time = Duration::from_millis(10);
+            metrics.last_activity = Instant::now();
+
+            Ok(())
+        }
+
+        async fn disconnect(&mut self) -> Result<()> {
+            let mut state = self.state.lock().await;
+            *state = TunnelState::Disconnecting;
+            tokio::time::sleep(Duration::from_millis(5)).await;
+            *state = TunnelState::Disconnected;
+            Ok(())
+        }
+
+        async fn is_active(&self) -> bool {
+            matches!(self.state().await, TunnelState::Connected)
+        }
+
+        async fn encapsulate(&self, ipv6_packet: &[u8]) -> Result<Vec<u8>> {
+            if !self.is_active().await {
+                return Err(P2PError::Network("Tunnel not active".to_string()));
+            }
+
+            // Mock encapsulation: prepend 4-byte IPv4 header
+            let mut ipv4_packet = vec![0x45, 0x00, 0x00, 0x00]; // Mock IPv4 header
+            ipv4_packet.extend_from_slice(ipv6_packet);
+            Ok(ipv4_packet)
+        }
+
+        async fn decapsulate(&self, ipv4_packet: &[u8]) -> Result<Vec<u8>> {
+            if !self.is_active().await {
+                return Err(P2PError::Network("Tunnel not active".to_string()));
+            }
+
+            if ipv4_packet.len() < 4 {
+                return Err(P2PError::Network("Invalid IPv4 packet".to_string()));
+            }
+
+            // Mock decapsulation: remove 4-byte IPv4 header
+            Ok(ipv4_packet[4..].to_vec())
+        }
+
+        async fn send(&mut self, packet: &[u8]) -> Result<()> {
+            if !self.is_active().await {
+                return Err(P2PError::Network("Tunnel not active".to_string()));
+            }
+
+            let mut metrics = self.metrics.lock().await;
+            metrics.bytes_sent += packet.len() as u64;
+            metrics.packets_sent += 1;
+            metrics.last_activity = Instant::now();
+
+            self.packet_counter.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn receive(&mut self) -> Result<Vec<u8>> {
+            if !self.is_active().await {
+                return Err(P2PError::Network("Tunnel not active".to_string()));
+            }
+
+            let packet = b"mock_packet".to_vec();
+            let mut metrics = self.metrics.lock().await;
+            metrics.bytes_received += packet.len() as u64;
+            metrics.packets_received += 1;
+            metrics.last_activity = Instant::now();
+
+            Ok(packet)
+        }
+
+        async fn maintain(&mut self) -> Result<()> {
+            let mut metrics = self.metrics.lock().await;
+            metrics.last_activity = Instant::now();
+            Ok(())
+        }
+
+        async fn local_ipv6_addr(&self) -> Result<Ipv6Addr> {
+            self.config.ipv6_prefix
+                .ok_or_else(|| P2PError::Network("No IPv6 prefix configured".to_string()))
+        }
+
+        async fn local_ipv4_addr(&self) -> Result<Ipv4Addr> {
+            self.config.local_ipv4
+                .ok_or_else(|| P2PError::Network("No IPv4 address configured".to_string()))
+        }
+
+        async fn ping(&mut self, timeout: Duration) -> Result<Duration> {
+            if self.should_fail {
+                return Err(P2PError::Network("Ping failed".to_string()));
+            }
+
+            if !self.is_active().await {
+                return Err(P2PError::Network("Tunnel not active".to_string()));
+            }
+
+            // Mock ping with random latency
+            let rtt = Duration::from_millis(10 + (timeout.as_millis() % 50) as u64);
+            
+            let mut metrics = self.metrics.lock().await;
+            metrics.rtt = Some(rtt);
+            metrics.last_activity = Instant::now();
+
+            Ok(rtt)
+        }
+    }
+
+    fn create_test_tunnel_config(protocol: TunnelProtocol) -> TunnelConfig {
+        TunnelConfig {
+            protocol,
+            local_ipv4: Some(Ipv4Addr::new(192, 168, 1, 100)),
+            remote_ipv4: Some(Ipv4Addr::new(203, 0, 113, 1)),
+            ipv6_prefix: Some(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)),
+            aftr_ipv6: Some(Ipv6Addr::new(0x2001, 0xdb8, 0, 1, 0, 0, 0, 1)),
+            aftr_name: Some("aftr.test.com".to_string()),
+            mtu: 1280,
+            keepalive_interval: Duration::from_secs(30),
+            establishment_timeout: Duration::from_secs(10),
+        }
+    }
+
+    fn create_test_network_capabilities() -> NetworkCapabilities {
+        NetworkCapabilities {
+            has_ipv6: false,
+            has_ipv4: true,
+            behind_nat: false,
+            public_ipv4: Some(Ipv4Addr::new(203, 0, 113, 100)),
+            ipv6_addresses: vec![],
+            has_upnp: false,
+            interface_mtu: 1500,
+        }
+    }
+
+    #[test]
+    fn test_tunnel_protocol_equality() {
+        assert_eq!(TunnelProtocol::SixToFour, TunnelProtocol::SixToFour);
+        assert_ne!(TunnelProtocol::SixToFour, TunnelProtocol::Teredo);
+        assert_eq!(TunnelProtocol::MapE, TunnelProtocol::MapE);
+    }
+
+    #[test]
+    fn test_tunnel_state_variants() {
+        let disconnected = TunnelState::Disconnected;
+        let connecting = TunnelState::Connecting;
+        let connected = TunnelState::Connected;
+        let failed = TunnelState::Failed("test error".to_string());
+        let disconnecting = TunnelState::Disconnecting;
+
+        assert!(matches!(disconnected, TunnelState::Disconnected));
+        assert!(matches!(connecting, TunnelState::Connecting));
+        assert!(matches!(connected, TunnelState::Connected));
+        assert!(matches!(failed, TunnelState::Failed(_)));
+        assert!(matches!(disconnecting, TunnelState::Disconnecting));
+    }
+
+    #[test]
+    fn test_tunnel_config_default() {
+        let config = TunnelConfig::default();
+
+        assert_eq!(config.protocol, TunnelProtocol::SixToFour);
+        assert_eq!(config.mtu, 1280);
+        assert_eq!(config.keepalive_interval, Duration::from_secs(30));
+        assert_eq!(config.establishment_timeout, Duration::from_secs(10));
+        assert!(config.local_ipv4.is_none());
+        assert!(config.remote_ipv4.is_none());
+    }
+
+    #[test]
+    fn test_tunnel_manager_config_default() {
+        let config = TunnelManagerConfig::default();
+
+        assert_eq!(config.protocol_preference.len(), 5);
+        assert_eq!(config.protocol_preference[0], TunnelProtocol::DsLite);
+        assert_eq!(config.health_check_interval, Duration::from_secs(60));
+        assert!(config.auto_failover);
+        assert_eq!(config.max_concurrent_attempts, 3);
+    }
+
+    #[test]
+    fn test_tunnel_metrics_default() {
+        let metrics = TunnelMetrics::default();
+
+        assert_eq!(metrics.bytes_sent, 0);
+        assert_eq!(metrics.bytes_received, 0);
+        assert_eq!(metrics.packets_sent, 0);
+        assert_eq!(metrics.packets_received, 0);
+        assert_eq!(metrics.packets_dropped, 0);
+        assert!(metrics.rtt.is_none());
+        assert_eq!(metrics.establishment_time, Duration::ZERO);
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_manager_creation() {
+        let manager = TunnelManager::new();
+        assert!(manager.active_tunnel().await.is_none());
+
+        let custom_config = TunnelManagerConfig {
+            auto_failover: false,
+            max_concurrent_attempts: 1,
+            ..Default::default()
+        };
+        let custom_manager = TunnelManager::with_config(custom_config);
+        assert!(custom_manager.active_tunnel().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_addition_and_retrieval() {
+        let manager = TunnelManager::new();
+        let config = create_test_tunnel_config(TunnelProtocol::SixToFour);
+        let tunnel = MockTunnel::new(config);
+
+        manager.add_tunnel(Box::new(tunnel)).await;
+
+        let tunnels = manager.tunnels.read().await;
+        assert_eq!(tunnels.len(), 1);
+        assert_eq!(tunnels[0].protocol(), TunnelProtocol::SixToFour);
+    }
+
+    #[tokio::test]
+    async fn test_mock_tunnel_lifecycle() -> Result<()> {
+        let config = create_test_tunnel_config(TunnelProtocol::Teredo);
+        let mut tunnel = MockTunnel::new(config);
+
+        // Initial state
+        assert_eq!(tunnel.state().await, TunnelState::Disconnected);
+        assert!(!tunnel.is_active().await);
+
+        // Connect
+        tunnel.connect().await?;
+        assert_eq!(tunnel.state().await, TunnelState::Connected);
+        assert!(tunnel.is_active().await);
+
+        // Test addresses
+        let ipv6 = tunnel.local_ipv6_addr().await?;
+        let ipv4 = tunnel.local_ipv4_addr().await?;
+        assert_eq!(ipv6, Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1));
+        assert_eq!(ipv4, Ipv4Addr::new(192, 168, 1, 100));
+
+        // Test ping
+        let rtt = tunnel.ping(Duration::from_secs(1)).await?;
+        assert!(rtt > Duration::ZERO);
+
+        // Disconnect
+        tunnel.disconnect().await?;
+        assert_eq!(tunnel.state().await, TunnelState::Disconnected);
+        assert!(!tunnel.is_active().await);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_packet_operations() -> Result<()> {
+        let config = create_test_tunnel_config(TunnelProtocol::SixToFour);
+        let mut tunnel = MockTunnel::new(config);
+        
+        tunnel.connect().await?;
+
+        // Test encapsulation
+        let ipv6_packet = vec![0x60, 0x00, 0x00, 0x00]; // Mock IPv6 header
+        let ipv4_packet = tunnel.encapsulate(&ipv6_packet).await?;
+        assert_eq!(ipv4_packet.len(), ipv6_packet.len() + 4);
+
+        // Test decapsulation
+        let decapsulated = tunnel.decapsulate(&ipv4_packet).await?;
+        assert_eq!(decapsulated, ipv6_packet);
+
+        // Test send/receive
+        let test_packet = b"test data";
+        tunnel.send(test_packet).await?;
+        
+        let received = tunnel.receive().await?;
+        assert_eq!(received, b"mock_packet");
+
+        // Check metrics
+        let metrics = tunnel.metrics().await;
+        assert_eq!(metrics.packets_sent, 1);
+        assert_eq!(metrics.packets_received, 1);
+        assert_eq!(metrics.bytes_sent, test_packet.len() as u64);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_failure_handling() {
+        let config = create_test_tunnel_config(TunnelProtocol::Teredo);
+        let mut failing_tunnel = MockTunnel::new(config).with_failure();
+
+        // Connection should fail
+        let result = failing_tunnel.connect().await;
+        assert!(result.is_err());
+        assert!(matches!(failing_tunnel.state().await, TunnelState::Failed(_)));
+
+        // Operations should fail when tunnel failed
+        let packet = vec![1, 2, 3, 4];
+        assert!(failing_tunnel.send(&packet).await.is_err());
+        assert!(failing_tunnel.receive().await.is_err());
+        assert!(failing_tunnel.ping(Duration::from_secs(1)).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_operations_when_disconnected() {
+        let config = create_test_tunnel_config(TunnelProtocol::SixInFour);
+        let tunnel = MockTunnel::new(config);
+
+        // Operations should fail when disconnected
+        let packet = vec![1, 2, 3, 4];
+        assert!(tunnel.encapsulate(&packet).await.is_err());
+        assert!(tunnel.decapsulate(&packet).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_selection_with_native_ipv6() {
+        let manager = TunnelManager::new();
+        let capabilities = NetworkCapabilities {
+            has_ipv6: true,
+            ipv6_addresses: vec![Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)],
+            ..create_test_network_capabilities()
+        };
+
+        let selection = manager.select_tunnel(&capabilities).await;
+        assert!(selection.is_none()); // No tunneling needed with native IPv6
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_selection_scoring() {
+        let manager = TunnelManager::new();
+        let config = create_test_tunnel_config(TunnelProtocol::SixToFour);
+        let tunnel = MockTunnel::new(config);
+        manager.add_tunnel(Box::new(tunnel)).await;
+
+        let capabilities = create_test_network_capabilities();
+        let selection = manager.select_tunnel(&capabilities).await;
+
+        assert!(selection.is_some());
+        let selection = selection.unwrap();
+        assert_eq!(selection.protocol, TunnelProtocol::SixToFour);
+        assert!(selection.reason.contains("6to4 suitable"));
+        assert!(!selection.is_fallback);
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_selection_behind_nat() {
+        let manager = TunnelManager::new();
+        
+        // Add Teredo tunnel (good for NAT)
+        let teredo_config = create_test_tunnel_config(TunnelProtocol::Teredo);
+        let teredo_tunnel = MockTunnel::new(teredo_config);
+        manager.add_tunnel(Box::new(teredo_tunnel)).await;
+
+        let capabilities = NetworkCapabilities {
+            behind_nat: true,
+            public_ipv4: None,
+            ..create_test_network_capabilities()
+        };
+
+        let selection = manager.select_tunnel(&capabilities).await;
+        assert!(selection.is_some());
+        let selection = selection.unwrap();
+        assert_eq!(selection.protocol, TunnelProtocol::Teredo);
+        assert!(selection.reason.contains("NAT traversal"));
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_selection_ds_lite() {
+        let manager = TunnelManager::new();
+        
+        let dslite_config = create_test_tunnel_config(TunnelProtocol::DsLite);
+        let dslite_tunnel = MockTunnel::new(dslite_config);
+        manager.add_tunnel(Box::new(dslite_tunnel)).await;
+
+        let capabilities = NetworkCapabilities {
+            has_ipv6: true,
+            ipv6_addresses: vec![], // No working IPv6 yet
+            ..create_test_network_capabilities()
+        };
+
+        let selection = manager.select_tunnel(&capabilities).await;
+        assert!(selection.is_some());
+        let selection = selection.unwrap();
+        assert_eq!(selection.protocol, TunnelProtocol::DsLite);
+        assert!(selection.reason.contains("ISP-provided"));
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_manager_connection() -> Result<()> {
+        let manager = TunnelManager::new();
+        let config = create_test_tunnel_config(TunnelProtocol::SixToFour);
+        let tunnel = MockTunnel::new(config);
+        manager.add_tunnel(Box::new(tunnel)).await;
+
+        // Select tunnel first
+        let capabilities = create_test_network_capabilities();
+        manager.select_tunnel(&capabilities).await;
+
+        // Connect
+        manager.connect().await?;
+
+        // Should have active tunnel
+        assert_eq!(manager.active_tunnel().await, Some(TunnelProtocol::SixToFour));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_manager_send_receive() -> Result<()> {
+        let manager = TunnelManager::new();
+        let config = create_test_tunnel_config(TunnelProtocol::Teredo);
+        let tunnel = MockTunnel::new(config);
+        manager.add_tunnel(Box::new(tunnel)).await;
+
+        let capabilities = create_test_network_capabilities();
+        manager.select_tunnel(&capabilities).await;
+        manager.connect().await?;
+
+        // Test sending
+        let packet = b"test packet";
+        manager.send(packet).await?;
+
+        // Test receiving
+        let received = manager.receive().await?;
+        assert_eq!(received, b"mock_packet");
+
+        // Test metrics
+        let metrics = manager.metrics().await;
+        assert!(metrics.is_some());
+        let metrics = metrics.unwrap();
+        assert_eq!(metrics.packets_sent, 1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_manager_no_active_tunnel() {
+        let manager = TunnelManager::new();
+
+        // Operations should fail without active tunnel
+        assert!(manager.connect().await.is_err());
+        assert!(manager.send(b"test").await.is_err());
+        assert!(manager.receive().await.is_err());
+        assert!(manager.metrics().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_manager_health_check() -> Result<()> {
+        let manager = TunnelManager::new();
+        let config = create_test_tunnel_config(TunnelProtocol::SixToFour);
+        let tunnel = MockTunnel::new(config);
+        manager.add_tunnel(Box::new(tunnel)).await;
+
+        let capabilities = create_test_network_capabilities();
+        manager.select_tunnel(&capabilities).await;
+        manager.connect().await?;
+
+        // Health check should pass
+        manager.health_check().await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_manager_health_check_with_failure() -> Result<()> {
+        // Create manager with auto-failover disabled to avoid trying to switch
+        let config = TunnelManagerConfig {
+            auto_failover: false,
+            ..Default::default()
+        };
+        let manager = TunnelManager::with_config(config);
+        
+        let tunnel_config = create_test_tunnel_config(TunnelProtocol::Teredo);
+        let failing_tunnel = MockTunnel::new(tunnel_config).with_failure();
+        manager.add_tunnel(Box::new(failing_tunnel)).await;
+
+        let capabilities = create_test_network_capabilities();
+        manager.select_tunnel(&capabilities).await;
+
+        // Health check should handle failures gracefully
+        manager.health_check().await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_manager_monitoring() -> Result<()> {
+        let manager = TunnelManager::new();
+        
+        // Start monitoring (should not fail)
+        manager.start_monitoring().await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_manager_maintenance() -> Result<()> {
+        let manager = TunnelManager::new();
+        let config = create_test_tunnel_config(TunnelProtocol::SixInFour);
+        let tunnel = MockTunnel::new(config);
+        manager.add_tunnel(Box::new(tunnel)).await;
+
+        // Maintenance should not fail
+        manager.maintain().await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_quality_metrics() {
+        let manager = TunnelManager::new();
+        let config = create_test_tunnel_config(TunnelProtocol::SixToFour);
+        let tunnel = MockTunnel::new(config);
+        tunnel.set_state(TunnelState::Connected).await;
+        manager.add_tunnel(Box::new(tunnel)).await;
+
+        let quality_metrics = manager.get_tunnel_quality_metrics().await;
+        assert_eq!(quality_metrics.len(), 1);
+        
+        let metric = &quality_metrics[0];
+        assert_eq!(metric.protocol, TunnelProtocol::SixToFour);
+        assert_eq!(metric.state, TunnelState::Connected);
+        assert!(metric.reliability_score > 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_network_capabilities_detection() -> Result<()> {
+        let capabilities = detect_network_capabilities().await?;
+
+        // Should have basic network information
+        assert!(capabilities.interface_mtu > 0);
+        // Other fields depend on network environment
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_tunnel_config_sixto4() {
+        let capabilities = create_test_network_capabilities();
+        let config = create_tunnel_config(TunnelProtocol::SixToFour, &capabilities);
+
+        assert_eq!(config.protocol, TunnelProtocol::SixToFour);
+        assert_eq!(config.local_ipv4, capabilities.public_ipv4);
+        assert!(config.ipv6_prefix.is_some());
+        
+        // Should generate 6to4 prefix (2002::/16)
+        let ipv6 = config.ipv6_prefix.unwrap();
+        let segments = ipv6.segments();
+        assert_eq!(segments[0], 0x2002);
+    }
+
+    #[test]
+    fn test_create_tunnel_config_teredo() {
+        let capabilities = create_test_network_capabilities();
+        let config = create_tunnel_config(TunnelProtocol::Teredo, &capabilities);
+
+        assert_eq!(config.protocol, TunnelProtocol::Teredo);
+        assert_eq!(config.mtu, 1280);
+        
+        // Should use Teredo prefix (2001::/32)
+        let ipv6 = config.ipv6_prefix.unwrap();
+        let segments = ipv6.segments();
+        assert_eq!(segments[0], 0x2001);
+    }
+
+    #[test]
+    fn test_create_tunnel_config_dslite() {
+        let capabilities = create_test_network_capabilities();
+        let config = create_tunnel_config(TunnelProtocol::DsLite, &capabilities);
+
+        assert_eq!(config.protocol, TunnelProtocol::DsLite);
+        assert_eq!(config.mtu, 1520);
+        assert!(config.aftr_name.is_some());
+        assert_eq!(config.aftr_name.unwrap(), "aftr.example.com");
+    }
+
+    #[test]
+    fn test_create_tunnel_config_map_protocols() {
+        let capabilities = create_test_network_capabilities();
+        
+        let map_e_config = create_tunnel_config(TunnelProtocol::MapE, &capabilities);
+        assert_eq!(map_e_config.protocol, TunnelProtocol::MapE);
+        assert_eq!(map_e_config.mtu, 1460);
+        assert_eq!(map_e_config.local_ipv4, capabilities.public_ipv4);
+        
+        let map_t_config = create_tunnel_config(TunnelProtocol::MapT, &capabilities);
+        assert_eq!(map_t_config.protocol, TunnelProtocol::MapT);
+        assert_eq!(map_t_config.mtu, 1500);
+        assert_eq!(map_t_config.local_ipv4, capabilities.public_ipv4);
+    }
+
+    #[test]
+    fn test_calculate_reliability_score() {
+        let metrics = TunnelMetrics {
+            packets_sent: 100,
+            packets_dropped: 5,
+            last_activity: Instant::now(),
+            ..Default::default()
+        };
+
+        let score_connected = calculate_reliability_score(&TunnelState::Connected, &metrics);
+        assert!(score_connected > 0.9); // Should be high for connected with low loss
+
+        let score_failed = calculate_reliability_score(&TunnelState::Failed("error".to_string()), &metrics);
+        assert_eq!(score_failed, 0.0); // Should be 0 for failed state
+
+        let score_connecting = calculate_reliability_score(&TunnelState::Connecting, &metrics);
+        assert!(score_connecting > 0.4 && score_connecting < 0.6); // Intermediate score
+    }
+
+    #[test]
+    fn test_calculate_throughput() {
+        let old_activity = Instant::now() - Duration::from_secs(10);
+        let metrics = TunnelMetrics {
+            bytes_sent: 1000,
+            bytes_received: 500,
+            last_activity: old_activity,
+            ..Default::default()
+        };
+
+        let throughput = calculate_throughput(&metrics);
+        assert!(throughput.is_some());
+        assert!(throughput.unwrap() > 0.0);
+
+        // Test with very recent activity (should return None)
+        let recent_metrics = TunnelMetrics {
+            last_activity: Instant::now(),
+            ..Default::default()
+        };
+        let recent_throughput = calculate_throughput(&recent_metrics);
+        assert!(recent_throughput.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_protocol_scoring_comprehensive() {
+        let manager = TunnelManager::new();
+
+        // Test 6to4 scoring with public IP
+        let public_capabilities = create_test_network_capabilities();
+        let (score, reason) = manager.score_protocol(&TunnelProtocol::SixToFour, &public_capabilities).await;
+        assert!(score > 0.8);
+        assert!(reason.contains("6to4 suitable"));
+
+        // Test 6to4 scoring behind NAT (should fail)
+        let nat_capabilities = NetworkCapabilities {
+            behind_nat: true,
+            public_ipv4: None,
+            ..public_capabilities
+        };
+        let (nat_score, nat_reason) = manager.score_protocol(&TunnelProtocol::SixToFour, &nat_capabilities).await;
+        assert_eq!(nat_score, 0.0);
+        assert!(nat_reason.contains("behind NAT"));
+
+        // Test Teredo with NAT (should score well)
+        let (teredo_score, teredo_reason) = manager.score_protocol(&TunnelProtocol::Teredo, &nat_capabilities).await;
+        assert!(teredo_score > 0.8);
+        assert!(teredo_reason.contains("NAT traversal"));
+
+        // Test ISATAP with enterprise network indicators
+        let enterprise_capabilities = NetworkCapabilities {
+            public_ipv4: Some(Ipv4Addr::new(10, 0, 0, 1)), // Private IP
+            ..create_test_network_capabilities()
+        };
+        let (isatap_score, isatap_reason) = manager.score_protocol(&TunnelProtocol::Isatap, &enterprise_capabilities).await;
+        assert!(isatap_score > 0.9);
+        assert!(isatap_reason.contains("private network"));
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_selection_no_suitable_protocols() {
+        let manager = TunnelManager::new();
+        
+        // Add tunnel that requires IPv6
+        let dslite_config = create_test_tunnel_config(TunnelProtocol::DsLite);
+        let dslite_tunnel = MockTunnel::new(dslite_config);
+        manager.add_tunnel(Box::new(dslite_tunnel)).await;
+
+        // Test with IPv4-only capabilities
+        let ipv4_only_capabilities = NetworkCapabilities {
+            has_ipv6: false,
+            ipv6_addresses: vec![],
+            ..create_test_network_capabilities()
+        };
+
+        let selection = manager.select_tunnel(&ipv4_only_capabilities).await;
+        assert!(selection.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_tunnel_manager_disconnect() -> Result<()> {
+        let manager = TunnelManager::new();
+        let config = create_test_tunnel_config(TunnelProtocol::SixToFour);
+        let tunnel = MockTunnel::new(config);
+        manager.add_tunnel(Box::new(tunnel)).await;
+
+        let capabilities = create_test_network_capabilities();
+        manager.select_tunnel(&capabilities).await;
+        manager.connect().await?;
+
+        // Disconnect should work
+        manager.disconnect().await?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tunnel_selection_structure() {
+        let selection = TunnelSelection {
+            protocol: TunnelProtocol::MapE,
+            reason: "Test reason".to_string(),
+            selection_time: Duration::from_millis(100),
+            is_fallback: false,
+        };
+
+        assert_eq!(selection.protocol, TunnelProtocol::MapE);
+        assert_eq!(selection.reason, "Test reason");
+        assert_eq!(selection.selection_time, Duration::from_millis(100));
+        assert!(!selection.is_fallback);
+    }
+
+    #[test]
+    fn test_tunnel_protocol_suitability_checks() {
+        let manager = TunnelManager::new();
+        let capabilities = create_test_network_capabilities();
+
+        // Test all protocols with IPv4-only
+        assert!(manager.is_protocol_suitable(&TunnelProtocol::SixToFour, &capabilities));
+        assert!(manager.is_protocol_suitable(&TunnelProtocol::Teredo, &capabilities));
+        assert!(manager.is_protocol_suitable(&TunnelProtocol::SixInFour, &capabilities));
+        assert!(manager.is_protocol_suitable(&TunnelProtocol::Isatap, &capabilities));
+        assert!(manager.is_protocol_suitable(&TunnelProtocol::MapE, &capabilities));
+        assert!(manager.is_protocol_suitable(&TunnelProtocol::MapT, &capabilities));
+
+        // DS-Lite requires IPv6
+        assert!(!manager.is_protocol_suitable(&TunnelProtocol::DsLite, &capabilities));
+
+        let ipv6_capabilities = NetworkCapabilities {
+            has_ipv6: true,
+            ..capabilities
+        };
+        assert!(manager.is_protocol_suitable(&TunnelProtocol::DsLite, &ipv6_capabilities));
+    }
+}
+
 /// Create a tunnel configuration for a specific protocol
 pub fn create_tunnel_config(protocol: TunnelProtocol, capabilities: &NetworkCapabilities) -> TunnelConfig {
     let mut config = TunnelConfig::default();

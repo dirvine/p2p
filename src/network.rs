@@ -89,7 +89,7 @@ pub struct SecurityConfig {
 }
 
 /// Trust level for peer verification
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TrustLevel {
     /// No verification required
     None,
@@ -889,5 +889,649 @@ impl NodeBuilder {
     /// Build the P2P node
     pub async fn build(self) -> Result<P2PNode> {
         P2PNode::new(self.config).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::{Tool, MCPTool, ToolHandler, ToolMetadata, ToolHealthStatus, ToolRequirements};
+    use serde_json::json;
+    use std::pin::Pin;
+    use std::future::Future;
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    /// Test tool handler for network tests
+    struct NetworkTestTool {
+        name: String,
+    }
+
+    impl NetworkTestTool {
+        fn new(name: &str) -> Self {
+            Self {
+                name: name.to_string(),
+            }
+        }
+    }
+
+    impl ToolHandler for NetworkTestTool {
+        fn execute(&self, arguments: serde_json::Value) -> Pin<Box<dyn Future<Output = Result<serde_json::Value>> + Send + '_>> {
+            let name = self.name.clone();
+            Box::pin(async move {
+                Ok(json!({
+                    "tool": name,
+                    "input": arguments,
+                    "result": "network test success"
+                }))
+            })
+        }
+
+        fn validate(&self, _arguments: &serde_json::Value) -> Result<()> {
+            Ok(())
+        }
+
+        fn get_requirements(&self) -> ToolRequirements {
+            ToolRequirements::default()
+        }
+    }
+
+    /// Helper function to create a test node configuration
+    fn create_test_node_config() -> NodeConfig {
+        NodeConfig {
+            peer_id: Some("test_peer_123".to_string()),
+            listen_addrs: vec![
+                "/ip6/::1/tcp/9001".to_string(),
+                "/ip4/127.0.0.1/tcp/9001".to_string(),
+            ],
+            bootstrap_peers: vec![],
+            enable_ipv6: true,
+            enable_mcp_server: true,
+            mcp_server_config: Some(MCPServerConfig {
+                enable_auth: false, // Disable auth for testing
+                enable_rate_limiting: false, // Disable rate limiting for testing
+                ..Default::default()
+            }),
+            connection_timeout: Duration::from_secs(10),
+            keep_alive_interval: Duration::from_secs(30),
+            max_connections: 100,
+            max_incoming_connections: 50,
+            dht_config: DHTConfig::default(),
+            security_config: SecurityConfig::default(),
+            production_config: None,
+        }
+    }
+
+    /// Helper function to create a test tool
+    fn create_test_tool(name: &str) -> Tool {
+        Tool {
+            definition: MCPTool {
+                name: name.to_string(),
+                description: format!("Test tool: {}", name),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "input": { "type": "string" }
+                    }
+                }),
+            },
+            handler: Box::new(NetworkTestTool::new(name)),
+            metadata: ToolMetadata {
+                created_at: SystemTime::now(),
+                last_called: None,
+                call_count: 0,
+                avg_execution_time: Duration::from_millis(0),
+                health_status: ToolHealthStatus::Healthy,
+                tags: vec!["test".to_string()],
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn test_node_config_default() {
+        let config = NodeConfig::default();
+        
+        assert!(config.peer_id.is_none());
+        assert_eq!(config.listen_addrs.len(), 2);
+        assert!(config.enable_ipv6);
+        assert!(config.enable_mcp_server);
+        assert_eq!(config.max_connections, 1000);
+        assert_eq!(config.max_incoming_connections, 100);
+        assert_eq!(config.connection_timeout, Duration::from_secs(30));
+    }
+
+    #[tokio::test]
+    async fn test_dht_config_default() {
+        let config = DHTConfig::default();
+        
+        assert_eq!(config.k_value, 20);
+        assert_eq!(config.alpha_value, 5);
+        assert_eq!(config.record_ttl, Duration::from_secs(3600));
+        assert_eq!(config.refresh_interval, Duration::from_secs(600));
+    }
+
+    #[tokio::test]
+    async fn test_security_config_default() {
+        let config = SecurityConfig::default();
+        
+        assert!(config.enable_noise);
+        assert!(config.enable_tls);
+        assert_eq!(config.trust_level, TrustLevel::Basic);
+    }
+
+    #[test]
+    fn test_trust_level_variants() {
+        // Test that all trust level variants can be created
+        let _none = TrustLevel::None;
+        let _basic = TrustLevel::Basic;
+        let _full = TrustLevel::Full;
+
+        // Test equality
+        assert_eq!(TrustLevel::None, TrustLevel::None);
+        assert_eq!(TrustLevel::Basic, TrustLevel::Basic);
+        assert_eq!(TrustLevel::Full, TrustLevel::Full);
+        assert_ne!(TrustLevel::None, TrustLevel::Basic);
+    }
+
+    #[test]
+    fn test_connection_status_variants() {
+        let connecting = ConnectionStatus::Connecting;
+        let connected = ConnectionStatus::Connected;
+        let disconnecting = ConnectionStatus::Disconnecting;
+        let disconnected = ConnectionStatus::Disconnected;
+        let failed = ConnectionStatus::Failed("test error".to_string());
+
+        assert_eq!(connecting, ConnectionStatus::Connecting);
+        assert_eq!(connected, ConnectionStatus::Connected);
+        assert_eq!(disconnecting, ConnectionStatus::Disconnecting);
+        assert_eq!(disconnected, ConnectionStatus::Disconnected);
+        assert_ne!(connecting, connected);
+
+        if let ConnectionStatus::Failed(msg) = failed {
+            assert_eq!(msg, "test error");
+        } else {
+            panic!("Expected Failed status");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_node_creation() -> Result<()> {
+        let config = create_test_node_config();
+        let node = P2PNode::new(config).await?;
+
+        assert_eq!(node.peer_id(), "test_peer_123");
+        assert!(!node.is_running().await);
+        assert_eq!(node.peer_count().await, 0);
+        assert!(node.connected_peers().await.is_empty());
+        
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_node_creation_without_peer_id() -> Result<()> {
+        let mut config = create_test_node_config();
+        config.peer_id = None;
+        
+        let node = P2PNode::new(config).await?;
+        
+        // Should have generated a peer ID
+        assert!(node.peer_id().starts_with("peer_"));
+        assert!(!node.is_running().await);
+        
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_node_lifecycle() -> Result<()> {
+        let config = create_test_node_config();
+        let node = P2PNode::new(config).await?;
+
+        // Initially not running
+        assert!(!node.is_running().await);
+
+        // Start the node
+        node.start().await?;
+        assert!(node.is_running().await);
+
+        // Check listen addresses were set
+        let listen_addrs = node.listen_addrs().await;
+        assert_eq!(listen_addrs.len(), 2);
+
+        // Stop the node
+        node.stop().await?;
+        assert!(!node.is_running().await);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_peer_connection() -> Result<()> {
+        let config = create_test_node_config();
+        let node = P2PNode::new(config).await?;
+
+        let peer_addr = "/ip4/127.0.0.1/tcp/9002".to_string();
+        
+        // Connect to a peer
+        let peer_id = node.connect_peer(&peer_addr).await?;
+        assert!(peer_id.starts_with("peer_from_"));
+
+        // Check peer count
+        assert_eq!(node.peer_count().await, 1);
+
+        // Check connected peers
+        let connected_peers = node.connected_peers().await;
+        assert_eq!(connected_peers.len(), 1);
+        assert_eq!(connected_peers[0], peer_id);
+
+        // Get peer info
+        let peer_info = node.peer_info(&peer_id).await;
+        assert!(peer_info.is_some());
+        let info = peer_info.unwrap();
+        assert_eq!(info.peer_id, peer_id);
+        assert_eq!(info.status, ConnectionStatus::Connected);
+        assert!(info.protocols.contains(&"p2p-foundation/1.0".to_string()));
+
+        // Disconnect from peer
+        node.disconnect_peer(&peer_id).await?;
+        assert_eq!(node.peer_count().await, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_event_subscription() -> Result<()> {
+        let config = create_test_node_config();
+        let node = P2PNode::new(config).await?;
+
+        let mut events = node.subscribe_events();
+        let peer_addr = "/ip4/127.0.0.1/tcp/9003".to_string();
+
+        // Connect to a peer (this should emit an event)
+        let peer_id = node.connect_peer(&peer_addr).await?;
+
+        // Check for PeerConnected event
+        let event = timeout(Duration::from_millis(100), events.recv()).await;
+        assert!(event.is_ok());
+        
+        match event.unwrap().unwrap() {
+            NetworkEvent::PeerConnected { peer_id: event_peer_id, addresses } => {
+                assert_eq!(event_peer_id, peer_id);
+                assert_eq!(addresses[0], peer_addr);
+            }
+            _ => panic!("Expected PeerConnected event"),
+        }
+
+        // Disconnect from peer (this should emit another event)
+        node.disconnect_peer(&peer_id).await?;
+
+        // Check for PeerDisconnected event
+        let event = timeout(Duration::from_millis(100), events.recv()).await;
+        assert!(event.is_ok());
+        
+        match event.unwrap().unwrap() {
+            NetworkEvent::PeerDisconnected { peer_id: event_peer_id, reason } => {
+                assert_eq!(event_peer_id, peer_id);
+                assert_eq!(reason, "Manual disconnect");
+            }
+            _ => panic!("Expected PeerDisconnected event"),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_message_sending() -> Result<()> {
+        let config = create_test_node_config();
+        let node = P2PNode::new(config).await?;
+
+        let peer_addr = "/ip4/127.0.0.1/tcp/9004".to_string();
+        let peer_id = node.connect_peer(&peer_addr).await?;
+
+        // Send a message
+        let message_data = b"Hello, peer!".to_vec();
+        let result = node.send_message(&peer_id, "test-protocol", message_data).await;
+        assert!(result.is_ok());
+
+        // Try to send to non-existent peer
+        let non_existent_peer = "non_existent_peer".to_string();
+        let result = node.send_message(&non_existent_peer, "test-protocol", vec![]).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not connected"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_mcp_integration() -> Result<()> {
+        let config = create_test_node_config();
+        let node = P2PNode::new(config).await?;
+
+        // Start the node (which starts the MCP server)
+        node.start().await?;
+
+        // Register a test tool
+        let tool = create_test_tool("network_test_tool");
+        node.register_mcp_tool(tool).await?;
+
+        // List tools
+        let tools = node.list_mcp_tools().await?;
+        assert!(tools.contains(&"network_test_tool".to_string()));
+
+        // Call the tool
+        let arguments = json!({"input": "test_input"});
+        let result = node.call_mcp_tool("network_test_tool", arguments.clone()).await?;
+        assert_eq!(result["tool"], "network_test_tool");
+        assert_eq!(result["input"], arguments);
+
+        // Get MCP stats
+        let stats = node.mcp_stats().await?;
+        assert_eq!(stats.total_tools, 1);
+
+        // Test call to non-existent tool
+        let result = node.call_mcp_tool("non_existent_tool", json!({})).await;
+        assert!(result.is_err());
+
+        node.stop().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_remote_mcp_operations() -> Result<()> {
+        let config = create_test_node_config();
+        let node = P2PNode::new(config).await?;
+
+        node.start().await?;
+
+        // Register a test tool locally
+        let tool = create_test_tool("remote_test_tool");
+        node.register_mcp_tool(tool).await?;
+
+        let peer_addr = "/ip4/127.0.0.1/tcp/9005".to_string();
+        let peer_id = node.connect_peer(&peer_addr).await?;
+
+        // List remote tools (simulated)
+        let remote_tools = node.list_remote_mcp_tools(&peer_id).await?;
+        assert!(!remote_tools.is_empty());
+
+        // Call remote tool (simulated as local for now)
+        let arguments = json!({"input": "remote_test"});
+        let result = node.call_remote_mcp_tool(&peer_id, "remote_test_tool", arguments.clone()).await?;
+        assert_eq!(result["tool"], "remote_test_tool");
+
+        // Discover remote services
+        let services = node.discover_remote_mcp_services().await?;
+        // Should return empty list in test environment
+        assert!(services.is_empty());
+
+        node.stop().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_health_check() -> Result<()> {
+        let config = create_test_node_config();
+        let node = P2PNode::new(config).await?;
+
+        // Health check should pass with no connections
+        let result = node.health_check().await;
+        assert!(result.is_ok());
+
+        // Connect many peers (but not over the limit)
+        for i in 0..5 {
+            let addr = format!("/ip4/127.0.0.1/tcp/{}", 9010 + i);
+            node.connect_peer(&addr).await?;
+        }
+
+        // Health check should still pass
+        let result = node.health_check().await;
+        assert!(result.is_ok());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_node_uptime() -> Result<()> {
+        let config = create_test_node_config();
+        let node = P2PNode::new(config).await?;
+
+        let uptime1 = node.uptime();
+        assert!(uptime1 >= Duration::from_secs(0));
+
+        // Wait a bit
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let uptime2 = node.uptime();
+        assert!(uptime2 > uptime1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_node_config_access() -> Result<()> {
+        let config = create_test_node_config();
+        let expected_peer_id = config.peer_id.clone();
+        let node = P2PNode::new(config).await?;
+
+        let node_config = node.config();
+        assert_eq!(node_config.peer_id, expected_peer_id);
+        assert_eq!(node_config.max_connections, 100);
+        assert!(node_config.enable_mcp_server);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_mcp_server_access() -> Result<()> {
+        let config = create_test_node_config();
+        let node = P2PNode::new(config).await?;
+
+        // Should have MCP server
+        assert!(node.mcp_server().is_some());
+
+        // Test with MCP disabled
+        let mut config = create_test_node_config();
+        config.enable_mcp_server = false;
+        let node_no_mcp = P2PNode::new(config).await?;
+        assert!(node_no_mcp.mcp_server().is_none());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_dht_access() -> Result<()> {
+        let config = create_test_node_config();
+        let node = P2PNode::new(config).await?;
+
+        // Should have DHT
+        assert!(node.dht().is_some());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_node_builder() -> Result<()> {
+        let node = P2PNode::builder()
+            .with_peer_id("builder_test_peer".to_string())
+            .listen_on("/ip4/127.0.0.1/tcp/9100")
+            .listen_on("/ip6/::1/tcp/9100")
+            .with_bootstrap_peer("/ip4/127.0.0.1/tcp/9101")
+            .with_ipv6(true)
+            .with_mcp_server()
+            .with_connection_timeout(Duration::from_secs(15))
+            .with_max_connections(200)
+            .build()
+            .await?;
+
+        assert_eq!(node.peer_id(), "builder_test_peer");
+        let config = node.config();
+        assert_eq!(config.listen_addrs.len(), 4); // 2 default + 2 added by builder
+        assert_eq!(config.bootstrap_peers.len(), 1);
+        assert!(config.enable_ipv6);
+        assert!(config.enable_mcp_server);
+        assert_eq!(config.connection_timeout, Duration::from_secs(15));
+        assert_eq!(config.max_connections, 200);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_node_builder_with_mcp_config() -> Result<()> {
+        let mcp_config = MCPServerConfig {
+            server_name: "test_mcp_server".to_string(),
+            server_version: "1.0.0".to_string(),
+            enable_dht_discovery: false,
+            enable_auth: false,
+            ..MCPServerConfig::default()
+        };
+
+        let node = P2PNode::builder()
+            .with_peer_id("mcp_config_test".to_string())
+            .with_mcp_config(mcp_config.clone())
+            .build()
+            .await?;
+
+        assert_eq!(node.peer_id(), "mcp_config_test");
+        let config = node.config();
+        assert!(config.enable_mcp_server);
+        assert!(config.mcp_server_config.is_some());
+        
+        let node_mcp_config = config.mcp_server_config.as_ref().unwrap();
+        assert_eq!(node_mcp_config.server_name, "test_mcp_server");
+        assert!(!node_mcp_config.enable_auth);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_mcp_server_not_enabled_errors() -> Result<()> {
+        let mut config = create_test_node_config();
+        config.enable_mcp_server = false;
+        let node = P2PNode::new(config).await?;
+
+        // All MCP operations should fail
+        let tool = create_test_tool("test_tool");
+        let result = node.register_mcp_tool(tool).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("MCP server not enabled"));
+
+        let result = node.call_mcp_tool("test_tool", json!({})).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("MCP server not enabled"));
+
+        let result = node.list_mcp_tools().await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("MCP server not enabled"));
+
+        let result = node.mcp_stats().await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("MCP server not enabled"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_peers() -> Result<()> {
+        let mut config = create_test_node_config();
+        config.bootstrap_peers = vec![
+            "/ip4/127.0.0.1/tcp/9200".to_string(),
+            "/ip4/127.0.0.1/tcp/9201".to_string(),
+        ];
+        
+        let node = P2PNode::new(config).await?;
+        
+        // Start node (which connects to bootstrap peers)
+        node.start().await?;
+        
+        // Should have connected to bootstrap peers
+        assert_eq!(node.peer_count().await, 2);
+        
+        node.stop().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_production_mode_disabled() -> Result<()> {
+        let config = create_test_node_config();
+        let node = P2PNode::new(config).await?;
+
+        assert!(!node.is_production_mode());
+        assert!(node.production_config().is_none());
+
+        // Resource metrics should fail when production mode is disabled
+        let result = node.resource_metrics().await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not enabled"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_network_event_variants() {
+        // Test that all network event variants can be created
+        let peer_id = "test_peer".to_string();
+        let address = "/ip4/127.0.0.1/tcp/9000".to_string();
+
+        let _peer_connected = NetworkEvent::PeerConnected {
+            peer_id: peer_id.clone(),
+            addresses: vec![address.clone()],
+        };
+
+        let _peer_disconnected = NetworkEvent::PeerDisconnected {
+            peer_id: peer_id.clone(),
+            reason: "test disconnect".to_string(),
+        };
+
+        let _message_received = NetworkEvent::MessageReceived {
+            peer_id: peer_id.clone(),
+            protocol: "test-protocol".to_string(),
+            data: vec![1, 2, 3],
+        };
+
+        let _connection_failed = NetworkEvent::ConnectionFailed {
+            peer_id: Some(peer_id.clone()),
+            address: address.clone(),
+            error: "connection refused".to_string(),
+        };
+
+        let _dht_stored = NetworkEvent::DHTRecordStored {
+            key: vec![1, 2, 3],
+            value: vec![4, 5, 6],
+        };
+
+        let _dht_retrieved = NetworkEvent::DHTRecordRetrieved {
+            key: vec![1, 2, 3],
+            value: Some(vec![4, 5, 6]),
+        };
+    }
+
+    #[tokio::test]
+    async fn test_peer_info_structure() {
+        let peer_info = PeerInfo {
+            peer_id: "test_peer".to_string(),
+            addresses: vec!["/ip4/127.0.0.1/tcp/9000".to_string()],
+            connected_at: Instant::now(),
+            last_seen: Instant::now(),
+            status: ConnectionStatus::Connected,
+            protocols: vec!["test-protocol".to_string()],
+        };
+
+        assert_eq!(peer_info.peer_id, "test_peer");
+        assert_eq!(peer_info.addresses.len(), 1);
+        assert_eq!(peer_info.status, ConnectionStatus::Connected);
+        assert_eq!(peer_info.protocols.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_serialization() -> Result<()> {
+        // Test that configs can be serialized/deserialized
+        let config = create_test_node_config();
+        let serialized = serde_json::to_string(&config)?;
+        let deserialized: NodeConfig = serde_json::from_str(&serialized)?;
+
+        assert_eq!(config.peer_id, deserialized.peer_id);
+        assert_eq!(config.listen_addrs, deserialized.listen_addrs);
+        assert_eq!(config.enable_ipv6, deserialized.enable_ipv6);
+
+        Ok(())
     }
 }

@@ -884,3 +884,598 @@ impl SKademlia {
         self.reputation_manager.apply_decay();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dht::DHTNode;
+    use std::time::SystemTime;
+
+    fn create_test_dht_node(peer_id: &str, distance_bytes: [u8; 32]) -> DHTNode {
+        DHTNode {
+            peer_id: peer_id.to_string(),
+            addresses: vec![],
+            last_seen: std::time::Instant::now(),
+            distance: Key::from_hash(distance_bytes),
+            is_connected: false,
+        }
+    }
+
+    fn create_test_key(bytes: [u8; 32]) -> Key {
+        Key::from_hash(bytes)
+    }
+
+    #[test]
+    fn test_skademlia_config_default() {
+        let config = SKademliaConfig::default();
+        assert_eq!(config.disjoint_path_count, 3);
+        assert_eq!(config.max_shared_nodes, 1);
+        assert_eq!(config.sibling_list_size, 16);
+        assert_eq!(config.security_bucket_size, 8);
+        assert!(config.enable_distance_verification);
+        assert!(config.enable_routing_validation);
+        assert_eq!(config.min_routing_reputation, 0.3);
+        assert_eq!(config.lookup_timeout, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_disjoint_path_lookup_creation() {
+        let target = create_test_key([1u8; 32]);
+        let lookup = DisjointPathLookup::new(target.clone(), 3, 1);
+        
+        assert_eq!(lookup.target, target);
+        assert_eq!(lookup.path_count, 3);
+        assert_eq!(lookup.max_shared_nodes, 1);
+        assert_eq!(lookup.paths.len(), 3);
+        assert_eq!(lookup.path_states.len(), 3);
+        
+        for (i, path_state) in lookup.path_states.iter().enumerate() {
+            assert_eq!(path_state.path_id, i);
+            assert!(path_state.nodes.is_empty());
+            assert!(path_state.queried.is_empty());
+            assert!(path_state.to_query.is_empty());
+            assert!(!path_state.completed);
+            assert!(path_state.results.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_disjoint_path_initialization() -> Result<()> {
+        let target = create_test_key([1u8; 32]);
+        let mut lookup = DisjointPathLookup::new(target, 3, 1);
+        
+        let initial_nodes = vec![
+            create_test_dht_node("peer1", [2u8; 32]),
+            create_test_dht_node("peer2", [3u8; 32]),
+            create_test_dht_node("peer3", [4u8; 32]),
+            create_test_dht_node("peer4", [5u8; 32]),
+        ];
+        
+        lookup.initialize_paths(initial_nodes)?;
+        
+        // Check that nodes are distributed across paths
+        assert!(!lookup.path_states[0].to_query.is_empty());
+        assert!(!lookup.path_states[1].to_query.is_empty());
+        assert!(!lookup.path_states[2].to_query.is_empty());
+        
+        // Each path should have at least one node
+        for path_state in &lookup.path_states {
+            assert!(!path_state.to_query.is_empty());
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_disjoint_path_initialization_insufficient_nodes() {
+        let target = create_test_key([1u8; 32]);
+        let mut lookup = DisjointPathLookup::new(target, 5, 1);
+        
+        let initial_nodes = vec![
+            create_test_dht_node("peer1", [2u8; 32]),
+            create_test_dht_node("peer2", [3u8; 32]),
+        ];
+        
+        let result = lookup.initialize_paths(initial_nodes);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_disjoint_path_get_next_node() -> Result<()> {
+        let target = create_test_key([1u8; 32]);
+        let mut lookup = DisjointPathLookup::new(target, 2, 1);
+        
+        let initial_nodes = vec![
+            create_test_dht_node("peer1", [2u8; 32]),
+            create_test_dht_node("peer2", [3u8; 32]),
+        ];
+        
+        lookup.initialize_paths(initial_nodes)?;
+        
+        // Get next node from path 0
+        let next_node = lookup.get_next_node(0);
+        assert!(next_node.is_some());
+        
+        if let Some(node) = next_node {
+            assert!(lookup.path_states[0].queried.contains(&node.peer_id));
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_disjoint_path_invalid_path_id() -> Result<()> {
+        let target = create_test_key([1u8; 32]);
+        let mut lookup = DisjointPathLookup::new(target, 2, 1);
+        
+        let initial_nodes = vec![
+            create_test_dht_node("peer1", [2u8; 32]),
+            create_test_dht_node("peer2", [3u8; 32]),
+        ];
+        
+        lookup.initialize_paths(initial_nodes)?;
+        
+        // Try to get node from invalid path ID
+        let next_node = lookup.get_next_node(10);
+        assert!(next_node.is_none());
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_disjoint_path_add_query_results() -> Result<()> {
+        let target = create_test_key([1u8; 32]);
+        let mut lookup = DisjointPathLookup::new(target, 2, 1);
+        
+        let initial_nodes = vec![
+            create_test_dht_node("peer1", [2u8; 32]),
+            create_test_dht_node("peer2", [3u8; 32]),
+        ];
+        
+        lookup.initialize_paths(initial_nodes)?;
+        
+        let query_results = vec![
+            create_test_dht_node("peer3", [4u8; 32]),
+            create_test_dht_node("peer4", [5u8; 32]),
+        ];
+        
+        let initial_queue_size = lookup.path_states[0].to_query.len();
+        lookup.add_query_results(0, query_results);
+        
+        // Queue should have more nodes now
+        assert!(lookup.path_states[0].to_query.len() >= initial_queue_size);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_disjoint_path_verify_disjointness() -> Result<()> {
+        let target = create_test_key([1u8; 32]);
+        let mut lookup = DisjointPathLookup::new(target, 2, 1);
+        
+        let initial_nodes = vec![
+            create_test_dht_node("peer1", [2u8; 32]),
+            create_test_dht_node("peer2", [3u8; 32]),
+        ];
+        
+        lookup.initialize_paths(initial_nodes)?;
+        
+        // Initially should be disjoint (no shared nodes yet)
+        assert!(lookup.verify_disjointness());
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_disjoint_path_count_shared_nodes() -> Result<()> {
+        let target = create_test_key([1u8; 32]);
+        let mut lookup = DisjointPathLookup::new(target, 2, 1);
+        
+        let initial_nodes = vec![
+            create_test_dht_node("peer1", [2u8; 32]),
+            create_test_dht_node("peer2", [3u8; 32]),
+        ];
+        
+        lookup.initialize_paths(initial_nodes)?;
+        
+        // Initially no shared nodes
+        let shared_count = lookup.count_shared_nodes(0, 1);
+        assert_eq!(shared_count, 0);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_disjoint_path_completion() {
+        let target = create_test_key([1u8; 32]);
+        let lookup = DisjointPathLookup::new(target, 2, 1);
+        
+        // Should not be complete initially
+        assert!(!lookup.is_complete());
+    }
+
+    #[test]
+    fn test_disjoint_path_get_results() -> Result<()> {
+        let target = create_test_key([1u8; 32]);
+        let mut lookup = DisjointPathLookup::new(target, 2, 1);
+        
+        let initial_nodes = vec![
+            create_test_dht_node("peer1", [2u8; 32]),
+            create_test_dht_node("peer2", [3u8; 32]),
+        ];
+        
+        lookup.initialize_paths(initial_nodes)?;
+        
+        // Add some results to path states
+        lookup.path_states[0].results.push(create_test_dht_node("result1", [10u8; 32]));
+        lookup.path_states[1].results.push(create_test_dht_node("result2", [11u8; 32]));
+        
+        let results = lookup.get_results();
+        assert_eq!(results.len(), 2);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_sibling_list_creation() {
+        let local_id = create_test_key([1u8; 32]);
+        let sibling_list = SiblingList::new(local_id.clone(), 16);
+        
+        assert_eq!(sibling_list.local_id, local_id);
+        assert_eq!(sibling_list.max_size, 16);
+        assert!(sibling_list.siblings.is_empty());
+    }
+
+    #[test]
+    fn test_sibling_list_add_node() {
+        let local_id = create_test_key([1u8; 32]);
+        let mut sibling_list = SiblingList::new(local_id, 16);
+        
+        let node = create_test_dht_node("peer1", [2u8; 32]);
+        sibling_list.add_node(node.clone());
+        
+        assert_eq!(sibling_list.siblings.len(), 1);
+        assert_eq!(sibling_list.siblings[0].peer_id, node.peer_id);
+    }
+
+    #[test]
+    fn test_sibling_list_size_limit() {
+        let local_id = create_test_key([1u8; 32]);
+        let mut sibling_list = SiblingList::new(local_id, 2);
+        
+        // Add more nodes than the limit
+        sibling_list.add_node(create_test_dht_node("peer1", [2u8; 32]));
+        sibling_list.add_node(create_test_dht_node("peer2", [3u8; 32]));
+        sibling_list.add_node(create_test_dht_node("peer3", [4u8; 32]));
+        
+        // Should be limited to max_size
+        assert_eq!(sibling_list.siblings.len(), 2);
+    }
+
+    #[test]
+    fn test_sibling_list_get_closest_siblings() {
+        let local_id = create_test_key([1u8; 32]);
+        let mut sibling_list = SiblingList::new(local_id, 16);
+        
+        sibling_list.add_node(create_test_dht_node("peer1", [2u8; 32]));
+        sibling_list.add_node(create_test_dht_node("peer2", [3u8; 32]));
+        sibling_list.add_node(create_test_dht_node("peer3", [4u8; 32]));
+        
+        let closest = sibling_list.get_closest_siblings(2);
+        assert_eq!(closest.len(), 2);
+    }
+
+    #[test]
+    fn test_sibling_list_verify_routing_decision() {
+        let local_id = create_test_key([1u8; 32]);
+        let sibling_list = SiblingList::new(local_id, 16);
+        
+        let target = create_test_key([10u8; 32]);
+        let proposed_nodes = vec![create_test_dht_node("peer1", [11u8; 32])];
+        
+        // Should accept routing decision (basic test)
+        let is_valid = sibling_list.verify_routing_decision(&target, &proposed_nodes);
+        assert!(is_valid);
+    }
+
+    #[test]
+    fn test_security_bucket_creation() {
+        let security_bucket = SecurityBucket::new(8);
+        
+        assert_eq!(security_bucket.max_size, 8);
+        assert!(security_bucket.trusted_nodes.is_empty());
+        assert!(security_bucket.backup_routes.is_empty());
+    }
+
+    #[test]
+    fn test_security_bucket_add_trusted_node() {
+        let mut security_bucket = SecurityBucket::new(8);
+        
+        let node = create_test_dht_node("peer1", [2u8; 32]);
+        security_bucket.add_trusted_node(node.clone());
+        
+        assert_eq!(security_bucket.trusted_nodes.len(), 1);
+        assert_eq!(security_bucket.trusted_nodes[0].peer_id, node.peer_id);
+    }
+
+    #[test]
+    fn test_security_bucket_size_limit() {
+        let mut security_bucket = SecurityBucket::new(2);
+        
+        // Add more nodes than the limit
+        security_bucket.add_trusted_node(create_test_dht_node("peer1", [2u8; 32]));
+        security_bucket.add_trusted_node(create_test_dht_node("peer2", [3u8; 32]));
+        security_bucket.add_trusted_node(create_test_dht_node("peer3", [4u8; 32]));
+        
+        // Should be limited to max_size
+        assert_eq!(security_bucket.trusted_nodes.len(), 2);
+    }
+
+    #[test]
+    fn test_security_bucket_add_backup_route() {
+        let mut security_bucket = SecurityBucket::new(8);
+        
+        let route = vec![
+            create_test_dht_node("peer1", [2u8; 32]),
+            create_test_dht_node("peer2", [3u8; 32]),
+        ];
+        
+        security_bucket.add_backup_route(route.clone());
+        
+        assert_eq!(security_bucket.backup_routes.len(), 1);
+        assert_eq!(security_bucket.backup_routes[0].len(), 2);
+    }
+
+    #[test]
+    fn test_security_bucket_backup_route_limit() {
+        let mut security_bucket = SecurityBucket::new(8);
+        
+        // Add more routes than the limit (max 5)
+        for i in 0..7 {
+            let route = vec![create_test_dht_node(&format!("peer{}", i), [i as u8; 32])];
+            security_bucket.add_backup_route(route);
+        }
+        
+        // Should be limited to 5 routes
+        assert_eq!(security_bucket.backup_routes.len(), 5);
+    }
+
+    #[test]
+    fn test_skademlia_creation() {
+        let config = SKademliaConfig::default();
+        let skademlia = SKademlia::new(config);
+        
+        assert!(skademlia.sibling_lists.is_empty());
+        assert!(skademlia.security_buckets.is_empty());
+        assert!(skademlia.active_lookups.is_empty());
+        assert!(skademlia.pending_challenges.is_empty());
+    }
+
+    #[test]
+    fn test_skademlia_update_sibling_list() {
+        let config = SKademliaConfig::default();
+        let mut skademlia = SKademlia::new(config);
+        
+        let key = create_test_key([1u8; 32]);
+        let nodes = vec![
+            create_test_dht_node("peer1", [2u8; 32]),
+            create_test_dht_node("peer2", [3u8; 32]),
+        ];
+        
+        skademlia.update_sibling_list(key.clone(), nodes);
+        
+        assert!(skademlia.sibling_lists.contains_key(&key));
+        assert_eq!(skademlia.sibling_lists[&key].siblings.len(), 2);
+    }
+
+    #[test]
+    fn test_skademlia_get_security_bucket() {
+        let config = SKademliaConfig::default();
+        let mut skademlia = SKademlia::new(config);
+        
+        let key = create_test_key([1u8; 32]);
+        
+        // Should create new bucket if it doesn't exist
+        let bucket = skademlia.get_security_bucket(&key);
+        assert_eq!(bucket.max_size, 8); // Default config value
+        
+        // Should return existing bucket
+        let bucket2 = skademlia.get_security_bucket(&key);
+        assert_eq!(bucket2.max_size, 8);
+    }
+
+    #[test]
+    fn test_skademlia_create_distance_challenge() {
+        let config = SKademliaConfig::default();
+        let mut skademlia = SKademlia::new(config);
+        
+        let target = "test_peer".to_string();
+        let key = create_test_key([1u8; 32]);
+        
+        let challenge = skademlia.create_distance_challenge(&target, &key);
+        
+        assert_eq!(challenge.challenger, target);
+        assert_eq!(challenge.target_key, key);
+        assert!(skademlia.pending_challenges.contains_key(&target));
+    }
+
+    #[test]
+    fn test_skademlia_create_enhanced_distance_challenge() {
+        let config = SKademliaConfig::default();
+        let mut skademlia = SKademlia::new(config);
+        
+        let target = "test_peer".to_string();
+        let key = create_test_key([1u8; 32]);
+        let witness_nodes = vec!["witness1".to_string(), "witness2".to_string()];
+        
+        let challenge = skademlia.create_enhanced_distance_challenge(&target, &key, witness_nodes.clone());
+        
+        assert_eq!(challenge.challenger, target);
+        assert_eq!(challenge.target_key, key);
+        assert_eq!(challenge.witness_nodes, witness_nodes);
+        assert_eq!(challenge.challenge_round, 1);
+        assert_eq!(challenge.max_rounds, 3);
+    }
+
+    #[test]
+    fn test_skademlia_create_adaptive_distance_challenge() {
+        let config = SKademliaConfig::default();
+        let mut skademlia = SKademlia::new(config);
+        
+        let target = "test_peer".to_string();
+        let key = create_test_key([1u8; 32]);
+        
+        // Test normal challenge
+        let normal_challenge = skademlia.create_adaptive_distance_challenge(&target, &key, false);
+        assert_eq!(normal_challenge.witness_nodes.len(), 3);
+        assert_eq!(normal_challenge.max_rounds, 3);
+        
+        // Test challenge when attack is suspected
+        let attack_challenge = skademlia.create_adaptive_distance_challenge(&target, &key, true);
+        assert_eq!(attack_challenge.witness_nodes.len(), 7);
+        assert_eq!(attack_challenge.max_rounds, 5);
+    }
+
+    #[test]
+    fn test_skademlia_select_secure_nodes() {
+        let config = SKademliaConfig::default();
+        let skademlia = SKademlia::new(config);
+        
+        let candidates = vec![
+            create_test_dht_node("peer1", [2u8; 32]),
+            create_test_dht_node("peer2", [3u8; 32]),
+            create_test_dht_node("peer3", [4u8; 32]),
+        ];
+        
+        let target = create_test_key([1u8; 32]);
+        let selected = skademlia.select_secure_nodes(&candidates, &target, 2);
+        
+        assert_eq!(selected.len(), 2);
+    }
+
+    #[test]
+    fn test_skademlia_cleanup_expired() {
+        let config = SKademliaConfig::default();
+        let mut skademlia = SKademlia::new(config);
+        
+        // Add some test data
+        let key = create_test_key([1u8; 32]);
+        let target = "test_peer".to_string();
+        
+        skademlia.create_distance_challenge(&target, &key);
+        
+        // Should have pending challenge
+        assert!(!skademlia.pending_challenges.is_empty());
+        
+        // Cleanup should not remove recent challenge
+        skademlia.cleanup_expired();
+        assert!(!skademlia.pending_challenges.is_empty());
+    }
+
+    #[test]
+    fn test_distance_challenge_creation() {
+        let challenger = "test_peer".to_string();
+        let target_key = create_test_key([1u8; 32]);
+        let expected_distance = target_key.distance(&Key::new(challenger.as_bytes()));
+        
+        let challenge = DistanceChallenge {
+            challenger: challenger.clone(),
+            target_key: target_key.clone(),
+            expected_distance: expected_distance.clone(),
+            nonce: [1u8; 32],
+            timestamp: SystemTime::now(),
+        };
+        
+        assert_eq!(challenge.challenger, challenger);
+        assert_eq!(challenge.target_key, target_key);
+        assert_eq!(challenge.expected_distance, expected_distance);
+        assert_eq!(challenge.nonce, [1u8; 32]);
+    }
+
+    #[test]
+    fn test_distance_measurement() {
+        let witness = "witness_peer".to_string();
+        let distance = create_test_key([5u8; 32]);
+        let confidence = 0.8;
+        let response_time = Duration::from_millis(100);
+        
+        let measurement = DistanceMeasurement {
+            witness: witness.clone(),
+            distance: distance.clone(),
+            confidence,
+            response_time,
+        };
+        
+        assert_eq!(measurement.witness, witness);
+        assert_eq!(measurement.distance, distance);
+        assert_eq!(measurement.confidence, confidence);
+        assert_eq!(measurement.response_time, response_time);
+    }
+
+    #[test]
+    fn test_consistency_report() {
+        let nodes_checked = 10;
+        let inconsistencies = 2;
+        let suspicious_nodes = vec!["peer1".to_string(), "peer2".to_string()];
+        let validated_at = Instant::now();
+        
+        let report = ConsistencyReport {
+            nodes_checked,
+            inconsistencies,
+            suspicious_nodes: suspicious_nodes.clone(),
+            validated_at,
+        };
+        
+        assert_eq!(report.nodes_checked, nodes_checked);
+        assert_eq!(report.inconsistencies, inconsistencies);
+        assert_eq!(report.suspicious_nodes, suspicious_nodes);
+    }
+
+    #[tokio::test]
+    async fn test_skademlia_validate_routing_consistency() -> Result<()> {
+        let config = SKademliaConfig::default();
+        let skademlia = SKademlia::new(config);
+        
+        let nodes = vec![
+            create_test_dht_node("peer1", [2u8; 32]),
+            create_test_dht_node("peer2", [3u8; 32]),
+        ];
+        
+        let report = skademlia.validate_routing_consistency(&nodes).await?;
+        
+        assert_eq!(report.nodes_checked, 2);
+        // Since no reputation data exists, inconsistencies may be 0 or 2 depending on implementation
+        assert!(report.inconsistencies <= 2);
+        assert!(report.suspicious_nodes.len() <= 2);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_distance_proof_validation_components() {
+        // Test individual components used in distance proof validation
+        let challenger = "test_peer".to_string();
+        let target_key = create_test_key([1u8; 32]);
+        let expected_distance = target_key.distance(&Key::new(challenger.as_bytes()));
+        
+        let challenge = DistanceChallenge {
+            challenger: challenger.clone(),
+            target_key: target_key.clone(),
+            expected_distance: expected_distance.clone(),
+            nonce: [1u8; 32],
+            timestamp: SystemTime::now(),
+        };
+        
+        let proof = DistanceProof {
+            challenge,
+            proof_nodes: vec!["proof1".to_string(), "proof2".to_string()],
+            signatures: vec![vec![1u8; 64], vec![2u8; 64]],
+            response_time: Duration::from_millis(50),
+        };
+        
+        // Verify structure
+        assert_eq!(proof.proof_nodes.len(), 2);
+        assert_eq!(proof.signatures.len(), 2);
+        assert_eq!(proof.response_time, Duration::from_millis(50));
+    }
+}

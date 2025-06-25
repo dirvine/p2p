@@ -40,6 +40,7 @@ const IPV4_IN_IPV6_PROTOCOL: u8 = 4;
 const AFTR_WELL_KNOWN_IPV4: Ipv4Addr = Ipv4Addr::new(192, 0, 0, 1);
 
 /// Default MTU for DS-Lite tunnels (1520 bytes to account for IPv6 header)
+#[allow(dead_code)]
 const DEFAULT_DSLITE_MTU: u16 = 1520;
 
 /// DS-Lite B4 element implementation
@@ -53,6 +54,7 @@ pub struct DsLiteTunnel {
     /// AFTR IPv6 address (discovered or configured)
     aftr_address: RwLock<Option<Ipv6Addr>>,
     /// Local IPv6 address for tunnel endpoint
+    #[allow(dead_code)]
     local_ipv6: Option<Ipv6Addr>,
     /// UDP socket for tunnel communication
     socket: RwLock<Option<UdpSocket>>,
