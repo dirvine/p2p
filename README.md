@@ -108,12 +108,10 @@ p2p-foundation = "0.1.0"
 - **Teredo** (RFC 4380) - NAT traversal with UDP encapsulation  
 - **6in4** (RFC 4213) - Static tunneling with explicit endpoints
 - **DS-Lite** (RFC 6333) - ISP-provided dual-stack lite tunneling
+- **ISATAP** (RFC 5214) - Enterprise network tunneling with router discovery
+- **MAP-E/MAP-T** (RFC 7597/7599) - Modern ISP transition mechanisms with deterministic mapping
 - **Intelligent Auto-Selection** - Network capability-based protocol selection
 - **Performance Monitoring** - Real-time tunnel health and metrics
-
-### 🚧 Planned
-- **ISATAP** - Enterprise network tunneling
-- **MAP-E/MAP-T** - Modern ISP transition mechanisms
 
 ## Model Context Protocol (MCP) Integration
 
@@ -255,6 +253,8 @@ The P2P Foundation implements comprehensive **defense-in-depth** security across
 - [x] Teredo NAT traversal tunneling (RFC 4380)  
 - [x] 6in4 static tunneling (RFC 4213)
 - [x] DS-Lite ISP-provided tunneling (RFC 6333)
+- [x] ISATAP enterprise network tunneling (RFC 5214)
+- [x] MAP-E/MAP-T modern ISP transition mechanisms (RFC 7597/7599)
 - [x] Intelligent protocol auto-selection with scoring
 - [x] Network capability detection and performance monitoring
 
@@ -274,7 +274,6 @@ The P2P Foundation implements comprehensive **defense-in-depth** security across
 - [x] Documentation and developer experience
 
 ### 📋 Phase 6: Advanced Features (Planned)
-- [ ] Additional tunneling protocols (ISATAP, MAP-E/MAP-T)
 - [ ] Language bindings (Python, JavaScript, Go)
 - [ ] Mobile and IoT device optimization
 - [ ] Advanced performance monitoring and telemetry
