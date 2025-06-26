@@ -1,6 +1,6 @@
 
 use p2p_foundation::{P2PNode, P2PEvent};
-use p2p_foundation::bootstrap::{BootstrapManager, ThreeWordAddress};
+use p2p_foundation::bootstrap::{BootstrapManager, ThreeWordAddress, BootstrapDiscovery};
 use anyhow::Result;
 use tokio::io::{self, AsyncBufReadExt};
 use tokio::sync::mpsc;
@@ -38,37 +38,47 @@ async fn main() -> Result<()> {
         builder = builder.with_bootstrap_peer(peer);
     }
     
-    // Handle three-word bootstrap addresses
-    if !args.bootstrap_words.is_empty() {
-        let bootstrap_manager = BootstrapManager::new().await?;
+    // Handle three-word bootstrap addresses and auto-discovery
+    if !args.bootstrap_words.is_empty() || (args.bootstrap.is_empty() && args.bootstrap_words.is_empty()) {
+        let discovery = BootstrapDiscovery::new();
         
-        println!("[System] Processing three-word bootstrap addresses...");
-        for word_addr in &args.bootstrap_words {
-            match ThreeWordAddress::from_string(word_addr) {
-                Ok(words) => {
-                    match bootstrap_manager.validate_words(&words) {
-                        Ok(()) => {
-                            println!("[System] Valid three-word address: {}", words);
-                            // Note: In a full implementation, we'd resolve this to a multiaddr
-                            // For now, we'll use well-known addresses as examples
-                            if word_addr == "global.fast.eagle" {
-                                builder = builder.with_bootstrap_peer("/ip6/::1/tcp/9000");
-                                println!("[System] Resolved {} to /ip6/::1/tcp/9000", words);
-                            } else if word_addr == "local.mesh.lighthouse" {
-                                builder = builder.with_bootstrap_peer("/ip6/::1/udp/9001/quic");
-                                println!("[System] Resolved {} to /ip6/::1/udp/9001/quic", words);
-                            } else {
-                                println!("[System] ⚠️  {} is valid but not in our demo registry", words);
-                                println!("[System] In production, this would be resolved via DHT lookup");
-                            }
+        if !args.bootstrap_words.is_empty() {
+            println!("[System] 🔤 Processing three-word bootstrap addresses...");
+            for word_addr in &args.bootstrap_words {
+                match discovery.resolve_three_words(word_addr) {
+                    Ok(multiaddr) => {
+                        println!("[System] ✅ Resolved '{}' to {}", word_addr, multiaddr);
+                        builder = builder.with_bootstrap_peer(&multiaddr.to_string());
+                    }
+                    Err(e) => {
+                        println!("[System] ❌ Failed to resolve '{}': {}", word_addr, e);
+                    }
+                }
+            }
+        } else {
+            // Auto-discovery: use well-known bootstrap nodes
+            println!("[System] 🔍 Auto-discovering bootstrap nodes...");
+            match discovery.discover_bootstraps().await {
+                Ok(bootstraps) => {
+                    if bootstraps.is_empty() {
+                        println!("[System] ⚠️  No bootstrap nodes discovered. You can still connect by providing:");
+                        println!("[System]    --bootstrap '/ip4/YOUR_IP/udp/9000/quic'");
+                        println!("[System]    --bootstrap-words 'foundation.main.bootstrap'");
+                        println!("[System] 📋 Available well-known three-word addresses:");
+                        for addr in discovery.get_well_known_three_words() {
+                            println!("[System]    {}", addr);
                         }
-                        Err(e) => {
-                            println!("[System] ❌ Invalid three-word address '{}': {}", word_addr, e);
+                    } else {
+                        println!("[System] ✅ Found {} bootstrap nodes:", bootstraps.len());
+                        for addr in &bootstraps {
+                            println!("[System]    {}", addr);
+                            builder = builder.with_bootstrap_peer(&addr.to_string());
                         }
                     }
                 }
                 Err(e) => {
-                    println!("[System] ❌ Failed to parse three-word address '{}': {}", word_addr, e);
+                    println!("[System] ❌ Bootstrap discovery failed: {}", e);
+                    println!("[System] 💡 Try using a three-word address: --bootstrap-words 'foundation.main.bootstrap'");
                 }
             }
         }

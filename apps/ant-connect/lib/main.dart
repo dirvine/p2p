@@ -504,7 +504,7 @@ class NetworkProvider extends ChangeNotifier {
   static const Map<String, String> _wellKnownBootstraps = {
     'foundation.main.bootstrap': '/dns4/bootstrap.p2pfoundation.org/udp/9000/quic',
     'foundation.backup.lighthouse': '/dns4/bootstrap2.p2pfoundation.org/udp/9000/quic',
-    'global.fast.eagle': '/ip6/2001:19f0:7001:3259::1/udp/9000/quic',
+    'global.fast.eagle': '/ip6/2604:a880:400:d1:0:2:40d7:9001/udp/9000/quic',
     'reliable.sturdy.anchor': '/ip4/147.182.203.123/udp/9000/quic',
     // Demo addresses for local testing
     'local.swift.lighthouse': '/ip6/::1/udp/9000/quic',

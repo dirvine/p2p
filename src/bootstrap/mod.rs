@@ -7,11 +7,13 @@
 
 pub mod cache;
 pub mod contact;
+pub mod discovery;
 pub mod merge;
 pub mod words;
 
 pub use cache::{BootstrapCache, CacheConfig, CacheError};
 pub use contact::{ContactEntry, QualityMetrics, QualityCalculator};
+pub use discovery::{BootstrapDiscovery, BootstrapConfig, ConfigurableBootstrapDiscovery};
 pub use merge::{MergeCoordinator, MergeResult};
 pub use words::{ThreeWordAddress, WordDictionary, WordEncoder};
 
