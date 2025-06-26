@@ -67,10 +67,6 @@ default = ["cli"]
 cli = ["clap"]
 
 [[bin]]
-name = "p2p-node"
-required-features = ["cli"]
-
-[[bin]]
 name = "ant-connect"
 required-features = ["cli"]
 
