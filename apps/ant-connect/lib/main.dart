@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -115,7 +114,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 return Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
-                  color: Colors.orange.withOpacity(0.1),
+                  color: Colors.orange.withValues(alpha: 0.1),
                   child: Row(
                     children: [
                       const Icon(Icons.wifi_off, color: Colors.orange),
@@ -264,124 +263,12 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                         const SizedBox(height: 12),
                         const Text('Listen Address:', style: TextStyle(color: Colors.grey)),
                         const SizedBox(height: 4),
-                        // Three-word address sharing (primary)
-                        Card(
-                          color: Colors.green.withOpacity(0.1),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(Icons.share, color: Colors.green, size: 20),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Your Three-Word Address',
-                                      style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.green),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              _getThreeWordAddress(networkProvider.localAddress),
-                                              style: const TextStyle(
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.w700,
-                                                color: Colors.green,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              'Tell friends: "Connect to ${_getThreeWordAddress(networkProvider.localAddress)}"',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey[600],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.copy, color: Colors.green),
-                                        onPressed: () {
-                                          // Copy three-word address to clipboard
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text('Three-word address "${_getThreeWordAddress(networkProvider.localAddress)}" copied!'),
-                                              backgroundColor: Colors.green,
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.qr_code, color: Colors.green),
-                                        onPressed: () {
-                                          // Show QR code with three-word address
-                                          _showQRCode(context, _getThreeWordAddress(networkProvider.localAddress));
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                        Text(
+                          networkProvider.localAddress,
+                          style: const TextStyle(fontFamily: 'monospace'),
                         ),
-                        
                         const SizedBox(height: 8),
-                        
-                        // Technical address (collapsible)
-                        ExpansionTile(
-                          title: Text(
-                            'Technical Address',
-                            style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                          ),
-                          children: [
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(8),
-                              margin: const EdgeInsets.symmetric(horizontal: 16),
-                              decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      networkProvider.localAddress,
-                                      style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.copy, size: 16),
-                                    onPressed: () {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Technical address copied')),
-                                      );
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                          ],
-                        ),
+                        const Text('Share this address with others to connect'),
                       ],
                     ),
                   ),
@@ -401,115 +288,13 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         const SizedBox(height: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Connection Method',
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
-                            const SizedBox(height: 8),
-                            
-                            // Three-word address input (primary method)
-                            Card(
-                              color: Colors.blue.withOpacity(0.1),
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(Icons.auto_awesome, color: Colors.blue, size: 20),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Three-Word Address (Recommended)',
-                                          style: TextStyle(color: Colors.blue, fontWeight: FontWeight.w600),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: TextField(
-                                            decoration: const InputDecoration(
-                                              hintText: 'global',
-                                              labelText: 'Word 1',
-                                              border: OutlineInputBorder(),
-                                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                            ),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: TextField(
-                                            decoration: const InputDecoration(
-                                              hintText: 'fast',
-                                              labelText: 'Word 2',
-                                              border: OutlineInputBorder(),
-                                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                            ),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: TextField(
-                                            decoration: const InputDecoration(
-                                              hintText: 'eagle',
-                                              labelText: 'Word 3',
-                                              border: OutlineInputBorder(),
-                                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                            ),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Example: "global.fast.eagle" - much easier to remember and share!',
-                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: Colors.blue[700],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            
-                            const SizedBox(height: 12),
-                            
-                            // Traditional multiaddr input (advanced)
-                            ExpansionTile(
-                              title: Row(
-                                children: [
-                                  Icon(Icons.code, size: 20, color: Colors.grey[600]),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Advanced: Technical Address',
-                                    style: TextStyle(color: Colors.grey[600]),
-                                  ),
-                                ],
-                              ),
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: TextField(
-                                    controller: _addressController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Multiaddr',
-                                      hintText: '/ip6/2001:db8:85a3::8a2e:370:7334/udp/9001/quic',
-                                      border: OutlineInputBorder(),
-                                      helperText: 'Enter a technical multiaddr',
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                        TextField(
+                          controller: _addressController,
+                          decoration: const InputDecoration(
+                            labelText: 'Peer Address',
+                            hintText: '/ip6/::1/udp/9001/quic',
+                            border: OutlineInputBorder(),
+                          ),
                         ),
                         const SizedBox(height: 12),
                         ElevatedButton.icon(
@@ -583,75 +368,6 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   }
 }
 
-// Helper functions for three-word address support
-String _getThreeWordAddress(String technicalAddress) {
-  // Simulate three-word address generation
-  // In real implementation, this would use the WordEncoder
-  final demos = {
-    '/ip6/::1/udp/9000/quic': 'local.swift.lighthouse',
-    '/ip6/::1/tcp/9000': 'quick.strong.sword',
-    '/ip6/::1/udp/9001/quic': 'global.fast.eagle',
-  };
-  
-  return demos[technicalAddress] ?? 'your.node.address';
-}
-
-void _showQRCode(BuildContext context, String threeWordAddress) {
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('QR Code'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Placeholder for QR code - in real implementation would use qr_flutter package
-          Container(
-            width: 200,
-            height: 200,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.qr_code, size: 80, color: Colors.grey),
-                const SizedBox(height: 8),
-                Text(
-                  threeWordAddress,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'QR Code',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Text('Scan this QR code to connect'),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Close'),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            Navigator.of(context).pop();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('QR code for "$threeWordAddress" shared!')),
-            );
-          },
-          child: const Text('Share'),
-        ),
-      ],
-    ),
-  );
-}
-
 // Simple data models
 class ChatMessage {
   final String id;
@@ -682,31 +398,8 @@ class PeerInfo {
 // Simple providers
 class ChatProvider extends ChangeNotifier {
   final List<ChatMessage> _messages = [];
-  Timer? _demoTimer;
   
   List<ChatMessage> get messages => _messages;
-  
-  ChatProvider() {
-    _startDemoMessages();
-  }
-  
-  void _startDemoMessages() {
-    // Simulate messages from real P2P nodes for demo
-    _demoTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
-      final demoMessages = [
-        'Hello from peer_82bfee54! 👋',
-        'P2P connection established successfully',
-        'This message came through the QUIC transport layer',
-        'Peer discovery working great! 🚀',
-        'DHT routing is functioning properly',
-      ];
-      
-      if (_messages.length < 10) {
-        final randomMessage = demoMessages[_messages.length % demoMessages.length];
-        _receiveMessage(randomMessage, 'peer_82bfee54');
-      }
-    });
-  }
   
   void addMessage(String content) {
     _messages.add(ChatMessage(
@@ -716,87 +409,20 @@ class ChatProvider extends ChangeNotifier {
       timestamp: DateTime.now(),
     ));
     notifyListeners();
-    
-    // Simulate echo response from network
-    Timer(const Duration(seconds: 2), () {
-      _receiveMessage('Received: "$content" - Message delivered via P2P!', 'network');
-    });
-  }
-  
-  void _receiveMessage(String content, String from) {
-    _messages.add(ChatMessage(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      content: content,
-      isFromMe: false,
-      timestamp: DateTime.now(),
-    ));
-    notifyListeners();
-  }
-  
-  @override
-  void dispose() {
-    _demoTimer?.cancel();
-    super.dispose();
   }
 }
 
 class NetworkProvider extends ChangeNotifier {
   final List<PeerInfo> _peers = [];
-  String? _localIPv6Address;
-  final int _localPort = 9000;
   
   List<PeerInfo> get peers => _peers;
   int get peerCount => _peers.length;
-  
-  String get localAddress {
-    if (_localIPv6Address != null) {
-      return '/ip6/$_localIPv6Address/udp/$_localPort/quic';
-    }
-    return '/ip6/[your-ipv6-address]/udp/$_localPort/quic';
-  }
-  
-  NetworkProvider() {
-    _detectLocalIPv6Address();
-    _addDemoConnections();
-  }
-  
-  void _addDemoConnections() {
-    // Add the real running P2P nodes as demo connections
-    Timer(const Duration(seconds: 3), () {
-      _peers.add(PeerInfo(
-        id: 'peer_82bfee54',
-        name: 'Bootstrap Node',
-        address: '/ip6/::1/tcp/9000',
-      ));
-      notifyListeners();
-    });
-    
-    Timer(const Duration(seconds: 5), () {
-      _peers.add(PeerInfo(
-        id: 'peer_1df7b8ee', 
-        name: 'QUIC Node',
-        address: '/ip6/::1/udp/9001/quic',
-      ));
-      notifyListeners();
-    });
-  }
-  
-  void _detectLocalIPv6Address() {
-    // For demo purposes, simulate a real node address
-    // In reality, this would detect the actual network interface
-    _localIPv6Address = '::1'; // localhost IPv6
-    notifyListeners();
-  }
+  String get localAddress => '/ip6/::1/udp/9000/quic';
   
   void connectToPeer(String address) {
-    // Validate IPv6 address format
-    if (!_isValidMultiaddr(address)) {
-      return;
-    }
-    
     final peer = PeerInfo(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: _extractPeerName(address),
+      name: 'Peer ${_peers.length + 1}',
       address: address,
     );
     _peers.add(peer);
@@ -806,23 +432,5 @@ class NetworkProvider extends ChangeNotifier {
   void disconnectFromPeer(String peerId) {
     _peers.removeWhere((peer) => peer.id == peerId);
     notifyListeners();
-  }
-  
-  bool _isValidMultiaddr(String address) {
-    // Basic validation for multiaddr format
-    final ipv6Pattern = RegExp(r'^/ip6/[0-9a-fA-F:]+/udp/\d+(/quic)?$');
-    return ipv6Pattern.hasMatch(address);
-  }
-  
-  String _extractPeerName(String address) {
-    // Extract a readable name from the IPv6 address
-    final regex = RegExp(r'/ip6/([0-9a-fA-F:]+)/');
-    final match = regex.firstMatch(address);
-    if (match != null) {
-      final ipv6 = match.group(1)!;
-      final shortForm = ipv6.split(':').last;
-      return 'Peer-$shortForm';
-    }
-    return 'Peer ${_peers.length + 1}';
   }
 }
