@@ -77,16 +77,16 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
-          override: true
           components: rustfmt, clippy
           
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           key: rust-build-${{ runner.os }}
+          workspaces: "."
           
       - name: Install cross-compilation tools
         run: |
@@ -322,8 +322,6 @@ jobs:
     
     steps:
       - name: Cleanup artifacts
-        uses: actions/upload-artifact/merge@v4
-        with:
-          name: deployment-logs
-          pattern: "*-logs"
-          delete-merged: true
+        if: always()
+        run: |
+          echo "Deployment completed"

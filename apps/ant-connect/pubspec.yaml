@@ -1,4 +1,4 @@
-name: ant_connect
+name: connect
 description: "Decentralized P2P chat application - Connect with peers directly without servers"
 publish_to: 'none'
 version: 1.0.0+1

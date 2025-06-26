@@ -4,10 +4,10 @@ default_platform(:ios)
 # Define all your apps - update these as you add more apps
 APPS = {
   "ant-connect" => {
-    ios_scheme: "AntConnect",
-    android_package: "net.maidsafe.antconnect",
-    bundle_id: "net.maidsafe.antconnect",
-    display_name: "Ant Connect"
+    ios_scheme: "Runner",  # Default Flutter scheme
+    android_package: "com.p2p.foundation.connect",
+    bundle_id: "com.p2p.foundation.connect", 
+    display_name: "Connect"
   }
   # Add more apps here as they're created:
   # "file_share_app" => {
