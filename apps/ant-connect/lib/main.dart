@@ -114,7 +114,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 return Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
-                  color: Colors.orange.withValues(alpha: 0.1),
+                  color: Colors.orange.withOpacity(0.1),
                   child: Row(
                     children: [
                       const Icon(Icons.wifi_off, color: Colors.orange),
