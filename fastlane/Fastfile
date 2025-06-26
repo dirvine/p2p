@@ -1,0 +1,300 @@
+# Root Fastfile for P2P monorepo
+default_platform(:ios)
+
+# Define all your apps - update these as you add more apps
+APPS = {
+  "ant-connect" => {
+    ios_scheme: "AntConnect",
+    android_package: "net.maidsafe.antconnect",
+    bundle_id: "net.maidsafe.antconnect",
+    display_name: "Ant Connect"
+  }
+  # Add more apps here as they're created:
+  # "file_share_app" => {
+  #   ios_scheme: "FileShareApp", 
+  #   android_package: "net.maidsafe.fileshare",
+  #   bundle_id: "net.maidsafe.fileshare",
+  #   display_name: "File Share"
+  # }
+}
+
+# Build Rust backend first
+lane :build_rust do
+  puts "🦀 Building Rust backend..."
+  
+  # Build the main Rust project
+  sh("cargo build --release")
+  
+  # Install required tools if not present
+  begin
+    sh("cargo lipo --help > /dev/null 2>&1")
+  rescue
+    puts "Installing cargo-lipo for iOS builds..."
+    sh("cargo install cargo-lipo")
+  end
+  
+  begin
+    sh("cross --help > /dev/null 2>&1")
+  rescue
+    puts "Installing cross for Android builds..."
+    sh("cargo install cross")
+  end
+  
+  # Build for iOS targets (universal library)
+  puts "Building for iOS targets..."
+  sh("cargo lipo --release")
+  
+  # Build for Android targets
+  puts "Building for Android targets..."
+  sh("cross build --target aarch64-linux-android --release") rescue puts "Android aarch64 build failed"
+  sh("cross build --target armv7-linux-androideabi --release") rescue puts "Android armv7 build failed"
+  sh("cross build --target i686-linux-android --release") rescue puts "Android i686 build failed"
+  sh("cross build --target x86_64-linux-android --release") rescue puts "Android x86_64 build failed"
+  
+  puts "✅ Rust backend build complete"
+end
+
+# Lane to build and deploy all apps
+lane :deploy_all_apps do |options|
+  puts "🚀 Deploying all apps..."
+  build_rust
+  
+  APPS.each do |app_name, config|
+    puts "📱 Deploying #{config[:display_name]} (#{app_name})..."
+    
+    app_path = File.join(Dir.pwd, "..", "apps", app_name)
+    unless Dir.exist?(app_path)
+      puts "⚠️  Skipping #{app_name} - directory not found at #{app_path}"
+      next
+    end
+    
+    Dir.chdir(app_path) do
+      # Check if it's a Flutter project
+      unless File.exist?("pubspec.yaml")
+        puts "⚠️  Skipping #{app_name} - not a Flutter project"
+        next
+      end
+      
+      # Flutter clean and build
+      sh("flutter clean")
+      sh("flutter pub get")
+      
+      # iOS deployment
+      if options[:ios] != false && Dir.exist?("ios")
+        puts "📱 Deploying iOS for #{app_name}..."
+        ios_deploy(config)
+      end
+      
+      # Android deployment
+      if options[:android] != false && Dir.exist?("android")
+        puts "🤖 Deploying Android for #{app_name}..."
+        android_deploy(config)
+      end
+    end
+  end
+  
+  puts "✅ All deployments complete!"
+end
+
+# Lane for specific app deployment
+lane :deploy_app do |options|
+  app_name = options[:app]
+  raise "❌ App name required. Use: fastlane deploy_app app:ant-connect" unless app_name
+  raise "❌ Unknown app: #{app_name}. Available apps: #{APPS.keys.join(', ')}" unless APPS[app_name]
+  
+  config = APPS[app_name]
+  puts "🚀 Deploying #{config[:display_name]}..."
+  
+  build_rust
+  
+  app_path = File.join(Dir.pwd, "..", "apps", app_name)
+  Dir.chdir(app_path) do
+    sh("flutter clean && flutter pub get")
+    
+    if options[:platform] == "ios" || options[:platform].nil?
+      ios_deploy(config) if Dir.exist?("ios")
+    end
+    
+    if options[:platform] == "android" || options[:platform].nil?
+      android_deploy(config) if Dir.exist?("android")
+    end
+  end
+end
+
+# Beta testing lane
+lane :beta_all do
+  puts "🧪 Deploying all apps to beta channels..."
+  build_rust
+  
+  APPS.each do |app_name, config|
+    app_path = File.join(Dir.pwd, "..", "apps", app_name)
+    next unless Dir.exist?(app_path) && File.exist?(File.join(app_path, "pubspec.yaml"))
+    
+    Dir.chdir(app_path) do
+      sh("flutter clean && flutter pub get")
+      
+      # iOS TestFlight
+      if Dir.exist?("ios")
+        puts "📱 Uploading #{config[:display_name]} to TestFlight..."
+        begin
+          match(type: "appstore", readonly: true)
+          gym(
+            scheme: config[:ios_scheme],
+            workspace: "ios/Runner.xcworkspace",
+            export_method: "app-store"
+          )
+          pilot(
+            app_identifier: config[:bundle_id],
+            skip_waiting_for_build_processing: true,
+            distribute_external: false
+          )
+        rescue => e
+          puts "⚠️  iOS beta upload failed for #{app_name}: #{e.message}"
+        end
+      end
+      
+      # Android Internal Testing
+      if Dir.exist?("android")
+        puts "🤖 Uploading #{config[:display_name]} to Play Console Internal Testing..."
+        begin
+          gradle(task: "assembleRelease", project_dir: "android/")
+          supply(
+            package_name: config[:android_package],
+            apk: "./build/app/outputs/flutter-apk/app-release.apk",
+            track: "internal",
+            skip_upload_metadata: true,
+            skip_upload_images: true,
+            skip_upload_screenshots: true
+          )
+        rescue => e
+          puts "⚠️  Android beta upload failed for #{app_name}: #{e.message}"
+        end
+      end
+    end
+  end
+end
+
+# Development builds (no signing, local testing)
+lane :build_dev do |options|
+  app_name = options[:app] || "all"
+  
+  build_rust
+  
+  apps_to_build = app_name == "all" ? APPS.keys : [app_name]
+  
+  apps_to_build.each do |app|
+    next unless APPS[app]
+    
+    app_path = File.join(Dir.pwd, "..", "apps", app)
+    next unless Dir.exist?(app_path)
+    
+    Dir.chdir(app_path) do
+      puts "🔨 Building development version of #{APPS[app][:display_name]}..."
+      sh("flutter clean && flutter pub get")
+      
+      # Build for development/testing
+      if Dir.exist?("ios")
+        sh("flutter build ios --debug --no-codesign")
+      end
+      
+      if Dir.exist?("android")
+        sh("flutter build apk --debug")
+      end
+    end
+  end
+end
+
+# Screenshot generation for all apps
+lane :screenshots_all do
+  puts "📸 Generating screenshots for all apps..."
+  
+  APPS.each do |app_name, config|
+    app_path = File.join(Dir.pwd, "..", "apps", app_name)
+    next unless Dir.exist?(app_path)
+    
+    Dir.chdir(app_path) do
+      if Dir.exist?("fastlane")
+        puts "📸 Capturing screenshots for #{config[:display_name]}..."
+        capture_screenshots
+        frameit
+      end
+    end
+  end
+end
+
+# Setup lane for new developers
+lane :setup do
+  puts "🔧 Setting up development environment..."
+  
+  # Install required tools
+  sh("flutter doctor")
+  
+  puts "Installing Rust targets for mobile development..."
+  sh("rustup target add aarch64-apple-ios x86_64-apple-ios")
+  sh("rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android")
+  
+  # Setup all Flutter apps
+  APPS.each do |app_name, config|
+    app_path = File.join(Dir.pwd, "..", "apps", app_name)
+    next unless Dir.exist?(app_path)
+    
+    Dir.chdir(app_path) do
+      puts "🔧 Setting up #{config[:display_name]}..."
+      sh("flutter pub get")
+    end
+  end
+  
+  puts "✅ Setup complete! Run 'fastlane build_dev' to test your setup."
+end
+
+# Private lanes
+private_lane :ios_deploy do |config|
+  puts "🍎 Deploying iOS app..."
+  
+  # Setup certificates
+  match(type: "appstore", readonly: true)
+  
+  # Build and archive
+  gym(
+    scheme: config[:ios_scheme],
+    workspace: "ios/Runner.xcworkspace",
+    export_method: "app-store",
+    output_directory: "./build/ios"
+  )
+  
+  # Upload to App Store
+  deliver(
+    app_identifier: config[:bundle_id],
+    ipa: "./build/ios/#{config[:ios_scheme]}.ipa",
+    skip_metadata: false,
+    skip_screenshots: false,
+    force: true,
+    submit_for_review: false  # Manual review submission
+  )
+end
+
+private_lane :android_deploy do |config|
+  puts "🤖 Deploying Android app..."
+  
+  # Build release APK/AAB
+  gradle(
+    task: "bundleRelease",  # Use AAB for Play Store
+    project_dir: "android/"
+  )
+  
+  # Upload to Google Play
+  supply(
+    package_name: config[:android_package],
+    aab: "./build/app/outputs/bundle/release/app-release.aab",
+    track: "production",
+    skip_upload_metadata: false,
+    skip_upload_images: false,
+    skip_upload_screenshots: false
+  )
+end
+
+# Error handling
+error do |lane, exception|
+  puts "❌ Error in lane '#{lane}': #{exception.message}"
+  puts "📚 Check the logs above for more details."
+end

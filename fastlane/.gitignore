@@ -1,0 +1,43 @@
+# Fastlane specific gitignore
+
+# Local configuration files (contain sensitive data)
+config.local.rb
+*.local.rb
+
+# Fastlane reports and logs
+report.xml
+timeline.html
+fastlane/test_output/
+fastlane/screenshots/
+fastlane/logs/
+
+# Certificate and provisioning files
+*.cer
+*.p12
+*.mobileprovision
+*.provisionprofile
+
+# App Store Connect API keys
+AuthKey_*.p8
+api_key.json
+
+# Match temporary files
+fastlane/certs/
+fastlane/profiles/
+
+# Build artifacts
+*.ipa
+*.apk
+*.aab
+build/
+derived_data/
+
+# Ruby specific
+Gemfile.lock
+.bundle/
+vendor/
+
+# macOS specific
+.DS_Store
+*.swp
+*.swo

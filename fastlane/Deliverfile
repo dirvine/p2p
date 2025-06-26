@@ -1,0 +1,55 @@
+# Deliverfile for App Store metadata management
+
+# App Store Connect API Key (recommended approach)
+# app_store_connect_api_key(
+#   key_id: "YOUR_KEY_ID",
+#   issuer_id: "YOUR_ISSUER_ID",
+#   key_filepath: "./AuthKey_YOUR_KEY_ID.p8"
+# )
+
+# Alternatively, use username/password (less secure)
+# username("david@maidsafe.net")
+
+# App metadata
+price_tier(0)  # Free app
+
+# App information that applies to all apps
+copyright("2025 MaidSafe.net Limited")
+primary_category("PRODUCTIVITY")
+secondary_category("UTILITIES")
+
+# Privacy URL (update with your actual privacy policy)
+privacy_url("https://maidsafe.net/privacy")
+
+# Support URL
+support_url("https://maidsafe.net/support")
+
+# Marketing URL
+marketing_url("https://maidsafe.net")
+
+# Keywords (will be overridden per app if needed)
+keywords("p2p,networking,decentralized,privacy,secure")
+
+# App Review Information
+review_information({
+  first_name: "David",
+  last_name: "Irvine", 
+  phone_number: "+44 1234 567890",  # Update with real number
+  email_address: "david@maidsafe.net",
+  demo_user: "demo@example.com",
+  demo_password: "demopassword",
+  notes: "This is a P2P networking application. No special setup required for review."
+})
+
+# Release notes will be set dynamically based on git commits or manually
+# automatic_release_notes(false)
+
+# Screenshots and metadata will be uploaded automatically if present in the metadata folder
+# skip_screenshots(false)
+# skip_metadata(false)
+
+# Don't submit for review automatically - we want manual control
+submit_for_review(false)
+
+# Don't automatically release after approval
+automatic_release(false)

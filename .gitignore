@@ -40,3 +40,33 @@ coverage/
 
 # Config overrides
 config.local.toml
+
+# Fastlane and mobile development
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/screenshots/**/*.PNG
+fastlane/test_output
+fastlane/logs
+*.ipa
+*.apk
+*.aab
+build/
+derived_data/
+Gemfile.lock
+.bundle/
+vendor/
+
+# Mobile certificates and keys
+*.cer
+*.p12
+*.mobileprovision
+*.provisionprofile
+AuthKey_*.p8
+google-play-key.json
+android-keystore.jks
+**/key.properties
+
+# Local configuration files
+fastlane/config.local.rb
+config.local.*

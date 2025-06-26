@@ -1,0 +1,17 @@
+# Matchfile for certificate management
+# This enables automatic certificate and provisioning profile management across your team
+
+git_url("git@github.com:dirvine/p2p-certificates.git")  # Create a private repo for certificates
+storage_mode("git")
+
+type("development") # The default type, can be: appstore, adhoc, development, enterprise
+
+# app_identifier(["net.maidsafe.antconnect", "net.maidsafe.fileshare"])  # Add all your bundle IDs
+app_identifier(["net.maidsafe.antconnect"])
+
+# team_id("YOUR_TEAM_ID")  # Optional, will use the one from Appfile
+
+# username("david@maidsafe.net")  # Optional, will use the one from Appfile
+
+# For more information about the Appfile, see:
+#     https://docs.fastlane.tools/advanced/#appfile

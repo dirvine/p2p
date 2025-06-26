@@ -1,0 +1,15 @@
+# Appfile for P2P project
+
+# Apple Developer Portal
+apple_id("david@maidsafe.net")  # Update with your Apple ID
+team_id("YOUR_TEAM_ID")         # Update with your Apple Developer Team ID
+
+# App Store Connect
+itc_team_id("YOUR_ITC_TEAM_ID") # Update with your App Store Connect Team ID (if different)
+
+# For apps that have different bundle IDs, this will be overridden in the Fastfile
+# This is just the default/fallback
+app_identifier("net.maidsafe.antconnect")
+
+# Optional: Set your default scheme for iOS builds
+# scheme("AntConnect")
