@@ -318,6 +318,91 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                 
                 const SizedBox(height: 16),
                 
+                // Quick Connect to Bootstrap Nodes
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.flash_on, color: Colors.green),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Quick Connect',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Connect to well-known bootstrap nodes instantly!',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                networkProvider.connectToPeer('foundation.main.bootstrap');
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Connecting to main bootstrap node...'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.rocket_launch, size: 16),
+                              label: const Text('Main Bootstrap'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                networkProvider.connectToPeer('global.fast.eagle');
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Connecting to global.fast.eagle...'),
+                                    backgroundColor: Colors.blue,
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.public, size: 16),
+                              label: const Text('IPv6 Node'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                networkProvider.autoConnectToBootstraps();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Auto-connecting to bootstrap network...'),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.auto_fix_high, size: 16),
+                              label: const Text('Auto Connect'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                
+                const SizedBox(height: 16),
+                
                 // Connected peers
                 Text(
                   'Connected Peers (${networkProvider.peerCount})',
@@ -415,18 +500,84 @@ class ChatProvider extends ChangeNotifier {
 class NetworkProvider extends ChangeNotifier {
   final List<PeerInfo> _peers = [];
   
+  // Hardcoded well-known bootstrap nodes (will be updated with real Digital Ocean IPs)
+  static const Map<String, String> _wellKnownBootstraps = {
+    'foundation.main.bootstrap': '/dns4/bootstrap.p2pfoundation.org/udp/9000/quic',
+    'foundation.backup.lighthouse': '/dns4/bootstrap2.p2pfoundation.org/udp/9000/quic',
+    'global.fast.eagle': '/ip6/2001:19f0:7001:3259::1/udp/9000/quic',
+    'reliable.sturdy.anchor': '/ip4/147.182.203.123/udp/9000/quic',
+    // Demo addresses for local testing
+    'local.swift.lighthouse': '/ip6/::1/udp/9000/quic',
+    'quick.strong.sword': '/ip6/::1/tcp/9000',
+    'demo.test.node': '/ip6/::1/udp/9001/quic',
+  };
+  
   List<PeerInfo> get peers => _peers;
   int get peerCount => _peers.length;
   String get localAddress => '/ip6/::1/udp/9000/quic';
   
+  /// Get the three-word address for a given technical address
+  String getThreeWordAddress(String technicalAddress) {
+    // Look for exact match first
+    for (final entry in _wellKnownBootstraps.entries) {
+      if (entry.value == technicalAddress) {
+        return entry.key;
+      }
+    }
+    
+    // Demo mapping for common local addresses
+    final demoMappings = {
+      '/ip6/::1/udp/9000/quic': 'local.swift.lighthouse',
+      '/ip6/::1/tcp/9000': 'quick.strong.sword',
+      '/ip6/::1/udp/9001/quic': 'global.fast.eagle',
+    };
+    
+    return demoMappings[technicalAddress] ?? 'your.node.address';
+  }
+  
+  /// Resolve a three-word address to a technical multiaddr
+  String? resolveThreeWordAddress(String threeWordAddress) {
+    return _wellKnownBootstraps[threeWordAddress];
+  }
+  
+  /// Get all available well-known three-word addresses
+  List<String> getWellKnownAddresses() {
+    return _wellKnownBootstraps.keys.toList();
+  }
+  
+  /// Connect to a peer using either three-word address or technical address
   void connectToPeer(String address) {
+    String resolvedAddress = address;
+    String displayName = 'Peer ${_peers.length + 1}';
+    
+    // Check if it's a three-word address
+    if (_wellKnownBootstraps.containsKey(address)) {
+      resolvedAddress = _wellKnownBootstraps[address]!;
+      displayName = 'Bootstrap ($address)';
+    } else if (address.contains('.') && !address.contains('/')) {
+      // Might be a three-word address not in our registry
+      displayName = 'Unknown ($address)';
+    }
+    
     final peer = PeerInfo(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: 'Peer ${_peers.length + 1}',
-      address: address,
+      name: displayName,
+      address: resolvedAddress,
     );
     _peers.add(peer);
     notifyListeners();
+  }
+  
+  /// Auto-connect to well-known bootstrap nodes
+  void autoConnectToBootstraps() {
+    final primaryBootstraps = [
+      'foundation.main.bootstrap',
+      'global.fast.eagle',
+    ];
+    
+    for (final bootstrap in primaryBootstraps) {
+      connectToPeer(bootstrap);
+    }
   }
   
   void disconnectFromPeer(String peerId) {
