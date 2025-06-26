@@ -337,6 +337,14 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
+                          '🔤 Use human-friendly three-word addresses instead of complex URLs!',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
                           'Connect to well-known bootstrap nodes instantly!',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Colors.grey[600],
@@ -352,16 +360,23 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                                 networkProvider.connectToPeer('foundation.main.bootstrap');
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Connecting to main bootstrap node...'),
+                                    content: Text('Connecting to foundation.main.bootstrap...'),
                                     backgroundColor: Colors.green,
                                   ),
                                 );
                               },
                               icon: const Icon(Icons.rocket_launch, size: 16),
-                              label: const Text('Main Bootstrap'),
+                              label: const Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('foundation.main.bootstrap', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  Text('Main Bootstrap', style: TextStyle(fontSize: 9)),
+                                ],
+                              ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                                 foregroundColor: Colors.white,
+                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               ),
                             ),
                             ElevatedButton.icon(
@@ -375,10 +390,17 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                                 );
                               },
                               icon: const Icon(Icons.public, size: 16),
-                              label: const Text('IPv6 Node'),
+                              label: const Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('global.fast.eagle', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  Text('IPv6 Bootstrap', style: TextStyle(fontSize: 9)),
+                                ],
+                              ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.blue,
                                 foregroundColor: Colors.white,
+                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               ),
                             ),
                             OutlinedButton.icon(
