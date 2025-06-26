@@ -550,6 +550,13 @@ mod tests {
             self.connect(addr).await
         }
 
+        async fn accept(&self) -> Result<Box<dyn Connection>> {
+            if self.should_fail {
+                return Err(P2PError::Transport("Accept failed".to_string()));
+            }
+            Ok(Box::new(MockConnection::new("/ip4/127.0.0.1/tcp/9000".to_string())))
+        }
+
         fn supported_addresses(&self) -> Vec<String> {
             if self.supports_all {
                 vec!["/ip4/0.0.0.0/tcp/0".to_string(), "/ip6/::/tcp/0".to_string()]

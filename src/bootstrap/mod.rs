@@ -8,10 +8,12 @@
 pub mod cache;
 pub mod contact;
 pub mod merge;
+pub mod words;
 
 pub use cache::{BootstrapCache, CacheConfig, CacheError};
 pub use contact::{ContactEntry, QualityMetrics, QualityCalculator};
 pub use merge::{MergeCoordinator, MergeResult};
+pub use words::{ThreeWordAddress, WordDictionary, WordEncoder};
 
 use crate::{Result, P2PError, PeerId};
 use std::path::PathBuf;
@@ -32,6 +34,7 @@ pub const DEFAULT_QUALITY_UPDATE_INTERVAL: Duration = Duration::from_secs(300);
 pub struct BootstrapManager {
     cache: BootstrapCache,
     merge_coordinator: MergeCoordinator,
+    word_encoder: WordEncoder,
 }
 
 impl BootstrapManager {
@@ -42,10 +45,12 @@ impl BootstrapManager {
         
         let cache = BootstrapCache::new(cache_dir.clone(), config).await?;
         let merge_coordinator = MergeCoordinator::new(cache_dir)?;
+        let word_encoder = WordEncoder::new();
         
         Ok(Self {
             cache,
             merge_coordinator,
+            word_encoder,
         })
     }
     
@@ -55,10 +60,12 @@ impl BootstrapManager {
         
         let cache = BootstrapCache::new(cache_dir.clone(), config).await?;
         let merge_coordinator = MergeCoordinator::new(cache_dir)?;
+        let word_encoder = WordEncoder::new();
         
         Ok(Self {
             cache,
             merge_coordinator,
+            word_encoder,
         })
     }
     
@@ -128,6 +135,51 @@ impl BootstrapManager {
     /// Force a cache merge operation
     pub async fn force_merge(&self) -> Result<MergeResult> {
         self.merge_coordinator.merge_instance_caches(&self.cache).await
+    }
+    
+    /// Convert multiaddr to three-word address
+    pub fn encode_address(&self, multiaddr: &crate::Multiaddr) -> Result<ThreeWordAddress> {
+        self.word_encoder.encode_multiaddr(multiaddr)
+    }
+    
+    /// Convert three-word address to multiaddr (requires registry lookup)
+    pub fn decode_address(&self, words: &ThreeWordAddress) -> Result<crate::Multiaddr> {
+        self.word_encoder.decode_to_multiaddr(words)
+    }
+    
+    /// Validate three-word address format
+    pub fn validate_words(&self, words: &ThreeWordAddress) -> Result<()> {
+        words.validate(&self.word_encoder)
+    }
+    
+    /// Get the word encoder for direct access
+    pub fn word_encoder(&self) -> &WordEncoder {
+        &self.word_encoder
+    }
+    
+    /// Get well-known bootstrap addresses as three-word addresses
+    pub fn get_well_known_word_addresses(&self) -> Vec<(ThreeWordAddress, crate::Multiaddr)> {
+        let well_known_addrs = vec![
+            // Primary bootstrap nodes with well-known addresses
+            "/ip6/2001:4860:4860::8888/udp/9000/quic", // Example - would be real bootstrap nodes
+            "/ip6/2001:4860:4860::8844/udp/9001/quic",
+            "/ip6/2606:4700:4700::1111/udp/9002/quic",
+        ];
+        
+        well_known_addrs
+            .into_iter()
+            .filter_map(|addr_str| {
+                if let Ok(multiaddr) = addr_str.parse() {
+                    if let Ok(words) = self.encode_address(&multiaddr) {
+                        Some((words, multiaddr))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
 

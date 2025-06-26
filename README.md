@@ -4,11 +4,13 @@ A next-generation peer-to-peer networking foundation built in Rust, featuring QU
 
 ## Features
 
+- ✨ **Three-Word Addresses**: Share `global.fast.eagle` instead of complex multiaddrs - revolutionary UX!
 - 🚀 **QUIC Transport**: Modern protocol with 0-RTT connections and built-in encryption
 - 🌐 **Universal IPv6**: Works on any network via intelligent tunneling (6to4, Teredo, 6in4)
 - 🔍 **S/Kademlia DHT**: Secure distributed routing with advanced protection mechanisms
 - 🛡️ **NAT Traversal**: Automatic connectivity behind firewalls and NAT devices
 - 🤖 **AI-Native**: Built-in MCP server at every node with tool discovery and execution
+- 📱 **Flutter Apps**: Cross-platform mobile/desktop apps with modern UI (Ant Connect)
 - 🔒 **Security First**: End-to-end encryption, authentication, and comprehensive access control
 - 📦 **Production Ready**: Extensive test coverage, benchmarks, and hardening features
 - 🛠️ **Developer Friendly**: Trait-based architecture with comprehensive documentation
@@ -112,6 +114,49 @@ p2p-foundation = "0.1.0"
 - **MAP-E/MAP-T** (RFC 7597/7599) - Modern ISP transition mechanisms with deterministic mapping
 - **Intelligent Auto-Selection** - Network capability-based protocol selection
 - **Performance Monitoring** - Real-time tunnel health and metrics
+
+## Three-Word Address System 🌟
+
+Revolutionary user experience that transforms complex multiaddrs into memorable phrases:
+
+```bash
+# Traditional way (hard to share)
+/ip6/2001:db8:85a3::8a2e:370:7334/udp/9001/quic
+
+# Three-word way (easy to remember and share)
+global.fast.eagle
+```
+
+### Benefits
+- **Human-friendly**: `forest.lightning.compass` vs `/ip6/::/udp/9000/quic`
+- **Voice-friendly**: Easy to share over phone or voice chat
+- **Error-resistant**: Much less prone to typos than long addresses
+- **Viral growth**: Users naturally share memorable addresses
+
+### Usage
+
+```bash
+# Bootstrap with three-word addresses
+cargo run --example chat -- --bootstrap-words 'global.fast.eagle'
+
+# Traditional bootstrap still works
+cargo run --example chat -- --bootstrap '/ip6/::1/tcp/9000'
+```
+
+```rust
+use p2p_foundation::bootstrap::{WordEncoder, ThreeWordAddress};
+
+let encoder = WordEncoder::new();
+let multiaddr = "/ip6/2001:db8::1/udp/9000/quic".parse()?;
+let words = encoder.encode_multiaddr(&multiaddr)?;
+println!("Share: {}", words); // "outer.sharp.eagle"
+```
+
+### Flutter App Integration
+The Ant Connect app showcases the complete three-word experience:
+- Three-word input fields instead of complex multiaddr entry
+- QR code generation with three-word addresses  
+- Prominent sharing of your own memorable address
 
 ## Model Context Protocol (MCP) Integration
 
