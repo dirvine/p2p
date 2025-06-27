@@ -12,7 +12,9 @@
 //! - DHT-based messaging and contacts
 //! - Cross-platform desktop support (macOS, Windows, Linux)
 
+mod identity_storage;
 
+use identity_storage::{IdentityStorage, IdentityStorageConfig};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,20 +23,44 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tokio::sync::{Mutex, RwLock};
 use tracing::{error, info, warn};
+use base64;
 
 use ant_core::{
     network::{P2PNode, NodeConfig, DHTConfig as NetworkDHTConfig, SecurityConfig, TrustLevel},
     dht::{DHT, DHTConfig, Key, Record},
     production::ProductionConfig,
+    identity::{
+        UserIdentity, UserProfile, EncryptedUserProfile, 
+        ProfilePermissions, PrivacySettings, DiscoverabilitySettings,
+        UserPreferences, VerificationLevel,
+    },
+    identity::manager::{IdentityManager, IdentityManagerConfig},
     PeerId, Multiaddr, Result as P2PResult,
 };
 
 /// Application state for P2P network
-#[derive(Default)]
 pub struct AppState {
     network: RwLock<Option<Arc<P2PNode>>>,
     contacts: RwLock<HashMap<String, Contact>>,
     messages: RwLock<HashMap<String, Vec<Message>>>,
+    identity_manager: RwLock<Option<Arc<IdentityManager>>>,
+    identity_storage: RwLock<Option<Arc<IdentityStorage>>>,
+    blocked_users: RwLock<HashMap<String, i64>>, // user_id -> blocked_at timestamp
+    contact_categories: RwLock<Vec<String>>, // Available categories
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            network: RwLock::new(None),
+            contacts: RwLock::new(HashMap::new()),
+            messages: RwLock::new(HashMap::new()),
+            identity_manager: RwLock::new(None),
+            identity_storage: RwLock::new(None),
+            blocked_users: RwLock::new(HashMap::new()),
+            contact_categories: RwLock::new(vec!["Friends".to_string(), "Family".to_string(), "Work".to_string()]),
+        }
+    }
 }
 
 /// Contact information
@@ -42,10 +68,27 @@ pub struct AppState {
 pub struct Contact {
     pub id: String,
     pub name: String,
+    pub nickname: Option<String>,  // User-defined nickname
     pub three_word_address: String,
     pub is_online: bool,
     pub last_seen: i64,
     pub unread_count: u32,
+    pub is_blocked: bool,           // Block status
+    pub notes: Option<String>,      // Personal notes about contact
+    pub category: Option<String>,   // Contact category/group
+    pub permissions: ContactPermissions, // Per-contact privacy settings
+    pub added_at: i64,             // When contact was added
+    pub trust_level: f32,          // Trust score
+}
+
+/// Per-contact privacy permissions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContactPermissions {
+    pub can_see_profile: bool,
+    pub can_see_online_status: bool,
+    pub can_see_last_seen: bool,
+    pub can_see_avatar: bool,
+    pub can_send_messages: bool,
 }
 
 /// Message data
@@ -113,23 +156,46 @@ async fn init_network(
         },
         production_config: Some(ProductionConfig::default()),
         bootstrap_cache_config: None,
-        identity_config: None,
+        identity_config: Some(IdentityManagerConfig::default()),
     };
 
     match P2PNode::new(config).await {
-        Ok(network) => {
+        Ok(mut network) => {
+            let network_arc = Arc::new(network);
+            
+            // Set network reference in identity manager if available
+            if let Some(identity_manager) = state.identity_manager.write().await.as_mut() {
+                if let Some(manager) = Arc::get_mut(identity_manager) {
+                    manager.set_network(network_arc.clone());
+                    info!("Network reference set in identity manager");
+                }
+            }
+            
             let mut net_guard = state.network.write().await;
-            *net_guard = Some(Arc::new(network));
+            *net_guard = Some(network_arc);
             
             // Initialize with system contact
             let mut contacts = state.contacts.write().await;
             contacts.insert("system".to_string(), Contact {
                 id: "system".to_string(),
                 name: "System".to_string(),
+                nickname: None,
                 three_word_address: "system.helper.assistant".to_string(),
                 is_online: true,
                 last_seen: chrono::Utc::now().timestamp(),
                 unread_count: 0,
+                is_blocked: false,
+                notes: Some("Built-in system assistant".to_string()),
+                category: None,
+                permissions: ContactPermissions {
+                    can_see_profile: true,
+                    can_see_online_status: true,
+                    can_see_last_seen: true,
+                    can_see_avatar: true,
+                    can_send_messages: true,
+                },
+                added_at: chrono::Utc::now().timestamp(),
+                trust_level: 1.0,
             });
             
             Ok("Network initialized successfully".to_string())
@@ -185,10 +251,23 @@ async fn connect_peer(
         contacts.insert(contact_id.clone(), Contact {
             id: contact_id.clone(),
             name: format!("Peer ({})", &address[..8.min(address.len())]),
+            nickname: None,
             three_word_address: address.clone(),
             is_online: true,
             last_seen: chrono::Utc::now().timestamp(),
             unread_count: 0,
+            is_blocked: false,
+            notes: None,
+            category: None,
+            permissions: ContactPermissions {
+                can_see_profile: true,
+                can_see_online_status: true,
+                can_see_last_seen: true,
+                can_see_avatar: true,
+                can_send_messages: true,
+            },
+            added_at: chrono::Utc::now().timestamp(),
+            trust_level: 0.5,
         });
         
         Ok(format!("Connected to {}", address))
@@ -301,16 +380,142 @@ fn get_app_info() -> HashMap<String, String> {
 #[tauri::command]
 async fn get_user_identity(state: State<'_, AppState>) -> Result<Option<serde_json::Value>, String> {
     info!("Getting user identity");
-    // TODO: Implement identity retrieval
-    // For now, return a placeholder
+    
+    // Get identity manager
+    let identity_manager_guard = state.identity_manager.read().await;
+    let identity_manager = identity_manager_guard.as_ref()
+        .ok_or_else(|| "Identity manager not initialized".to_string())?;
+    
+    // Try to get local identity from memory first
+    if let Some(identity) = identity_manager.get_local_identity().await {
+        // Convert to JSON response
+        let mut response = serde_json::Map::new();
+        response.insert("user_id".to_string(), serde_json::Value::String(identity.user_id));
+        response.insert("display_name_hint".to_string(), serde_json::Value::String(identity.display_name_hint));
+        response.insert("three_word_address".to_string(), serde_json::Value::String(identity.three_word_address));
+        response.insert("verification_level".to_string(), serde_json::Value::String(format!("{:?}", identity.verification_level)));
+        response.insert("public_key".to_string(), serde_json::Value::String(base64::encode(&identity.public_key)));
+        response.insert("created_at".to_string(), serde_json::Value::String(
+            identity.created_at.duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default().as_secs().to_string()
+        ));
+        
+        return Ok(Some(serde_json::Value::Object(response)));
+    }
+    
+    // Try to load from storage if not in memory
+    let storage_guard = state.identity_storage.read().await;
+    if let Some(storage) = storage_guard.as_ref() {
+        let export_path = storage.storage_path.with_extension("export");
+        if export_path.exists() {
+            // Load the export data
+            match std::fs::read(&export_path) {
+                Ok(export_data) => {
+                    // Import into identity manager
+                    match identity_manager.import_identity(&export_data).await {
+                        Ok(identity) => {
+                            info!("Identity loaded from storage: {}", identity.user_id);
+                            
+                            // Convert to JSON response
+                            let mut response = serde_json::Map::new();
+                            response.insert("user_id".to_string(), serde_json::Value::String(identity.user_id));
+                            response.insert("display_name_hint".to_string(), serde_json::Value::String(identity.display_name_hint));
+                            response.insert("three_word_address".to_string(), serde_json::Value::String(identity.three_word_address));
+                            response.insert("verification_level".to_string(), serde_json::Value::String(format!("{:?}", identity.verification_level)));
+                            response.insert("public_key".to_string(), serde_json::Value::String(base64::encode(&identity.public_key)));
+                            response.insert("created_at".to_string(), serde_json::Value::String(
+                                identity.created_at.duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default().as_secs().to_string()
+                            ));
+                            
+                            return Ok(Some(serde_json::Value::Object(response)));
+                        }
+                        Err(e) => {
+                            warn!("Failed to import identity: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to read identity export: {}", e);
+                }
+            }
+        }
+    }
+    
     Ok(None)
 }
 
 #[tauri::command]
 async fn get_user_profile(state: State<'_, AppState>) -> Result<Option<serde_json::Value>, String> {
     info!("Getting user profile");
-    // TODO: Implement profile retrieval
-    Ok(None)
+    
+    // Get identity manager
+    let identity_manager_guard = state.identity_manager.read().await;
+    let identity_manager = identity_manager_guard.as_ref()
+        .ok_or_else(|| "Identity manager not initialized".to_string())?;
+    
+    // Try to get decrypted profile
+    match identity_manager.get_local_profile().await {
+        Ok(Some(profile)) => {
+            // Convert to JSON response
+            let mut response = serde_json::Map::new();
+            response.insert("display_name".to_string(), serde_json::Value::String(profile.display_name));
+            response.insert("avatar_hash".to_string(), 
+                profile.avatar_hash.map(serde_json::Value::String).unwrap_or(serde_json::Value::Null));
+            response.insert("status_message".to_string(), 
+                profile.status_message.map(serde_json::Value::String).unwrap_or(serde_json::Value::Null));
+            
+            // Add preferences
+            let mut preferences = serde_json::Map::new();
+            
+            // Discovery settings
+            let mut discovery = serde_json::Map::new();
+            discovery.insert("discoverable_by_name".to_string(), serde_json::Value::Bool(profile.preferences.discovery.discoverable_by_name));
+            discovery.insert("discoverable_by_friends".to_string(), serde_json::Value::Bool(profile.preferences.discovery.discoverable_by_friends));
+            discovery.insert("allow_contact_requests".to_string(), serde_json::Value::Bool(profile.preferences.discovery.allow_contact_requests));
+            discovery.insert("require_mutual_friends".to_string(), serde_json::Value::Bool(profile.preferences.discovery.require_mutual_friends));
+            discovery.insert("listed_in_directory".to_string(), serde_json::Value::Bool(profile.preferences.discovery.listed_in_directory));
+            preferences.insert("discovery".to_string(), serde_json::Value::Object(discovery));
+            
+            // Default permissions
+            let mut permissions = serde_json::Map::new();
+            permissions.insert("can_see_display_name".to_string(), serde_json::Value::Bool(profile.preferences.default_permissions.can_see_display_name));
+            permissions.insert("can_see_avatar".to_string(), serde_json::Value::Bool(profile.preferences.default_permissions.can_see_avatar));
+            permissions.insert("can_see_status".to_string(), serde_json::Value::Bool(profile.preferences.default_permissions.can_see_status));
+            permissions.insert("can_see_contact_info".to_string(), serde_json::Value::Bool(profile.preferences.default_permissions.can_see_contact_info));
+            permissions.insert("can_see_last_seen".to_string(), serde_json::Value::Bool(profile.preferences.default_permissions.can_see_last_seen));
+            permissions.insert("can_see_custom_fields".to_string(), serde_json::Value::Bool(profile.preferences.default_permissions.can_see_custom_fields));
+            preferences.insert("default_permissions".to_string(), serde_json::Value::Object(permissions));
+            
+            // Privacy settings
+            let mut privacy = serde_json::Map::new();
+            privacy.insert("require_proof_of_humanity".to_string(), serde_json::Value::Bool(profile.preferences.privacy.require_proof_of_humanity));
+            privacy.insert("max_contact_request_age".to_string(), serde_json::Value::Number(serde_json::Number::from(profile.preferences.privacy.max_contact_request_age.as_secs())));
+            privacy.insert("enable_forward_secrecy".to_string(), serde_json::Value::Bool(profile.preferences.privacy.enable_forward_secrecy));
+            privacy.insert("auto_rotate_keys".to_string(), serde_json::Value::Bool(profile.preferences.privacy.auto_rotate_keys));
+            privacy.insert("key_rotation_interval".to_string(), serde_json::Value::Number(serde_json::Number::from(profile.preferences.privacy.key_rotation_interval.as_secs())));
+            preferences.insert("privacy".to_string(), serde_json::Value::Object(privacy));
+            
+            response.insert("preferences".to_string(), serde_json::Value::Object(preferences));
+            
+            // Custom fields
+            let custom_fields: serde_json::Map<String, serde_json::Value> = profile.custom_fields
+                .into_iter()
+                .map(|(k, v)| (k, serde_json::Value::String(v)))
+                .collect();
+            response.insert("custom_fields".to_string(), serde_json::Value::Object(custom_fields));
+            
+            Ok(Some(serde_json::Value::Object(response)))
+        }
+        Ok(None) => {
+            info!("No profile found");
+            Ok(None)
+        }
+        Err(e) => {
+            warn!("Failed to get profile: {}", e);
+            Ok(None)
+        }
+    }
 }
 
 #[tauri::command]
@@ -321,16 +526,106 @@ async fn create_user_identity(
 ) -> Result<serde_json::Value, String> {
     info!("Creating user identity: {}", display_name);
     
-    // TODO: Implement identity creation using the identity manager
-    // For now, return a placeholder response
-    let mut response = serde_json::Map::new();
-    response.insert("user_id".to_string(), serde_json::Value::String("placeholder_user_id".to_string()));
-    response.insert("display_name_hint".to_string(), serde_json::Value::String(format!("{}:placeholder", display_name.chars().take(4).collect::<String>())));
-    response.insert("three_word_address".to_string(), serde_json::Value::String(three_word_address));
-    response.insert("verification_level".to_string(), serde_json::Value::String("SelfSigned".to_string()));
-    response.insert("public_key".to_string(), serde_json::Value::String("placeholder_public_key".to_string()));
+    // Get identity manager
+    let identity_manager_guard = state.identity_manager.read().await;
+    let identity_manager = identity_manager_guard.as_ref()
+        .ok_or_else(|| "Identity manager not initialized".to_string())?;
     
-    Ok(serde_json::Value::Object(response))
+    // Get network for IPv6 identity
+    let network_guard = state.network.read().await;
+    let network = network_guard.as_ref();
+    
+    // Create identity - for now without IPv6 binding (will add later)
+    match identity_manager.create_identity(
+        display_name.clone(),
+        three_word_address.clone(),
+        None, // IPv6 identity - will implement in bind_ipv6_identity
+        None, // IPv6 keypair - will implement in bind_ipv6_identity
+    ).await {
+        Ok(identity) => {
+            info!("Identity created successfully: {}", identity.user_id);
+            
+            // The keypair is managed internally by identity manager
+            // We'll export the identity data for storage instead
+            
+            // Create default profile
+            let profile = UserProfile {
+                display_name: display_name.clone(),
+                avatar_hash: None,
+                status_message: None,
+                created_at: std::time::SystemTime::now(),
+                updated_at: std::time::SystemTime::now(),
+                preferences: UserPreferences {
+                    discovery: DiscoverabilitySettings {
+                        discoverable_by_name: true,
+                        discoverable_by_friends: true,
+                        allow_contact_requests: true,
+                        require_mutual_friends: false,
+                        listed_in_directory: true,
+                    },
+                    default_permissions: ProfilePermissions {
+                        can_see_display_name: true,
+                        can_see_avatar: true,
+                        can_see_status: true,
+                        can_see_contact_info: true,
+                        can_see_last_seen: true,
+                        can_see_custom_fields: true,
+                    },
+                    privacy: PrivacySettings {
+                        require_proof_of_humanity: false,
+                        max_contact_request_age: std::time::Duration::from_secs(7 * 24 * 3600), // 7 days
+                        enable_forward_secrecy: true,
+                        auto_rotate_keys: false,
+                        key_rotation_interval: std::time::Duration::from_secs(30 * 24 * 3600), // 30 days
+                    },
+                },
+                custom_fields: std::collections::HashMap::new(),
+            };
+            
+            // Update the profile
+            if let Err(e) = identity_manager.update_local_profile(profile).await {
+                warn!("Failed to update profile: {}", e);
+            }
+            
+            // Save to local storage if available
+            let storage_guard = state.identity_storage.read().await;
+            if let Some(storage) = storage_guard.as_ref() {
+                // Export identity for storage
+                match identity_manager.export_identity().await {
+                    Ok(export_data) => {
+                        // Store the export data securely
+                        let export_path = storage.storage_path.with_extension("export");
+                        if let Err(e) = std::fs::write(&export_path, &export_data) {
+                            warn!("Failed to save identity export: {}", e);
+                        } else {
+                            info!("Identity saved to disk successfully");
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Failed to export identity: {}", e);
+                    }
+                }
+            }
+            
+            // Convert to JSON response
+            let mut response = serde_json::Map::new();
+            response.insert("user_id".to_string(), serde_json::Value::String(identity.user_id));
+            response.insert("display_name_hint".to_string(), serde_json::Value::String(identity.display_name_hint));
+            response.insert("three_word_address".to_string(), serde_json::Value::String(identity.three_word_address));
+            response.insert("verification_level".to_string(), serde_json::Value::String(format!("{:?}", identity.verification_level)));
+            response.insert("public_key".to_string(), serde_json::Value::String(base64::encode(&identity.public_key)));
+            response.insert("created_at".to_string(), serde_json::Value::String(
+                identity.created_at.duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default().as_secs().to_string()
+            ));
+            
+            Ok(serde_json::Value::Object(response))
+        }
+        Err(e) => {
+            error!("Failed to create identity: {}", e);
+            Err(format!("Failed to create identity: {}", e))
+        }
+    }
 }
 
 #[tauri::command]
@@ -340,27 +635,183 @@ async fn update_user_profile(
 ) -> Result<String, String> {
     info!("Updating user profile");
     
-    // TODO: Implement profile update using the identity manager
-    Ok("Profile updated successfully".to_string())
+    // Get identity manager
+    let identity_manager_guard = state.identity_manager.read().await;
+    let identity_manager = identity_manager_guard.as_ref()
+        .ok_or_else(|| "Identity manager not initialized".to_string())?;
+    
+    // Get current profile first
+    let current_profile = match identity_manager.get_local_profile().await {
+        Ok(Some(profile)) => profile,
+        Ok(None) => {
+            return Err("No profile found to update".to_string());
+        }
+        Err(e) => {
+            return Err(format!("Failed to get current profile: {}", e));
+        }
+    };
+    
+    // Parse update data
+    let updates = profile_data.as_object()
+        .ok_or_else(|| "Invalid profile data format".to_string())?;
+    
+    // Create updated profile
+    let mut updated_profile = current_profile;
+    
+    // Update basic fields
+    if let Some(display_name) = updates.get("display_name").and_then(|v| v.as_str()) {
+        updated_profile.display_name = display_name.to_string();
+    }
+    
+    if let Some(status_message) = updates.get("status_message") {
+        updated_profile.status_message = if status_message.is_null() {
+            None
+        } else {
+            status_message.as_str().map(|s| s.to_string())
+        };
+    }
+    
+    if let Some(avatar_hash) = updates.get("avatar_hash") {
+        updated_profile.avatar_hash = if avatar_hash.is_null() {
+            None
+        } else {
+            avatar_hash.as_str().map(|s| s.to_string())
+        };
+    }
+    
+    // Update preferences if provided
+    if let Some(preferences) = updates.get("preferences").and_then(|v| v.as_object()) {
+        // Update discovery settings
+        if let Some(discovery) = preferences.get("discovery").and_then(|v| v.as_object()) {
+            if let Some(by_name) = discovery.get("discoverable_by_name").and_then(|v| v.as_bool()) {
+                updated_profile.preferences.discovery.discoverable_by_name = by_name;
+            }
+            if let Some(by_friends) = discovery.get("discoverable_by_friends").and_then(|v| v.as_bool()) {
+                updated_profile.preferences.discovery.discoverable_by_friends = by_friends;
+            }
+            if let Some(allow_requests) = discovery.get("allow_contact_requests").and_then(|v| v.as_bool()) {
+                updated_profile.preferences.discovery.allow_contact_requests = allow_requests;
+            }
+            if let Some(mutual) = discovery.get("require_mutual_friends").and_then(|v| v.as_bool()) {
+                updated_profile.preferences.discovery.require_mutual_friends = mutual;
+            }
+            if let Some(listed) = discovery.get("listed_in_directory").and_then(|v| v.as_bool()) {
+                updated_profile.preferences.discovery.listed_in_directory = listed;
+            }
+        }
+        
+        // Update privacy settings
+        if let Some(privacy) = preferences.get("privacy").and_then(|v| v.as_object()) {
+            if let Some(proof) = privacy.get("require_proof_of_humanity").and_then(|v| v.as_bool()) {
+                updated_profile.preferences.privacy.require_proof_of_humanity = proof;
+            }
+            if let Some(age) = privacy.get("max_contact_request_age").and_then(|v| v.as_u64()) {
+                updated_profile.preferences.privacy.max_contact_request_age = std::time::Duration::from_secs(age);
+            }
+            if let Some(forward) = privacy.get("enable_forward_secrecy").and_then(|v| v.as_bool()) {
+                updated_profile.preferences.privacy.enable_forward_secrecy = forward;
+            }
+            if let Some(rotate) = privacy.get("auto_rotate_keys").and_then(|v| v.as_bool()) {
+                updated_profile.preferences.privacy.auto_rotate_keys = rotate;
+            }
+            if let Some(interval) = privacy.get("key_rotation_interval").and_then(|v| v.as_u64()) {
+                updated_profile.preferences.privacy.key_rotation_interval = std::time::Duration::from_secs(interval);
+            }
+        }
+        
+        // Update default permissions
+        if let Some(permissions) = preferences.get("default_permissions").and_then(|v| v.as_object()) {
+            if let Some(name) = permissions.get("can_see_display_name").and_then(|v| v.as_bool()) {
+                updated_profile.preferences.default_permissions.can_see_display_name = name;
+            }
+            if let Some(avatar) = permissions.get("can_see_avatar").and_then(|v| v.as_bool()) {
+                updated_profile.preferences.default_permissions.can_see_avatar = avatar;
+            }
+            if let Some(status) = permissions.get("can_see_status").and_then(|v| v.as_bool()) {
+                updated_profile.preferences.default_permissions.can_see_status = status;
+            }
+            if let Some(contact) = permissions.get("can_see_contact_info").and_then(|v| v.as_bool()) {
+                updated_profile.preferences.default_permissions.can_see_contact_info = contact;
+            }
+            if let Some(seen) = permissions.get("can_see_last_seen").and_then(|v| v.as_bool()) {
+                updated_profile.preferences.default_permissions.can_see_last_seen = seen;
+            }
+            if let Some(fields) = permissions.get("can_see_custom_fields").and_then(|v| v.as_bool()) {
+                updated_profile.preferences.default_permissions.can_see_custom_fields = fields;
+            }
+        }
+    }
+    
+    // Update custom fields
+    if let Some(custom_fields) = updates.get("custom_fields").and_then(|v| v.as_object()) {
+        updated_profile.custom_fields = custom_fields
+            .iter()
+            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+            .collect();
+    }
+    
+    // Apply the update
+    match identity_manager.update_local_profile(updated_profile).await {
+        Ok(_) => {
+            info!("Profile updated successfully");
+            
+            // Save the updated identity to storage
+            let storage_guard = state.identity_storage.read().await;
+            if let Some(storage) = storage_guard.as_ref() {
+                // Export and save the updated identity
+                match identity_manager.export_identity().await {
+                    Ok(export_data) => {
+                        let export_path = storage.storage_path.with_extension("export");
+                        if let Err(e) = std::fs::write(&export_path, &export_data) {
+                            warn!("Failed to save updated identity export: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Failed to export updated identity: {}", e);
+                    }
+                }
+            }
+            
+            Ok("Profile updated successfully".to_string())
+        }
+        Err(e) => {
+            error!("Failed to update profile: {}", e);
+            Err(format!("Failed to update profile: {}", e))
+        }
+    }
 }
 
 #[tauri::command]
 async fn export_user_identity(state: State<'_, AppState>) -> Result<String, String> {
     info!("Exporting user identity");
     
-    // TODO: Implement identity export
-    let export_data = serde_json::json!({
-        "identity": {
-            "user_id": "placeholder_user_id",
-            "public_key": "placeholder_public_key",
-            "display_name_hint": "placeholder",
-            "three_word_address": "placeholder.identity.export",
-            "verification_level": "SelfSigned"
-        },
-        "exported_at": chrono::Utc::now().to_rfc3339()
-    });
+    // Get identity manager
+    let identity_manager_guard = state.identity_manager.read().await;
+    let identity_manager = identity_manager_guard.as_ref()
+        .ok_or_else(|| "Identity manager not initialized".to_string())?;
     
-    Ok(export_data.to_string())
+    // Export identity
+    match identity_manager.export_identity().await {
+        Ok(export_data) => {
+            // Convert to base64 for easy transport
+            let encoded = base64::encode(&export_data);
+            
+            // Create export wrapper with metadata
+            let export_wrapper = serde_json::json!({
+                "version": 1,
+                "format": "encrypted_binary",
+                "data": encoded,
+                "exported_at": chrono::Utc::now().to_rfc3339(),
+                "app_version": env!("CARGO_PKG_VERSION"),
+            });
+            
+            Ok(export_wrapper.to_string())
+        }
+        Err(e) => {
+            error!("Failed to export identity: {}", e);
+            Err(format!("Failed to export identity: {}", e))
+        }
+    }
 }
 
 #[tauri::command]
@@ -370,12 +821,45 @@ async fn import_user_identity(
 ) -> Result<String, String> {
     info!("Importing user identity");
     
-    // TODO: Implement identity import
-    // Parse and validate the identity data
-    let _parsed: serde_json::Value = serde_json::from_str(&identity_data)
+    // Get identity manager
+    let identity_manager_guard = state.identity_manager.read().await;
+    let identity_manager = identity_manager_guard.as_ref()
+        .ok_or_else(|| "Identity manager not initialized".to_string())?;
+    
+    // Parse the export wrapper
+    let export_wrapper: serde_json::Value = serde_json::from_str(&identity_data)
         .map_err(|e| format!("Invalid identity data format: {}", e))?;
     
-    Ok("Identity imported successfully".to_string())
+    // Extract the base64 encoded data
+    let encoded_data = export_wrapper.get("data")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing data field in export".to_string())?;
+    
+    // Decode from base64
+    let export_data = base64::decode(encoded_data)
+        .map_err(|e| format!("Failed to decode identity data: {}", e))?;
+    
+    // Import into identity manager
+    match identity_manager.import_identity(&export_data).await {
+        Ok(identity) => {
+            info!("Identity imported successfully: {}", identity.user_id);
+            
+            // Save to local storage
+            let storage_guard = state.identity_storage.read().await;
+            if let Some(storage) = storage_guard.as_ref() {
+                let export_path = storage.storage_path.with_extension("export");
+                if let Err(e) = std::fs::write(&export_path, &export_data) {
+                    warn!("Failed to save imported identity to storage: {}", e);
+                }
+            }
+            
+            Ok(format!("Identity imported successfully. User ID: {}", identity.user_id))
+        }
+        Err(e) => {
+            error!("Failed to import identity: {}", e);
+            Err(format!("Failed to import identity: {}", e))
+        }
+    }
 }
 
 #[tauri::command]
@@ -489,6 +973,181 @@ async fn cancel_contact_request(
     Ok("Contact request cancelled".to_string())
 }
 
+// ================== Comprehensive Contact Management Commands ==================
+
+/// Delete a contact
+#[tauri::command]
+async fn delete_contact(
+    state: State<'_, AppState>,
+    contact_id: String,
+) -> Result<(), String> {
+    info!("Deleting contact: {}", contact_id);
+    
+    // Don't allow deleting system contact
+    if contact_id == "system" {
+        return Err("Cannot delete system contact".to_string());
+    }
+    
+    let mut contacts = state.contacts.write().await;
+    contacts.remove(&contact_id)
+        .ok_or_else(|| "Contact not found".to_string())?;
+    
+    // Also remove associated messages if requested
+    let mut messages = state.messages.write().await;
+    messages.remove(&contact_id);
+    
+    Ok(())
+}
+
+/// Block a user
+#[tauri::command]
+async fn block_user(
+    state: State<'_, AppState>,
+    user_id: String,
+) -> Result<(), String> {
+    info!("Blocking user: {}", user_id);
+    
+    let mut blocked_users = state.blocked_users.write().await;
+    blocked_users.insert(user_id.clone(), chrono::Utc::now().timestamp());
+    
+    // Update contact if exists
+    let mut contacts = state.contacts.write().await;
+    if let Some(contact) = contacts.get_mut(&user_id) {
+        contact.is_blocked = true;
+    }
+    
+    Ok(())
+}
+
+/// Unblock a user
+#[tauri::command]
+async fn unblock_user(
+    state: State<'_, AppState>,
+    user_id: String,
+) -> Result<(), String> {
+    info!("Unblocking user: {}", user_id);
+    
+    let mut blocked_users = state.blocked_users.write().await;
+    blocked_users.remove(&user_id);
+    
+    // Update contact if exists
+    let mut contacts = state.contacts.write().await;
+    if let Some(contact) = contacts.get_mut(&user_id) {
+        contact.is_blocked = false;
+    }
+    
+    Ok(())
+}
+
+/// Get blocked users list
+#[tauri::command]
+async fn get_blocked_users(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let blocked_users = state.blocked_users.read().await;
+    Ok(blocked_users.keys().cloned().collect())
+}
+
+/// Update contact details
+#[tauri::command]
+async fn update_contact(
+    state: State<'_, AppState>,
+    contact_id: String,
+    nickname: Option<String>,
+    notes: Option<String>,
+    category: Option<String>,
+) -> Result<(), String> {
+    info!("Updating contact: {}", contact_id);
+    
+    let mut contacts = state.contacts.write().await;
+    let contact = contacts.get_mut(&contact_id)
+        .ok_or_else(|| "Contact not found".to_string())?;
+    
+    if nickname.is_some() {
+        contact.nickname = nickname;
+    }
+    if notes.is_some() {
+        contact.notes = notes;
+    }
+    if category.is_some() {
+        contact.category = category;
+    }
+    
+    Ok(())
+}
+
+/// Update contact permissions
+#[tauri::command]
+async fn update_contact_permissions(
+    state: State<'_, AppState>,
+    contact_id: String,
+    permissions: ContactPermissions,
+) -> Result<(), String> {
+    info!("Updating contact permissions: {}", contact_id);
+    
+    let mut contacts = state.contacts.write().await;
+    let contact = contacts.get_mut(&contact_id)
+        .ok_or_else(|| "Contact not found".to_string())?;
+    
+    contact.permissions = permissions;
+    
+    Ok(())
+}
+
+/// Get contact categories
+#[tauri::command]
+async fn get_contact_categories(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let categories = state.contact_categories.read().await;
+    Ok(categories.clone())
+}
+
+/// Add a new contact category
+#[tauri::command]
+async fn add_contact_category(
+    state: State<'_, AppState>,
+    category: String,
+) -> Result<(), String> {
+    info!("Adding contact category: {}", category);
+    
+    let mut categories = state.contact_categories.write().await;
+    if !categories.contains(&category) {
+        categories.push(category);
+    }
+    
+    Ok(())
+}
+
+/// Get detailed contact info
+#[tauri::command]
+async fn get_contact_details(
+    state: State<'_, AppState>,
+    contact_id: String,
+) -> Result<Contact, String> {
+    let contacts = state.contacts.read().await;
+    contacts.get(&contact_id)
+        .cloned()
+        .ok_or_else(|| "Contact not found".to_string())
+}
+
+/// Bulk delete contacts
+#[tauri::command]
+async fn bulk_delete_contacts(
+    state: State<'_, AppState>,
+    contact_ids: Vec<String>,
+) -> Result<(), String> {
+    info!("Bulk deleting {} contacts", contact_ids.len());
+    
+    let mut contacts = state.contacts.write().await;
+    let mut messages = state.messages.write().await;
+    
+    for contact_id in contact_ids {
+        if contact_id != "system" {
+            contacts.remove(&contact_id);
+            messages.remove(&contact_id);
+        }
+    }
+    
+    Ok(())
+}
+
 /// Initialize logging
 fn init_logging() {
     tracing_subscriber::fmt()
@@ -535,8 +1194,47 @@ pub fn run_app() {
             accept_contact_request,
             reject_contact_request,
             cancel_contact_request,
+            // Comprehensive contact management
+            delete_contact,
+            block_user,
+            unblock_user,
+            get_blocked_users,
+            update_contact,
+            update_contact_permissions,
+            get_contact_categories,
+            add_contact_category,
+            get_contact_details,
+            bulk_delete_contacts,
         ])
         .setup(|app| {
+            info!("Tauri application setup starting");
+            
+            // Initialize identity storage
+            let app_handle = app.handle();
+            let storage_config = IdentityStorageConfig::default();
+            
+            match IdentityStorage::new(app_handle.clone(), storage_config) {
+                Ok(storage) => {
+                    let state = app.state::<AppState>();
+                    
+                    // Create identity manager
+                    let identity_manager_config = IdentityManagerConfig::default();
+                    let identity_manager = IdentityManager::new(identity_manager_config);
+                    
+                    // Store in app state
+                    tokio::runtime::Runtime::new().unwrap().block_on(async {
+                        *state.identity_storage.write().await = Some(Arc::new(storage));
+                        *state.identity_manager.write().await = Some(Arc::new(identity_manager));
+                    });
+                    
+                    info!("Identity storage and manager initialized successfully");
+                }
+                Err(e) => {
+                    error!("Failed to initialize identity storage: {}", e);
+                    // Continue without identity persistence
+                }
+            }
+            
             info!("Tauri application setup complete");
             Ok(())
         })
@@ -557,4 +1255,9 @@ pub fn run_desktop_app() -> anyhow::Result<()> {
     // Run the Tauri app
     run_app();
     Ok(())
+}
+
+/// Entry point for main.rs
+pub fn run() {
+    run_desktop_app().expect("Failed to run desktop app");
 }

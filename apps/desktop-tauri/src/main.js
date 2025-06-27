@@ -201,26 +201,47 @@ function renderContacts() {
 // Create contact list item element
 function createContactElement(contact) {
   const contactDiv = document.createElement('div');
-  contactDiv.className = `contact-item ${contact.id === 'system' ? 'system' : ''}`;
+  contactDiv.className = `contact-item ${contact.id === 'system' ? 'system' : ''} ${contact.is_blocked ? 'blocked' : ''}`;
   contactDiv.dataset.contactId = contact.id;
   
   // Generate avatar content
   const avatarContent = contact.id === 'system' ? '🤖' : 
-    contact.name.charAt(0).toUpperCase();
+    (contact.nickname ? contact.nickname.charAt(0) : contact.name.charAt(0)).toUpperCase();
+  
+  // Display name with nickname
+  const displayName = contact.nickname ? 
+    `${contact.nickname} (${contact.name})` : contact.name;
   
   contactDiv.innerHTML = `
     <div class="contact-avatar">${avatarContent}</div>
     <div class="contact-info">
-      <div class="contact-name">${contact.name}</div>
+      <div class="contact-name">${displayName}</div>
       <div class="contact-address">${contact.three_word_address}</div>
+      ${contact.category ? `<div class="contact-category">${contact.category}</div>` : ''}
     </div>
     <div class="contact-status">
-      ${contact.is_online ? '<div class="online-indicator"></div>' : ''}
-      ${contact.unread_count > 0 ? `<div class="contact-unread">${contact.unread_count}</div>` : ''}
+      ${contact.is_blocked ? '<span class="blocked-indicator" title="Blocked">🚫</span>' : ''}
+      ${contact.is_online && !contact.is_blocked ? '<div class="online-indicator"></div>' : ''}
+      ${contact.unread_count > 0 && !contact.is_blocked ? `<div class="contact-unread">${contact.unread_count}</div>` : ''}
     </div>
   `;
   
-  contactDiv.addEventListener('click', () => selectContact(contact.id));
+  // Left click to select
+  contactDiv.addEventListener('click', () => {
+    if (!contact.is_blocked) {
+      selectContact(contact.id);
+    } else {
+      showNotification('This contact is blocked', 'warning');
+    }
+  });
+  
+  // Right click for context menu
+  if (contact.id !== 'system') {
+    contactDiv.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showContactContextMenu(e, contact);
+    });
+  }
   
   return contactDiv;
 }
@@ -305,6 +326,13 @@ async function sendMessage() {
   const content = messageInput.value.trim();
   
   if (!content || !appState.currentContact) {
+    return;
+  }
+  
+  // Check if contact is blocked
+  const contact = appState.contacts.get(appState.currentContact);
+  if (contact && contact.is_blocked) {
+    showNotification('Cannot send messages to blocked contacts', 'error');
     return;
   }
   
@@ -760,8 +788,100 @@ function generateThreeWordAddress() {
 function openContactModal() {
   document.getElementById('contact-modal').classList.remove('hidden');
   appState.contactModalOpen = true;
-  loadContacts();
+  loadContactsInModal();
   loadContactRequests();
+}
+
+// Load contacts in the contact management modal
+async function loadContactsInModal() {
+  try {
+    const contacts = await invoke('get_contacts');
+    const container = document.getElementById('contact-list');
+    container.innerHTML = '';
+    
+    if (contacts && contacts.length > 0) {
+      // Group contacts by category
+      const categorized = {};
+      const uncategorized = [];
+      
+      contacts.forEach(contact => {
+        if (contact.id !== 'system') {
+          if (contact.category) {
+            if (!categorized[contact.category]) {
+              categorized[contact.category] = [];
+            }
+            categorized[contact.category].push(contact);
+          } else {
+            uncategorized.push(contact);
+          }
+        }
+      });
+      
+      // Render categorized contacts
+      Object.keys(categorized).sort().forEach(category => {
+        const categoryDiv = document.createElement('div');
+        categoryDiv.className = 'contact-category-group';
+        categoryDiv.innerHTML = `<h5 style="margin: 10px 0; color: #666;">${category}</h5>`;
+        container.appendChild(categoryDiv);
+        
+        categorized[category].forEach(contact => {
+          const item = createContactListItem(contact);
+          container.appendChild(item);
+        });
+      });
+      
+      // Render uncategorized contacts
+      if (uncategorized.length > 0) {
+        if (Object.keys(categorized).length > 0) {
+          const uncatDiv = document.createElement('div');
+          uncatDiv.className = 'contact-category-group';
+          uncatDiv.innerHTML = `<h5 style="margin: 10px 0; color: #666;">Other</h5>`;
+          container.appendChild(uncatDiv);
+        }
+        
+        uncategorized.forEach(contact => {
+          const item = createContactListItem(contact);
+          container.appendChild(item);
+        });
+      }
+    } else {
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-text">No contacts yet</div></div>';
+    }
+  } catch (error) {
+    console.error('Failed to load contacts:', error);
+  }
+}
+
+// Create enhanced contact list item for management modal
+function createContactListItem(contact) {
+  const div = document.createElement('div');
+  div.className = `contact-list-item ${contact.is_blocked ? 'blocked' : ''}`;
+  div.style.cssText = 'display: flex; align-items: center; padding: 10px; border-bottom: 1px solid #eee;';
+  
+  const displayName = contact.nickname ? 
+    `${contact.nickname} (${contact.name})` : contact.name;
+  
+  div.innerHTML = `
+    <div class="contact-avatar" style="width: 40px; height: 40px; border-radius: 50%; background: #007AFF; color: white; display: flex; align-items: center; justify-content: center; margin-right: 15px;">
+      ${contact.nickname ? contact.nickname.charAt(0) : contact.name.charAt(0)}
+    </div>
+    <div class="contact-info" style="flex: 1;">
+      <div class="contact-name" style="font-weight: 500;">${displayName}</div>
+      <div class="contact-status" style="font-size: 12px; color: #666;">${contact.three_word_address}</div>
+      ${contact.is_blocked ? '<span style="color: red; font-size: 12px;">🚫 Blocked</span>' : ''}
+    </div>
+    <div class="contact-actions" style="display: flex; gap: 5px;">
+      <button class="icon-btn" onclick='viewContactProfile(${JSON.stringify(contact).replace(/'/g, "\\'")})' title="View Profile">👤</button>
+      <button class="icon-btn" onclick='openEditContactModal(${JSON.stringify(contact).replace(/'/g, "\\'")})' title="Edit">✏️</button>
+      ${contact.is_blocked ? 
+        `<button class="icon-btn" onclick="unblockContact('${contact.id}')" title="Unblock">✅</button>` :
+        `<button class="icon-btn" onclick="blockContact('${contact.id}')" title="Block">🚫</button>`
+      }
+      <button class="icon-btn danger" onclick="deleteContact('${contact.id}')" title="Delete">🗑️</button>
+    </div>
+  `;
+  
+  return div;
 }
 
 function closeContactModal() {
@@ -790,7 +910,10 @@ function switchContactTab(tabName) {
 }
 
 async function refreshContacts() {
-  loadContacts();
+  await loadContacts();
+  if (appState.contactModalOpen) {
+    await loadContactsInModal();
+  }
 }
 
 async function loadContactRequests() {
@@ -958,6 +1081,350 @@ async function sendContactRequest(userId, displayName) {
 function clearSearchResults() {
   document.getElementById('search-results').innerHTML = '';
   document.getElementById('search-query').value = '';
+}
+
+// ================== Contact Context Menu ==================
+
+function showContactContextMenu(event, contact) {
+  // Remove any existing context menu
+  const existingMenu = document.getElementById('contact-context-menu');
+  if (existingMenu) {
+    existingMenu.remove();
+  }
+  
+  // Create context menu
+  const menu = document.createElement('div');
+  menu.id = 'contact-context-menu';
+  menu.className = 'context-menu';
+  menu.style.cssText = `
+    position: fixed;
+    left: ${event.clientX}px;
+    top: ${event.clientY}px;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    padding: 4px 0;
+    z-index: 10000;
+    min-width: 180px;
+  `;
+  
+  const menuItems = [
+    { icon: '👤', text: 'View Profile', action: () => viewContactProfile(contact) },
+    { icon: '✏️', text: 'Edit Contact', action: () => openEditContactModal(contact) },
+    { divider: true },
+    contact.is_blocked ? 
+      { icon: '✅', text: 'Unblock Contact', action: () => unblockContact(contact.id) } :
+      { icon: '🚫', text: 'Block Contact', action: () => blockContact(contact.id) },
+    { divider: true },
+    { icon: '🗑️', text: 'Delete Contact', action: () => deleteContact(contact.id), danger: true }
+  ];
+  
+  menuItems.forEach(item => {
+    if (item.divider) {
+      const divider = document.createElement('div');
+      divider.style.cssText = 'height: 1px; background: #eee; margin: 4px 0;';
+      menu.appendChild(divider);
+    } else {
+      const menuItem = document.createElement('div');
+      menuItem.className = 'context-menu-item';
+      menuItem.style.cssText = `
+        padding: 8px 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: ${item.danger ? '#ff3b30' : '#333'};
+      `;
+      menuItem.innerHTML = `<span>${item.icon}</span><span>${item.text}</span>`;
+      
+      menuItem.addEventListener('mouseenter', () => {
+        menuItem.style.backgroundColor = '#f0f0f0';
+      });
+      
+      menuItem.addEventListener('mouseleave', () => {
+        menuItem.style.backgroundColor = 'transparent';
+      });
+      
+      menuItem.addEventListener('click', () => {
+        menu.remove();
+        item.action();
+      });
+      
+      menu.appendChild(menuItem);
+    }
+  });
+  
+  document.body.appendChild(menu);
+  
+  // Close menu when clicking outside
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+  
+  setTimeout(() => {
+    document.addEventListener('click', closeMenu);
+  }, 0);
+}
+
+// View contact profile
+function viewContactProfile(contact) {
+  openContactProfileModal(contact);
+}
+
+// Open contact profile modal
+async function openContactProfileModal(contact) {
+  // Get full contact details
+  let fullContact = contact;
+  try {
+    fullContact = await invoke('get_contact_details', { contactId: contact.id });
+  } catch (error) {
+    console.error('Failed to get contact details:', error);
+  }
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.id = 'contact-profile-modal';
+  modal.innerHTML = `
+    <div class="modal-content large-modal">
+      <div class="modal-header">
+        <h3>Contact Profile</h3>
+        <button class="close-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="profile-header" style="display: flex; align-items: center; gap: 20px; margin-bottom: 30px;">
+          <div class="large-avatar" style="width: 80px; height: 80px; border-radius: 50%; background: #007AFF; color: white; display: flex; align-items: center; justify-content: center; font-size: 32px;">
+            ${fullContact.nickname ? fullContact.nickname.charAt(0) : fullContact.name.charAt(0)}
+          </div>
+          <div>
+            <h2 style="margin: 0;">${fullContact.nickname || fullContact.name}</h2>
+            ${fullContact.nickname ? `<p style="margin: 5px 0; color: #666;">${fullContact.name}</p>` : ''}
+            <p style="margin: 5px 0; color: #666;">${fullContact.three_word_address}</p>
+            ${fullContact.category ? `<span class="badge" style="background: #e0e0e0; padding: 4px 8px; border-radius: 12px; font-size: 12px;">${fullContact.category}</span>` : ''}
+          </div>
+        </div>
+        
+        <div class="profile-section">
+          <h4>Status</h4>
+          <div class="info-group">
+            <div class="info-item">
+              <label>Online Status:</label>
+              <span>${fullContact.is_online ? '🟢 Online' : '⚪ Offline'}</span>
+            </div>
+            <div class="info-item">
+              <label>Last Seen:</label>
+              <span>${new Date(fullContact.last_seen * 1000).toLocaleString()}</span>
+            </div>
+            <div class="info-item">
+              <label>Trust Level:</label>
+              <span>${Math.round(fullContact.trust_level * 100)}%</span>
+            </div>
+            <div class="info-item">
+              <label>Added:</label>
+              <span>${new Date(fullContact.added_at * 1000).toLocaleDateString()}</span>
+            </div>
+          </div>
+        </div>
+        
+        ${fullContact.notes ? `
+        <div class="profile-section">
+          <h4>Notes</h4>
+          <p style="background: #f5f5f5; padding: 10px; border-radius: 5px;">${fullContact.notes}</p>
+        </div>
+        ` : ''}
+        
+        <div class="profile-section">
+          <h4>Privacy Permissions</h4>
+          <div class="permissions-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <label style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" ${fullContact.permissions.can_see_profile ? 'checked' : ''} disabled />
+              Can see my profile
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" ${fullContact.permissions.can_see_online_status ? 'checked' : ''} disabled />
+              Can see online status
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" ${fullContact.permissions.can_see_last_seen ? 'checked' : ''} disabled />
+              Can see last seen
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" ${fullContact.permissions.can_see_avatar ? 'checked' : ''} disabled />
+              Can see avatar
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" ${fullContact.permissions.can_send_messages ? 'checked' : ''} disabled />
+              Can send messages
+            </label>
+          </div>
+        </div>
+        
+        <div class="profile-section">
+          <h4>Actions</h4>
+          <div class="action-buttons" style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <button class="secondary-btn" onclick="openEditContactModal(${JSON.stringify(fullContact).replace(/"/g, '&quot;')})">
+              ✏️ Edit Contact
+            </button>
+            ${fullContact.is_blocked ? `
+              <button class="secondary-btn" onclick="unblockContact('${fullContact.id}')">
+                ✅ Unblock Contact
+              </button>
+            ` : `
+              <button class="secondary-btn" onclick="blockContact('${fullContact.id}')">
+                🚫 Block Contact
+              </button>
+            `}
+            <button class="secondary-btn danger" onclick="deleteContact('${fullContact.id}')">
+              🗑️ Delete Contact
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Add event handlers
+  modal.querySelector('.close-btn').addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.remove();
+  });
+  
+  document.body.appendChild(modal);
+}
+
+// Open edit contact modal
+function openEditContactModal(contact) {
+  const modal = createModal('Edit Contact', `
+    <div class="input-group">
+      <label for="edit-nickname">Nickname:</label>
+      <input type="text" id="edit-nickname" value="${contact.nickname || ''}" placeholder="Optional nickname" />
+    </div>
+    <div class="input-group">
+      <label for="edit-notes">Notes:</label>
+      <textarea id="edit-notes" placeholder="Personal notes about this contact" rows="3">${contact.notes || ''}</textarea>
+    </div>
+    <div class="input-group">
+      <label for="edit-category">Category:</label>
+      <select id="edit-category">
+        <option value="">None</option>
+        <option value="Friends" ${contact.category === 'Friends' ? 'selected' : ''}>Friends</option>
+        <option value="Family" ${contact.category === 'Family' ? 'selected' : ''}>Family</option>
+        <option value="Work" ${contact.category === 'Work' ? 'selected' : ''}>Work</option>
+      </select>
+    </div>
+  `, async () => {
+    const nickname = document.getElementById('edit-nickname').value.trim() || null;
+    const notes = document.getElementById('edit-notes').value.trim() || null;
+    const category = document.getElementById('edit-category').value || null;
+    
+    try {
+      await invoke('update_contact', {
+        contactId: contact.id,
+        nickname,
+        notes,
+        category
+      });
+      showNotification('Contact updated successfully', 'success');
+      loadContacts();
+      modal.remove();
+    } catch (error) {
+      showNotification('Failed to update contact: ' + error, 'error');
+    }
+  });
+}
+
+// Block contact
+async function blockContact(contactId) {
+  if (confirm('Are you sure you want to block this contact? They will not be able to send you messages.')) {
+    try {
+      await invoke('block_user', { userId: contactId });
+      showNotification('Contact blocked', 'success');
+      loadContacts();
+    } catch (error) {
+      showNotification('Failed to block contact: ' + error, 'error');
+    }
+  }
+}
+
+// Unblock contact
+async function unblockContact(contactId) {
+  try {
+    await invoke('unblock_user', { userId: contactId });
+    showNotification('Contact unblocked', 'success');
+    loadContacts();
+  } catch (error) {
+    showNotification('Failed to unblock contact: ' + error, 'error');
+  }
+}
+
+// Delete contact
+async function deleteContact(contactId) {
+  if (confirm('Are you sure you want to delete this contact? This action cannot be undone.')) {
+    try {
+      await invoke('delete_contact', { contactId });
+      showNotification('Contact deleted', 'success');
+      loadContacts();
+      
+      // Clear chat if this contact was selected
+      if (appState.currentContact === contactId) {
+        appState.currentContact = null;
+        document.getElementById('current-contact-name').textContent = 'Select a contact to start chatting';
+        document.getElementById('messages-list').innerHTML = '';
+      }
+    } catch (error) {
+      showNotification('Failed to delete contact: ' + error, 'error');
+    }
+  }
+}
+
+// Create modal helper
+function createModal(title, content, onSave) {
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+  
+  modal.innerHTML = `
+    <div class="modal-content" style="background: white; padding: 20px; border-radius: 10px; max-width: 500px; width: 90%;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3 style="margin: 0;">${title}</h3>
+        <button class="close-btn" style="background: none; border: none; font-size: 20px; cursor: pointer;">✕</button>
+      </div>
+      <div class="modal-body">
+        ${content}
+      </div>
+      <div class="modal-actions" style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+        <button class="secondary-btn">Cancel</button>
+        <button class="primary-btn">Save</button>
+      </div>
+    </div>
+  `;
+  
+  // Event handlers
+  modal.querySelector('.close-btn').addEventListener('click', () => modal.remove());
+  modal.querySelector('.secondary-btn').addEventListener('click', () => modal.remove());
+  modal.querySelector('.primary-btn').addEventListener('click', onSave);
+  
+  // Close on outside click
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.remove();
+  });
+  
+  document.body.appendChild(modal);
+  return modal;
 }
 
 // ================== Utility Functions ==================
