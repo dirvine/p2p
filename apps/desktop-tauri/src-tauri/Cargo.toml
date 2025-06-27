@@ -11,12 +11,28 @@ documentation = "https://github.com/dirvine/p2p/tree/main/apps/desktop-tauri"
 readme = "README.md"
 keywords = ["p2p", "messaging", "privacy", "decentralized", "tauri"]
 categories = ["gui", "network-programming", "cryptography"]
+include = [
+    "src/**/*",
+    "Cargo.toml",
+    "build.rs",
+    "tauri.conf.json",
+    "icons/**/*",
+    "README.md"
+]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 name = "saorsa_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "saorsa"
+path = "src/bin/saorsa.rs"
+
+[features]
+default = []
+bundle-frontend = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -50,4 +66,5 @@ tracing-subscriber = "0.3"
 # Utilities
 anyhow = "1.0"
 uuid = { version = "1.0", features = ["v4"] }
+dirs = "5.0"
 

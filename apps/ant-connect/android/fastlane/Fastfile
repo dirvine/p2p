@@ -1,0 +1,166 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+
+default_platform(:android)
+
+platform :android do
+  desc "Runs all the tests"
+  lane :test do
+    gradle(task: "test")
+  end
+
+  desc "Build debug APK"
+  lane :build_debug do
+    gradle(
+      task: "assembleDebug",
+      project_dir: "android/"
+    )
+  end
+
+  desc "Build release APK"
+  lane :build_apk do
+    gradle(
+      task: "assembleRelease",
+      project_dir: "android/"
+    )
+  end
+
+  desc "Build release AAB (App Bundle)"
+  lane :build_aab do
+    gradle(
+      task: "bundleRelease",
+      project_dir: "android/"
+    )
+  end
+
+  desc "Deploy to internal testing track"
+  lane :internal do
+    # Build the app bundle
+    build_aab
+    
+    # Upload to Play Console
+    upload_to_play_store(
+      track: 'internal',
+      aab: 'build/app/outputs/bundle/release/app-release.aab',
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+    
+    # Notify team
+    slack(
+      message: "New Ant Connect internal testing build uploaded! 🤖",
+      success: true
+    ) if ENV["SLACK_URL"]
+  end
+
+  desc "Deploy to alpha track (closed testing)"
+  lane :alpha do
+    # Build the app bundle
+    build_aab
+    
+    # Upload to Play Console
+    upload_to_play_store(
+      track: 'alpha',
+      aab: 'build/app/outputs/bundle/release/app-release.aab',
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+    
+    # Notify team
+    slack(
+      message: "New Ant Connect alpha build uploaded to Play Store! 🚀",
+      success: true
+    ) if ENV["SLACK_URL"]
+  end
+
+  desc "Deploy to beta track (open testing)"
+  lane :beta do
+    # Build the app bundle
+    build_aab
+    
+    # Upload to Play Console with metadata
+    upload_to_play_store(
+      track: 'beta',
+      aab: 'build/app/outputs/bundle/release/app-release.aab',
+      skip_upload_metadata: false,
+      skip_upload_images: false,
+      skip_upload_screenshots: false
+    )
+    
+    # Notify team
+    slack(
+      message: "New Ant Connect beta build uploaded to Play Store! 📱",
+      success: true
+    ) if ENV["SLACK_URL"]
+  end
+
+  desc "Deploy to production"
+  lane :release do
+    # Build the app bundle
+    build_aab
+    
+    # Upload to production track
+    upload_to_play_store(
+      track: 'production',
+      aab: 'build/app/outputs/bundle/release/app-release.aab',
+      skip_upload_metadata: false,
+      skip_upload_images: false,
+      skip_upload_screenshots: false,
+      release_status: 'draft' # Don't auto-publish, create draft for manual review
+    )
+    
+    # Notify team
+    slack(
+      message: "Ant Connect production build uploaded! Ready for Play Store review 🎉",
+      success: true
+    ) if ENV["SLACK_URL"]
+  end
+
+  desc "Automated production release (for CI/CD)"
+  lane :auto_release do
+    # Build and upload with auto-publish
+    build_aab
+    upload_to_play_store(
+      track: 'production',
+      aab: 'build/app/outputs/bundle/release/app-release.aab',
+      skip_upload_metadata: false,
+      skip_upload_images: false,
+      skip_upload_screenshots: false,
+      release_status: 'completed'
+    )
+  end
+
+  desc "Upload metadata only"
+  lane :metadata do
+    upload_to_play_store(
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_metadata: false,
+      skip_upload_images: false,
+      skip_upload_screenshots: false
+    )
+  end
+
+  desc "Generate and upload screenshots"
+  lane :screenshots do
+    # Screenshots would be generated here using screengrab or similar tools
+    # For now, we'll just upload existing ones
+    upload_to_play_store(
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: false,
+      skip_upload_screenshots: false
+    )
+  end
+
+  # Error handling
+  error do |lane, exception|
+    slack(
+      message: "❌ Android Fastlane failed in lane '#{lane}': #{exception.message}",
+      success: false
+    ) if ENV["SLACK_URL"]
+  end
+end

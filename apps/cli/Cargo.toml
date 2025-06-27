@@ -1,0 +1,24 @@
+[package]
+name = "ant-connect-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "Ant Connect CLI - P2P Foundation command-line interface"
+keywords = ["p2p", "networking", "cli", "decentralized"]
+categories = ["command-line-utilities", "network-programming"]
+
+[[bin]]
+name = "ant-connect"
+path = "src/main.rs"
+
+[dependencies]
+p2p-core = { path = "../../crates/p2p-core" }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber = "0.3"
+anyhow.workspace = true
+clap = { version = "4.0", features = ["derive"] }
+serde_json.workspace = true

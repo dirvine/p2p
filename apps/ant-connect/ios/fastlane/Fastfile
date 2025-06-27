@@ -1,0 +1,138 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+
+default_platform(:ios)
+
+platform :ios do
+  desc "Description of what the lane does"
+  
+  # Development/Testing lanes
+  lane :certificates do
+    match(type: "development")
+    match(type: "appstore")
+  end
+
+  lane :build_debug do
+    build_app(
+      scheme: "Runner",
+      export_method: "development",
+      output_directory: "./build/ios/ipa",
+      output_name: "ant-connect-debug.ipa"
+    )
+  end
+
+  lane :build_release do
+    # Ensure we have the latest certificates
+    match(type: "appstore")
+    
+    # Build the app
+    build_app(
+      scheme: "Runner",
+      export_method: "app-store",
+      output_directory: "./build/ios/ipa",
+      output_name: "ant-connect-release.ipa"
+    )
+  end
+
+  # TestFlight lanes
+  lane :beta do
+    # Build the app
+    build_release
+    
+    # Upload to TestFlight
+    upload_to_testflight(
+      ipa: "./build/ios/ipa/ant-connect-release.ipa",
+      skip_waiting_for_build_processing: true
+    )
+    
+    # Notify team
+    slack(
+      message: "New Ant Connect beta build uploaded to TestFlight! 🚀",
+      success: true
+    ) if ENV["SLACK_URL"]
+  end
+
+  # App Store lanes
+  lane :release do
+    # Ensure we have screenshots and metadata
+    deliver(
+      submit_for_review: false,
+      automatic_release: false,
+      force: true
+    )
+    
+    # Build and upload
+    build_release
+    upload_to_app_store(
+      ipa: "./build/ios/ipa/ant-connect-release.ipa",
+      submit_for_review: false,
+      automatic_release: false
+    )
+    
+    # Notify team
+    slack(
+      message: "Ant Connect iOS app uploaded to App Store Connect! Ready for review submission 📱",
+      success: true
+    ) if ENV["SLACK_URL"]
+  end
+
+  # Automated release lane (for CI/CD)
+  lane :auto_release do
+    # Build and upload for review
+    build_release
+    upload_to_app_store(
+      ipa: "./build/ios/ipa/ant-connect-release.ipa",
+      submit_for_review: true,
+      automatic_release: true,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+        add_id_info_serves_ads: false,
+        add_id_info_tracks_install: false,
+        add_id_info_tracks_action: false,
+        add_id_info_limits_tracking: false,
+        content_rights_has_rights: true,
+        content_rights_contains_third_party_content: false,
+        export_compliance_platform: "ios",
+        export_compliance_compliance_required: false,
+        export_compliance_encryption_updated: false,
+        export_compliance_app_type: nil,
+        export_compliance_uses_encryption: false,
+        export_compliance_is_exempt: true
+      }
+    )
+  end
+
+  # Screenshots lane
+  lane :screenshots do
+    capture_screenshots(
+      scheme: "Runner",
+      output_directory: "./fastlane/screenshots",
+      clear_previous_screenshots: true,
+      override_status_bar: true,
+      devices: [
+        "iPhone 15 Pro Max",
+        "iPhone 15 Pro", 
+        "iPhone SE (3rd generation)",
+        "iPad Pro (12.9-inch) (6th generation)"
+      ]
+    )
+  end
+
+  # Metadata management
+  lane :metadata do
+    deliver(
+      submit_for_review: false,
+      force: true,
+      skip_binary_upload: true,
+      skip_screenshots: true
+    )
+  end
+
+  # Error handling
+  error do |lane, exception|
+    slack(
+      message: "❌ Fastlane failed in lane '#{lane}': #{exception.message}",
+      success: false
+    ) if ENV["SLACK_URL"]
+  end
+end

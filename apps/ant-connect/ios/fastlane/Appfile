@@ -1,0 +1,16 @@
+# App Store Connect / Apple Developer Portal configuration
+
+# Apple ID for your Apple Developer account
+apple_id("developer@p2pfoundation.org") # Replace with your Apple ID
+
+# Bundle identifier of your app
+app_identifier("org.p2pfoundation.antconnect")
+
+# Team ID from Apple Developer Portal
+team_id("YOUR_TEAM_ID") # Replace with your Team ID
+
+# iTunes Connect Team ID (if different from Developer Portal Team ID)
+itunes_connect_id("YOUR_ITUNES_CONNECT_TEAM_ID") # Replace with your iTunes Connect Team ID
+
+# For more information about the Appfile, see:
+#     https://docs.fastlane.tools/advanced/#appfile

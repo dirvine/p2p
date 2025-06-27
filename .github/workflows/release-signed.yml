@@ -1,0 +1,218 @@
+name: Release Desktop App (Signed)
+
+# This workflow includes code signing for production releases
+# Prerequisites:
+# 1. Apple Developer Certificate (macOS)
+# 2. Windows Code Signing Certificate
+# 3. Set up the following secrets:
+#    - APPLE_CERTIFICATE: Base64 encoded .p12 certificate
+#    - APPLE_CERTIFICATE_PASSWORD: Certificate password
+#    - APPLE_SIGNING_IDENTITY: Certificate common name
+#    - APPLE_ID: Your Apple ID
+#    - APPLE_PASSWORD: App-specific password
+#    - APPLE_TEAM_ID: Your Team ID
+#    - WINDOWS_CERTIFICATE: Base64 encoded .pfx certificate
+#    - WINDOWS_CERTIFICATE_PASSWORD: Certificate password
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release'
+        required: true
+        type: string
+
+jobs:
+  create-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.id }}
+      release_upload_url: ${{ steps.create-release.outputs.upload_url }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Create release
+        id: create-release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: app-v${{ github.event.inputs.version }}
+          release_name: Saorsa Desktop v${{ github.event.inputs.version }}
+          body: |
+            ## Saorsa Desktop v${{ github.event.inputs.version }}
+            
+            ### ✅ Code Signed Release
+            This release includes properly signed binaries for enhanced security:
+            - **macOS**: Signed and notarized with Apple Developer ID
+            - **Windows**: Signed with trusted certificate
+            
+            ### 📦 Downloads
+            Choose the appropriate installer for your platform below.
+            
+            ### 🔐 Security
+            All binaries in this release are cryptographically signed to ensure authenticity.
+          draft: true
+          prerelease: false
+
+  build-tauri:
+    needs: create-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target universal-apple-darwin'
+            name: 'macOS (Universal)'
+          - platform: 'ubuntu-22.04'
+            args: ''
+            name: 'Linux'
+          - platform: 'windows-latest'
+            args: ''
+            name: 'Windows'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'npm'
+          cache-dependency-path: apps/desktop-tauri/package-lock.json
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './apps/desktop-tauri/src-tauri -> target'
+
+      # macOS Code Signing
+      - name: Import Apple Certificate
+        if: matrix.platform == 'macos-latest' && env.APPLE_CERTIFICATE
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          # Decode certificate
+          echo $APPLE_CERTIFICATE | base64 --decode > $CERTIFICATE_PATH
+
+          # Create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # Import certificate
+          security import $CERTIFICATE_PATH -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+          # Clean up
+          rm $CERTIFICATE_PATH
+
+      # Windows Code Signing
+      - name: Import Windows Certificate
+        if: matrix.platform == 'windows-latest' && env.WINDOWS_CERTIFICATE
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $cert = [System.Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+          $certPath = "$env:RUNNER_TEMP\certificate.pfx"
+          [System.IO.File]::WriteAllBytes($certPath, $cert)
+          
+          # Import certificate to store
+          $securePassword = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          Import-PfxCertificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\My -Password $securePassword
+          
+          # Clean up
+          Remove-Item $certPath
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.0-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install frontend dependencies
+        run: |
+          cd apps/desktop-tauri
+          npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENABLE_CODE_SIGNING: ${{ secrets.APPLE_CERTIFICATE != '' || secrets.WINDOWS_CERTIFICATE != '' }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop-tauri
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          tagName: app-v${{ github.event.inputs.version }}
+          args: ${{ matrix.args }}
+
+      # macOS Notarization
+      - name: Notarize macOS app
+        if: matrix.platform == 'macos-latest' && env.APPLE_ID
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Find the built .dmg file
+          DMG_PATH=$(find apps/desktop-tauri/src-tauri/target -name "*.dmg" -type f | head -n 1)
+          
+          if [ -n "$DMG_PATH" ]; then
+            echo "Notarizing $DMG_PATH"
+            
+            # Submit for notarization
+            xcrun notarytool submit "$DMG_PATH" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait
+            
+            # Staple the notarization
+            xcrun stapler staple "$DMG_PATH"
+          fi
+
+  publish-release:
+    needs: [create-release, build-tauri]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: '${{ needs.create-release.outputs.release_id }}',
+              draft: false
+            })

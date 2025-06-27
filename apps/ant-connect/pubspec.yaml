@@ -1,7 +1,10 @@
-name: connect
-description: "Decentralized P2P chat application - Connect with peers directly without servers"
+name: ant_connect
+description: "Connect to the decentralized P2P Foundation network using human-friendly three-word addresses"
 publish_to: 'none'
 version: 1.0.0+1
+homepage: https://github.com/dirvine/p2p
+repository: https://github.com/dirvine/p2p
+issue_tracker: https://github.com/dirvine/p2p/issues
 
 environment:
   sdk: '>=3.2.0 <4.0.0'

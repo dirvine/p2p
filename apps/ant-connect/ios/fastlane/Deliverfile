@@ -1,0 +1,83 @@
+# The Deliverfile allows you to store various App Store Connect metadata
+# For more information, check out the docs
+# https://docs.fastlane.tools/actions/deliver/
+
+# App Information
+app_identifier "org.p2pfoundation.antconnect"
+username "developer@p2pfoundation.org" # Replace with your Apple ID
+
+# App Metadata
+name({
+  "en-US" => "Ant Connect - P2P Foundation"
+})
+
+subtitle({
+  "en-US" => "Decentralized Network Connection"
+})
+
+description({
+  "en-US" => "Connect to the decentralized P2P Foundation network using human-friendly three-word addresses.
+
+🔤 Three-Word Addresses
+Transform complex network addresses into memorable phrases like 'global.fast.eagle' for easy sharing and connection.
+
+🌐 Universal Connectivity
+Connect across IPv4 and IPv6 networks with automatic tunneling and NAT traversal.
+
+🔒 Secure by Design
+Built on QUIC protocol with end-to-end encryption and decentralized architecture.
+
+🤖 AI-Ready
+Each node includes MCP (Model Context Protocol) servers for seamless AI agent communication.
+
+⚡ Lightning Fast
+Optimized for performance with minimal latency and efficient resource usage.
+
+🌍 Global Network
+Join a worldwide mesh of bootstrap nodes and peer connections.
+
+Features:
+• Human-friendly three-word network addresses
+• Cross-platform compatibility (iOS, Android, Web, Desktop)
+• Real-time P2P messaging and file sharing
+• Network diagnostics and connection status
+• Automatic tunnel detection and configuration
+• Bootstrap node discovery and connection
+• Offline-capable Progressive Web App features
+
+Perfect for developers, researchers, and anyone interested in decentralized networking technology."
+})
+
+keywords({
+  "en-US" => "p2p,networking,decentralized,blockchain,mesh,communication,three-word,addresses,QUIC,IPv6,tunneling"
+})
+
+promotional_text({
+  "en-US" => "Revolutionary P2P networking with three-word addresses! Connect instantly to the global decentralized network."
+})
+
+# App Store Configuration
+copyright "2024 P2P Foundation"
+primary_category "UTILITIES"
+secondary_category "NETWORKING"
+
+# Review Information
+review_information({
+  first_name: "David",
+  last_name: "Irvine", 
+  phone_number: "+1234567890", # Replace with actual number
+  email_address: "review@p2pfoundation.org", # Replace with actual email
+  demo_user: "demo@p2pfoundation.org",
+  demo_password: "DemoPass123!",
+  notes: "This app connects to decentralized P2P networks. For testing, use the bootstrap nodes 'global.fast.eagle' or 'foundation.main.bootstrap' in the Quick Connect section."
+})
+
+# Submission Configuration
+submit_for_review false
+automatic_release false
+
+# Age Rating
+app_rating_config_path "./fastlane/metadata/app_store_rating_config.json"
+
+# Privacy Configuration
+app_store_connect_api_key_path "./fastlane/AuthKey.p8" # Will be set up separately

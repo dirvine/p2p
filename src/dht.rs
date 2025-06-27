@@ -1682,6 +1682,257 @@ impl DHT {
             final_state,
         })
     }
+    
+    // ===============================
+    // INBOX SYSTEM IMPLEMENTATION
+    // ===============================
+    
+    /// Create a new inbox for a user with infinite TTL
+    pub async fn create_inbox(&self, inbox_id: &str, owner_peer_id: PeerId) -> Result<InboxInfo> {
+        info!("Creating inbox {} for peer {}", inbox_id, owner_peer_id);
+        
+        let inbox_key = Key::from_inbox_id(inbox_id);
+        
+        // Create inbox metadata record with infinite TTL
+        let inbox_metadata = InboxMetadata {
+            inbox_id: inbox_id.to_string(),
+            owner: owner_peer_id.clone(),
+            created_at: SystemTime::now(),
+            message_count: 0,
+            max_messages: 1000, // Configurable limit
+            is_public: true,
+            access_keys: vec![owner_peer_id.clone()],
+        };
+        
+        let metadata_value = serde_json::to_vec(&inbox_metadata)
+            .map_err(|e| P2PError::DHT(format!("Failed to serialize inbox metadata: {}", e)))?;
+        
+        let metadata_record = Record {
+            key: inbox_key.clone(),
+            value: metadata_value,
+            publisher: owner_peer_id.clone(),
+            created_at: SystemTime::now(),
+            expires_at: SystemTime::UNIX_EPOCH + Duration::from_secs(u64::MAX), // Infinite TTL
+            signature: None,
+        };
+        
+        // Store metadata with infinite TTL
+        self.put_record_with_infinite_ttl(metadata_record).await?;
+        
+        // Create empty message index
+        let index_key = Key::from_inbox_index(inbox_id);
+        let empty_index = InboxMessageIndex {
+            inbox_id: inbox_id.to_string(),
+            messages: Vec::new(),
+            last_updated: SystemTime::now(),
+        };
+        
+        let index_value = serde_json::to_vec(&empty_index)
+            .map_err(|e| P2PError::DHT(format!("Failed to serialize inbox index: {}", e)))?;
+        
+        let index_record = Record {
+            key: index_key,
+            value: index_value,
+            publisher: owner_peer_id.clone(),
+            created_at: SystemTime::now(),
+            expires_at: SystemTime::UNIX_EPOCH + Duration::from_secs(u64::MAX), // Infinite TTL
+            signature: None,
+        };
+        
+        self.put_record_with_infinite_ttl(index_record).await?;
+        
+        let inbox_info = InboxInfo {
+            inbox_id: inbox_id.to_string(),
+            three_word_address: self.generate_three_word_address(inbox_id),
+            owner: owner_peer_id,
+            created_at: SystemTime::now(),
+            message_count: 0,
+            is_accessible: true,
+        };
+        
+        info!("Successfully created inbox {} with three-word address: {}", 
+              inbox_id, inbox_info.three_word_address);
+        
+        Ok(inbox_info)
+    }
+    
+    /// Send a message to an inbox
+    pub async fn send_message_to_inbox(&self, inbox_id: &str, message: InboxMessage) -> Result<()> {
+        info!("Sending message to inbox {}", inbox_id);
+        
+        // Get current inbox metadata
+        let inbox_key = Key::from_inbox_id(inbox_id);
+        let metadata_record = self.get(&inbox_key).await
+            .ok_or_else(|| P2PError::DHT(format!("Inbox {} not found", inbox_id)))?;
+        
+        let mut inbox_metadata: InboxMetadata = serde_json::from_slice(&metadata_record.value)
+            .map_err(|e| P2PError::DHT(format!("Failed to deserialize inbox metadata: {}", e)))?;
+        
+        // Check message limit
+        if inbox_metadata.message_count >= inbox_metadata.max_messages {
+            return Err(P2PError::DHT(format!("Inbox {} is full", inbox_id)));
+        }
+        
+        // Create message record with infinite TTL
+        let message_key = Key::from_inbox_message(inbox_id, &message.id);
+        let message_value = serde_json::to_vec(&message)
+            .map_err(|e| P2PError::DHT(format!("Failed to serialize message: {}", e)))?;
+        
+        let message_record = Record {
+            key: message_key.clone(),
+            value: message_value,
+            publisher: message.sender.clone(),
+            created_at: message.timestamp,
+            expires_at: SystemTime::UNIX_EPOCH + Duration::from_secs(u64::MAX), // Infinite TTL
+            signature: None,
+        };
+        
+        self.put_record_with_infinite_ttl(message_record).await?;
+        
+        // Update message index
+        let index_key = Key::from_inbox_index(inbox_id);
+        let index_record = self.get(&index_key).await
+            .ok_or_else(|| P2PError::DHT(format!("Inbox index {} not found", inbox_id)))?;
+        
+        let mut message_index: InboxMessageIndex = serde_json::from_slice(&index_record.value)
+            .map_err(|e| P2PError::DHT(format!("Failed to deserialize message index: {}", e)))?;
+        
+        message_index.messages.push(MessageRef {
+            message_id: message.id.clone(),
+            sender: message.sender.clone(),
+            timestamp: message.timestamp,
+            message_type: message.message_type.clone(),
+        });
+        message_index.last_updated = SystemTime::now();
+        
+        // Update metadata
+        inbox_metadata.message_count += 1;
+        
+        // Store updated index and metadata
+        let updated_index_value = serde_json::to_vec(&message_index)
+            .map_err(|e| P2PError::DHT(format!("Failed to serialize updated index: {}", e)))?;
+        
+        let updated_metadata_value = serde_json::to_vec(&inbox_metadata)
+            .map_err(|e| P2PError::DHT(format!("Failed to serialize updated metadata: {}", e)))?;
+        
+        let updated_index_record = Record {
+            key: index_key,
+            value: updated_index_value,
+            publisher: message.sender.clone(),
+            created_at: SystemTime::now(),
+            expires_at: SystemTime::UNIX_EPOCH + Duration::from_secs(u64::MAX),
+            signature: None,
+        };
+        
+        let updated_metadata_record = Record {
+            key: inbox_key,
+            value: updated_metadata_value,
+            publisher: message.sender.clone(),
+            created_at: SystemTime::now(),
+            expires_at: SystemTime::UNIX_EPOCH + Duration::from_secs(u64::MAX),
+            signature: None,
+        };
+        
+        self.put_record_with_infinite_ttl(updated_index_record).await?;
+        self.put_record_with_infinite_ttl(updated_metadata_record).await?;
+        
+        info!("Successfully sent message {} to inbox {}", message.id, inbox_id);
+        Ok(())
+    }
+    
+    /// Get messages from an inbox
+    pub async fn get_inbox_messages(&self, inbox_id: &str, limit: Option<usize>) -> Result<Vec<InboxMessage>> {
+        info!("Retrieving messages from inbox {}", inbox_id);
+        
+        let index_key = Key::from_inbox_index(inbox_id);
+        let index_record = self.get(&index_key).await
+            .ok_or_else(|| P2PError::DHT(format!("Inbox {} not found", inbox_id)))?;
+        
+        let message_index: InboxMessageIndex = serde_json::from_slice(&index_record.value)
+            .map_err(|e| P2PError::DHT(format!("Failed to deserialize message index: {}", e)))?;
+        
+        let mut messages = Vec::new();
+        let message_refs: Vec<&MessageRef> = if let Some(limit) = limit {
+            message_index.messages.iter().rev().take(limit).collect()
+        } else {
+            message_index.messages.iter().collect()
+        };
+        
+        for message_ref in message_refs {
+            let message_key = Key::from_inbox_message(inbox_id, &message_ref.message_id);
+            if let Some(message_record) = self.get(&message_key).await {
+                if let Ok(message) = serde_json::from_slice::<InboxMessage>(&message_record.value) {
+                    messages.push(message);
+                }
+            }
+        }
+        
+        // Sort messages by timestamp (newest first)
+        messages.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        
+        info!("Retrieved {} messages from inbox {}", messages.len(), inbox_id);
+        Ok(messages)
+    }
+    
+    /// Get inbox information
+    pub async fn get_inbox_info(&self, inbox_id: &str) -> Result<Option<InboxInfo>> {
+        let inbox_key = Key::from_inbox_id(inbox_id);
+        let metadata_record = self.get(&inbox_key).await;
+        
+        if let Some(record) = metadata_record {
+            let metadata: InboxMetadata = serde_json::from_slice(&record.value)
+                .map_err(|e| P2PError::DHT(format!("Failed to deserialize inbox metadata: {}", e)))?;
+            
+            let inbox_info = InboxInfo {
+                inbox_id: inbox_id.to_string(),
+                three_word_address: self.generate_three_word_address(inbox_id),
+                owner: metadata.owner,
+                created_at: metadata.created_at,
+                message_count: metadata.message_count,
+                is_accessible: true,
+            };
+            
+            Ok(Some(inbox_info))
+        } else {
+            Ok(None)
+        }
+    }
+    
+    /// Store a record with infinite TTL (never expires)
+    async fn put_record_with_infinite_ttl(&self, record: Record) -> Result<()> {
+        // Store locally first
+        self.storage.store(record.clone()).await?;
+        
+        // Find closest nodes for replication
+        let closest_nodes = self.routing_table
+            .closest_nodes(&record.key, self.config.replication_factor)
+            .await;
+        
+        // Replicate to closest nodes
+        for node in &closest_nodes {
+            if let Err(e) = self.replicate_record(&record, node).await {
+                debug!("Failed to replicate infinite TTL record to node {}: {}", node.peer_id, e);
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Generate a three-word address for an inbox
+    fn generate_three_word_address(&self, inbox_id: &str) -> String {
+        use crate::bootstrap::words::WordEncoder;
+        
+        let encoder = WordEncoder::new();
+        let fake_multiaddr = format!("/inbox/{}/dht", inbox_id).parse().unwrap_or_else(|_| {
+            "/ip6/::1/udp/9000/quic".parse().unwrap()
+        });
+        
+        if let Ok(words) = encoder.encode_multiaddr(&fake_multiaddr) {
+            words.to_string()
+        } else {
+            format!("inbox.{}.messages", inbox_id.chars().take(8).collect::<String>())
+        }
+    }
 }
 
 /// DHT statistics
@@ -1780,6 +2031,106 @@ impl LookupState {
     /// Check if lookup is complete
     pub fn is_complete(&self) -> bool {
         self.to_query.is_empty() || self.started_at.elapsed() > Duration::from_secs(30)
+    }
+}
+
+// ===============================
+// INBOX SYSTEM DATA STRUCTURES
+// ===============================
+
+/// Inbox metadata stored in DHT
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InboxMetadata {
+    pub inbox_id: String,
+    pub owner: PeerId,
+    pub created_at: SystemTime,
+    pub message_count: usize,
+    pub max_messages: usize,
+    pub is_public: bool,
+    pub access_keys: Vec<PeerId>,
+}
+
+/// Inbox message stored in DHT
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InboxMessage {
+    pub id: String,
+    pub sender: PeerId,
+    pub recipient_inbox: String,
+    pub content: String,
+    pub message_type: String,
+    pub timestamp: SystemTime,
+    pub attachments: Vec<MessageAttachment>,
+}
+
+/// Message attachment metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageAttachment {
+    pub filename: String,
+    pub content_type: String,
+    pub size: u64,
+    pub hash: String,
+}
+
+/// Message index for efficient inbox querying
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InboxMessageIndex {
+    pub inbox_id: String,
+    pub messages: Vec<MessageRef>,
+    pub last_updated: SystemTime,
+}
+
+/// Reference to a message in the index
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageRef {
+    pub message_id: String,
+    pub sender: PeerId,
+    pub timestamp: SystemTime,
+    pub message_type: String,
+}
+
+/// Inbox information returned to users
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InboxInfo {
+    pub inbox_id: String,
+    pub three_word_address: String,
+    pub owner: PeerId,
+    pub created_at: SystemTime,
+    pub message_count: usize,
+    pub is_accessible: bool,
+}
+
+// ===============================
+// KEY EXTENSIONS FOR INBOX SYSTEM
+// ===============================
+
+impl Key {
+    /// Create a key for inbox metadata
+    pub fn from_inbox_id(inbox_id: &str) -> Self {
+        let mut hasher = Sha256::new();
+        hasher.update(b"INBOX_METADATA:");
+        hasher.update(inbox_id.as_bytes());
+        let hash = hasher.finalize();
+        Key { hash: hash.into() }
+    }
+    
+    /// Create a key for inbox message index
+    pub fn from_inbox_index(inbox_id: &str) -> Self {
+        let mut hasher = Sha256::new();
+        hasher.update(b"INBOX_INDEX:");
+        hasher.update(inbox_id.as_bytes());
+        let hash = hasher.finalize();
+        Key { hash: hash.into() }
+    }
+    
+    /// Create a key for a specific message in an inbox
+    pub fn from_inbox_message(inbox_id: &str, message_id: &str) -> Self {
+        let mut hasher = Sha256::new();
+        hasher.update(b"INBOX_MESSAGE:");
+        hasher.update(inbox_id.as_bytes());
+        hasher.update(b":");
+        hasher.update(message_id.as_bytes());
+        let hash = hasher.finalize();
+        Key { hash: hash.into() }
     }
 }
 

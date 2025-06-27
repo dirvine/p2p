@@ -12,12 +12,13 @@
 //! - DHT-based messaging and contacts
 //! - Cross-platform desktop support (macOS, Windows, Linux)
 
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State, Window};
+use tauri::{Manager, State};
 use tokio::sync::{Mutex, RwLock};
 use tracing::{error, info, warn};
 
@@ -496,9 +497,10 @@ fn init_logging() {
         .init();
 }
 
+
 /// Main Tauri application entry point
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run_app() {
     init_logging();
     info!("Starting Saorsa");
 
@@ -540,4 +542,19 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Public API for running Saorsa from external binaries (for cargo install)
+pub fn run_desktop_app() -> anyhow::Result<()> {
+    // Initialize logging
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            std::env::var("RUST_LOG")
+                .unwrap_or_else(|_| "saorsa=info,ant_core=info".to_string())
+        )
+        .init();
+    
+    // Run the Tauri app
+    run_app();
+    Ok(())
 }

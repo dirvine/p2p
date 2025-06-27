@@ -1,0 +1,15 @@
+[package]
+name = "test-p2p-app"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "test_p2p_app"
+path = "test_p2p_app.rs"
+
+[dependencies]
+p2p-core = { path = "crates/p2p-core" }
+tokio = { version = "1.35", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+anyhow = "1.0"

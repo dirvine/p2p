@@ -1,0 +1,107 @@
+name: Test Desktop Build
+
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop-tauri/**'
+      - '.github/workflows/test-desktop-build.yml'
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'apps/desktop-tauri/**'
+      - '.github/workflows/test-desktop-build.yml'
+  workflow_dispatch:
+
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  test-tauri:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+            name: 'macOS (Intel)'
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+            name: 'macOS (Apple Silicon)'
+          - platform: 'ubuntu-22.04'
+            args: ''
+            name: 'Linux'
+          - platform: 'windows-latest'
+            args: ''
+            name: 'Windows'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'npm'
+          cache-dependency-path: apps/desktop-tauri/package-lock.json
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './apps/desktop-tauri/src-tauri -> target'
+          key: ${{ matrix.platform }}-test
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.0-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev
+
+      - name: Install frontend dependencies
+        run: |
+          cd apps/desktop-tauri
+          npm ci
+
+      - name: Lint frontend
+        run: |
+          cd apps/desktop-tauri
+          npm run lint || true
+
+      - name: Build frontend
+        run: |
+          cd apps/desktop-tauri
+          npm run build
+
+      - name: Run Rust tests
+        run: |
+          cd apps/desktop-tauri/src-tauri
+          cargo test --release ${{ matrix.args }}
+
+      - name: Build Tauri app (Debug)
+        run: |
+          cd apps/desktop-tauri
+          npm run tauri build -- --debug ${{ matrix.args }}
+
+      - name: Upload debug artifacts
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: debug-build-${{ matrix.platform }}-${{ github.sha }}
+          path: |
+            apps/desktop-tauri/src-tauri/target/debug/
+            apps/desktop-tauri/src-tauri/target/release/
+          retention-days: 3
