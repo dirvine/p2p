@@ -21,6 +21,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   
   initializeEventListeners();
   await initializeNetwork();
+  await loadUserProfile(); // Load user identity and profile (await to ensure it completes)
   loadContacts();
   loadSettings();
 });
@@ -54,6 +55,9 @@ function initializeEventListeners() {
   });
   
   sendBtn.addEventListener('click', sendMessage);
+  
+  // Settings button
+  document.getElementById('settings-btn').addEventListener('click', openProfileModal);
   
   // System menu
   document.getElementById('system-menu').addEventListener('click', (e) => {
@@ -579,12 +583,19 @@ async function loadUserProfile() {
   try {
     // Load user identity if available
     const identity = await invoke('get_user_identity');
+    console.log('Loaded identity:', identity);
     if (identity) {
       appState.userIdentity = identity;
       document.getElementById('user-id').textContent = identity.user_id;
       document.getElementById('public-key').textContent = identity.public_key.slice(0, 32) + '...';
       document.getElementById('three-word-address').value = identity.three_word_address;
       document.getElementById('display-name').value = identity.display_name_hint.split(':')[0];
+      
+      // Also display three-word address in the header
+      const headerElement = document.querySelector('.app-header h1');
+      if (headerElement && identity.three_word_address) {
+        headerElement.innerHTML = `🕊️ Saorsa <span style="font-size: 0.6em; opacity: 0.7; margin-left: 10px;">${identity.three_word_address}</span>`;
+      }
       
       // Update verification status
       const verificationBadge = document.getElementById('verification-level');
@@ -596,6 +607,10 @@ async function loadUserProfile() {
         document.getElementById('ipv6-binding-status').innerHTML = '✅ Bound';
         document.getElementById('ipv6-binding-status').className = 'status-indicator success';
       }
+    } else {
+      // No identity exists - create one automatically for first-time users
+      console.log('No identity found, creating new identity...');
+      await createNewIdentity();
     }
     
     // Load user profile if available
