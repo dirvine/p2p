@@ -1,198 +1,182 @@
 # P2P Foundation
 
-A next-generation peer-to-peer networking foundation built in Rust, featuring QUIC transport, IPv6-first architecture, comprehensive tunneling support, and fully integrated AI capabilities through Model Context Protocol (MCP) servers at each node.
+A next-generation peer-to-peer networking foundation built in Rust, featuring QUIC transport, privacy-first identity system, and fully integrated AI capabilities through Model Context Protocol (MCP) servers at each node.
 
-## Features
+## 🏗️ Project Structure
 
-- ✨ **Three-Word Addresses**: Share `global.fast.eagle` instead of complex multiaddrs - revolutionary UX!
-- 🚀 **QUIC Transport**: Modern protocol with 0-RTT connections and built-in encryption
-- 🌐 **Universal IPv6**: Works on any network via intelligent tunneling (6to4, Teredo, 6in4)
-- 🔍 **S/Kademlia DHT**: Secure distributed routing with advanced protection mechanisms
-- 🛡️ **NAT Traversal**: Automatic connectivity behind firewalls and NAT devices
-- 🤖 **AI-Native**: Built-in MCP server at every node with tool discovery and execution
-- 📱 **Flutter Apps**: Cross-platform mobile/desktop apps with modern UI (Ant Connect)
-- 🔒 **Security First**: End-to-end encryption, authentication, and comprehensive access control
-- 📦 **Production Ready**: Extensive test coverage, benchmarks, and hardening features
-- 🛠️ **Developer Friendly**: Trait-based architecture with comprehensive documentation
+This is a Cargo workspace containing multiple interconnected components:
 
-## Quick Start
+### 📦 Core Library: [Ant Core](https://crates.io/crates/ant-core)
+[![Crates.io](https://img.shields.io/crates/v/ant-core)](https://crates.io/crates/ant-core)
+[![Documentation](https://docs.rs/ant-core/badge.svg)](https://docs.rs/ant-core)
+
+The foundational P2P networking library (`crates/p2p-core`) providing:
+- **QUIC Transport**: Modern, efficient networking with built-in encryption
+- **Distributed Hash Table (DHT)**: Kademlia-based distributed storage
+- **Privacy-First Identity**: Encrypted profiles with friend-based access control
+- **Three-Word Addresses**: Human-readable network addressing system
+- **MCP Integration**: Model Context Protocol for AI agent communication
+
+### 🕊️ Desktop Application: Saorsa
+Built with Tauri (`apps/desktop-tauri`) - the flagship P2P application featuring:
+- Real-time encrypted messaging
+- Decentralized contact management
+- Profile sharing with granular privacy controls
+- Cross-platform desktop support (macOS, Windows, Linux)
+- Native performance with web UI
+
+### 🔧 Developer Tools
+- **CLI Tools** (`crates/p2p-cli`): Command-line utilities for network management
+- **FFI Bindings** (`crates/p2p-ffi`): Enable Flutter and other language integration
+
+## 🚀 Quick Start
+
+### Using Ant Core Library
+
+Add to your `Cargo.toml`:
+```toml
+[dependencies]
+ant-core = "0.1.8"
+tokio = { version = "1", features = ["full"] }
+```
 
 ```rust
-use p2p_foundation::{P2PNode, NodeConfig};
-use p2p_foundation::mcp::{Tool, FunctionToolHandler};
-use serde_json::json;
+use ant_core::{
+    network::{P2PNode, NodeConfig},
+    identity::manager::{IdentityManager, IdentityManagerConfig},
+};
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Create a P2P node with MCP server
-    let node = P2PNode::builder()
-        .listen_on("/ip6/::/tcp/9000")
-        .with_mcp_server()
-        .build()
-        .await?;
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create a P2P node
+    let config = NodeConfig::default();
+    let node = P2PNode::new(config).await?;
     
-    // Register an MCP tool
-    let echo_tool = Tool::new(
-        "echo",
-        "Echo service that returns input",
-        json!({
-            "type": "object",
-            "properties": {
-                "message": {"type": "string"}
-            },
-            "required": ["message"]
-        })
-    ).handler(FunctionToolHandler::new(|args| async move {
-        Ok(json!({"echo": args["message"]}))
-    })).build()?;
+    // Create identity manager
+    let identity_manager = IdentityManager::new(IdentityManagerConfig::default());
     
-    node.register_mcp_tool(echo_tool).await?;
-    
-    // Start the node
-    node.start().await?;
-    
-    // Connect to peers and discover services
-    let peer_id = node.connect_peer("/ip6/2001:db8::1/tcp/9000").await?;
-    let remote_tools = node.list_remote_mcp_tools(&peer_id).await?;
-    
-    // Call remote tools
-    let result = node.call_remote_mcp_tool(
-        &peer_id, 
-        "calculator", 
-        json!({"a": 5, "b": 3, "operation": "add"})
+    // Create a user identity
+    let identity = identity_manager.create_identity(
+        "My Display Name".to_string(),
+        "my.three.words".to_string(),
+        None,
+        None,
     ).await?;
     
-    println!("Result: {}", result);
-    
+    println!("Created identity: {}", identity.user_id);
     Ok(())
 }
 ```
 
-## Installation
+### Using Saorsa Desktop App
 
-Add to your `Cargo.toml`:
+1. **Install from crates.io** (coming soon):
+   ```bash
+   cargo install saorsa
+   saorsa
+   ```
 
-```toml
-[dependencies]
-p2p-foundation = "0.1.0"
-```
+2. **Build from source**:
+   ```bash
+   git clone https://github.com/dirvine/p2p.git
+   cd p2p
+   cargo build --release
+   open target/release/bundle/macos/Saorsa.app
+   ```
 
-## Architecture
+## ✨ Key Features
+
+### 🔒 **Privacy-First Architecture**
+- End-to-end encryption by default
+- Encrypted user profiles stored in DHT
+- Friend-based access control with granular permissions
+- Anti-spoofing with cryptographic verification
+
+### 🌐 **Universal Connectivity**
+- IPv6-first with comprehensive IPv4 tunneling
+- Automatic NAT traversal
+- Works across any network topology
+- Bootstrap system for peer discovery
+
+### 🤖 **AI-Native Design**
+- MCP (Model Context Protocol) server integration
+- Built for AI agent communication
+- Tool system for extensible functionality
+
+### 🎯 **Developer Experience**
+- Human-readable three-word addresses (`forest.lightning.compass`)
+- Comprehensive Rust APIs with async/await
+- Cross-platform FFI bindings for mobile development
+- Extensive documentation and examples
+
+## 🏛️ Architecture
 
 ```
 ┌─────────────────────────────────────┐
+│          Saorsa Desktop App         │  ← Tauri-based UI
+├─────────────────────────────────────┤
+│        Identity Management          │  ← Encrypted profiles, friends
+├─────────────────────────────────────┤
 │     MCP Server Layer (AI Tools)     │  ← Tool discovery, remote execution
 ├─────────────────────────────────────┤
-│   Security & Authentication Layer   │  ← JWT auth, permissions, audit
+│   Kademlia DHT (Secure Storage)     │  ← Distributed data storage
 ├─────────────────────────────────────┤
-│   S/Kademlia DHT (Secure Routing)   │  ← Disjoint paths, IPv6 diversity
+│      QUIC Transport Layer           │  ← Modern, secure transport
 ├─────────────────────────────────────┤
-│      libp2p Core (Network)          │  ← Peer discovery, messaging
-├─────────────────────────────────────┤
-│    QUIC Transport Layer             │  ← Modern, secure transport
-├─────────────────────────────────────┤
-│ IPv6/IPv4 Tunneling (Auto-Select)   │  ← 6to4, Teredo, 6in4
+│ IPv6/IPv4 Tunneling (Auto-Select)   │  ← Universal connectivity
 └─────────────────────────────────────┘
 ```
 
-### Key Components
+### Core Components
 
-- **MCP Layer**: Model Context Protocol servers at each node for AI tool integration
-- **Security Layer**: JWT authentication, capability-based permissions, audit logging
-- **S/Kademlia DHT**: Secure variant with disjoint path routing and IP diversity enforcement
-- **Tunneling**: Intelligent protocol selection based on network capabilities
-- **Transport**: QUIC-first with automatic fallback and 0-RTT connections
+- **Network**: P2P node management and configuration
+- **DHT**: Distributed hash table for decentralized storage
+- **Transport**: QUIC and TCP transport implementations
+- **Identity**: Privacy-first user identity and profile management
+- **MCP**: Model Context Protocol server for AI integration
+- **Bootstrap**: Peer discovery and network bootstrapping
 
-## IPv6/IPv4 Tunneling Protocols
+## 🔐 Security & Privacy
 
-### ✅ Fully Implemented
-- **6to4** (RFC 3056) - Automatic tunneling for public IPv4 addresses
-- **Teredo** (RFC 4380) - NAT traversal with UDP encapsulation  
-- **6in4** (RFC 4213) - Static tunneling with explicit endpoints
-- **DS-Lite** (RFC 6333) - ISP-provided dual-stack lite tunneling
-- **ISATAP** (RFC 5214) - Enterprise network tunneling with router discovery
-- **MAP-E/MAP-T** (RFC 7597/7599) - Modern ISP transition mechanisms with deterministic mapping
-- **Intelligent Auto-Selection** - Network capability-based protocol selection
-- **Performance Monitoring** - Real-time tunnel health and metrics
+The P2P Foundation implements comprehensive **defense-in-depth** security:
 
-## Three-Word Address System 🌟
+- **Transport encryption**: End-to-end via QUIC/TLS 1.3
+- **Peer authentication**: Ed25519 cryptographic identities
+- **Privacy-first profiles**: Encrypted data with friend-based sharing
+- **Access control**: Fine-grained capability-based permissions
+- **Rate limiting**: Per-peer request throttling and DoS protection
+- **Audit logging**: Comprehensive security event tracking
 
-Revolutionary user experience that transforms complex multiaddrs into memorable phrases:
+### Privacy Model
 
-```bash
-# Traditional way (hard to share)
-/ip6/2001:db8:85a3::8a2e:370:7334/udp/9001/quic
+1. **Default Privacy**: All profile data encrypted by default
+2. **Friend Network**: Share decryption keys only with trusted contacts
+3. **Granular Control**: Choose what information friends can see
+4. **Bloom Filter Discovery**: Find friends without revealing contacts
+5. **IPv6 Identity Binding**: Anti-spoofing cryptographic proofs
 
-# Three-word way (easy to remember and share)
-global.fast.eagle
-```
+## 📱 Cross-Platform Support
 
-### Benefits
-- **Human-friendly**: `forest.lightning.compass` vs `/ip6/::/udp/9000/quic`
-- **Voice-friendly**: Easy to share over phone or voice chat
-- **Error-resistant**: Much less prone to typos than long addresses
-- **Viral growth**: Users naturally share memorable addresses
+### Desktop (Tauri)
+- **macOS**: Native .app bundle with DMG installer
+- **Windows**: Native .exe with MSI installer
+- **Linux**: Native binary with AppImage
 
-### Usage
+### Mobile/Web (Flutter via FFI)
+- **iOS**: Native performance through FFI bindings
+- **Android**: Native performance through FFI bindings  
+- **Web**: WebAssembly compilation for browser deployment
 
-```bash
-# Bootstrap with three-word addresses
-cargo run --example chat -- --bootstrap-words 'global.fast.eagle'
+### Server/CLI
+- **Linux**: Optimized for edge deployment
+- **Docker**: Containerized deployment options
 
-# Traditional bootstrap still works
-cargo run --example chat -- --bootstrap '/ip6/::1/tcp/9000'
-```
-
-```rust
-use p2p_foundation::bootstrap::{WordEncoder, ThreeWordAddress};
-
-let encoder = WordEncoder::new();
-let multiaddr = "/ip6/2001:db8::1/udp/9000/quic".parse()?;
-let words = encoder.encode_multiaddr(&multiaddr)?;
-println!("Share: {}", words); // "outer.sharp.eagle"
-```
-
-### Flutter App Integration
-The Ant Connect app showcases the complete three-word experience:
-- Three-word input fields instead of complex multiaddr entry
-- QR code generation with three-word addresses  
-- Prominent sharing of your own memorable address
-
-## Model Context Protocol (MCP) Integration
-
-### ✅ Complete Implementation
-- **Tool Registration**: Register and discover AI tools across the network
-- **Remote Execution**: Execute tools on remote peers with full security
-- **Service Discovery**: DHT-based service advertisement and lookup
-- **Authentication**: JWT-based auth with configurable permissions
-- **Security Levels**: Public, Basic, Strong, and Admin access controls
-- **Rate Limiting**: Configurable request throttling per peer
-- **Audit Logging**: Comprehensive security event tracking
-- **Message Routing**: P2P message routing with TTL and reliability
-
-## Documentation
-
-- [Technical Specification](SPECIFICATION.md)
-- [Product Requirements](PRD.md)
-- [Security Framework](security.md)
-- [AI Development Guidelines](CLAUDE.md)
-- [API Documentation](https://docs.rs/p2p-foundation)
-
-## Examples
-
-See the [`examples/`](examples/) directory for:
-- Basic P2P node setup
-- DHT storage and retrieval
-- MCP tool registration and remote calling
-- Multi-node network simulation
-- IPv6 tunneling configuration
-- Security and authentication setup
-
-## Development
+## 🛠️ Development
 
 ### Prerequisites
 
 - Rust 1.75 or later
+- Node.js 18+ (for Tauri development)
 - IPv6 connectivity (native or tunneled)
 
 ### Building
@@ -202,8 +186,13 @@ See the [`examples/`](examples/) directory for:
 git clone https://github.com/dirvine/p2p.git
 cd p2p
 
-# Build the project
+# Build all components
 cargo build --release
+
+# Build desktop app specifically
+cd apps/desktop-tauri
+npm install
+cargo tauri build
 
 # Run tests
 cargo test --all-features
@@ -212,137 +201,103 @@ cargo test --all-features
 cargo bench
 ```
 
-### Testing
+### Testing Multi-Node Communication
 
 ```bash
-# Run all tests
-cargo test --all-features
+# Terminal 1: Start first node
+cargo run --bin ant-connect -- --port 9001 --bootstrap-file bootstrap.json
 
-# Core module tests
-cargo test --lib dht          # DHT and S/Kademlia tests
-cargo test --lib transport    # QUIC transport tests  
-cargo test --lib tunneling    # IPv6 tunneling tests
-cargo test --lib mcp          # MCP protocol tests
+# Terminal 2: Start second node
+cargo run --bin ant-connect -- --port 9002 --bootstrap /ip6/::1/tcp/9001
 
-# Comprehensive test suites
-cargo test --test mcp_integration_tests    # MCP integration
-cargo test --test mcp_security_tests       # MCP security features
-cargo test --test mcp_remote_tests         # Remote tool execution
-cargo test --test dslite_tests             # DS-Lite tunneling
-cargo test --test tunneling_tests          # Tunneling protocols
-cargo test --test security_tests           # S/Kademlia security
-
-# Integration tests (requires fixes)
-# cargo test --test integration
-
-# With debug logging
-RUST_LOG=debug cargo test test_teredo_tunneling
-RUST_LOG=debug cargo test test_mcp_remote_calling
+# Terminal 3: Build and run desktop app
+cd apps/desktop-tauri
+cargo tauri dev
 ```
 
-## Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-### Development Setup
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
-
-## Performance
+## 📊 Performance
 
 - **Connection establishment**: < 100ms (LAN), < 1s (Internet) 
 - **Throughput**: > 100 Mbps per connection via QUIC
 - **Memory usage**: < 100MB baseline per node
 - **Concurrent connections**: 1000+ with proper resource management
-- **MCP tool calls**: < 50ms local, < 500ms remote
 - **DHT operations**: < 200ms lookup, < 1s store/retrieve
 
-## Security
+## 📚 Documentation
 
-The P2P Foundation implements comprehensive **defense-in-depth** security across all layers:
+- **[Ant Core Documentation](https://docs.rs/ant-core)** - API reference
+- **[Technical Specification](SPECIFICATION.md)** - Detailed technical design
+- **[Development Guidelines](CLAUDE.md)** - AI assistant development guide
+- **[Examples](examples/)** - Working code examples
 
-- **Transport encryption**: End-to-end via QUIC/TLS 1.3
-- **Peer authentication**: Ed25519 cryptographic identities
-- **MCP security**: JWT tokens with configurable permissions  
-- **Access control**: Fine-grained capability-based permissions
-- **IPv6 diversity**: Network-level Sybil attack resistance
-- **Rate limiting**: Per-peer request throttling and DoS protection
-- **Audit logging**: Comprehensive security event tracking
-- **S/Kademlia DHT**: Enhanced security with disjoint path routing
-- **Attack resistance**: 99%+ Sybil attack prevention, 95% Eclipse attack resistance
+## 🗂️ Examples
 
-📋 **[Complete Security Framework Documentation →](security.md)**
+See the [`examples/`](examples/) directory for:
+- Basic P2P node setup
+- DHT storage and retrieval
+- Identity management and encrypted profiles
+- MCP tool registration and remote calling
+- Multi-node network simulation
+- Cross-platform application development
 
-## Implementation Roadmap
+## 🚧 Roadmap
 
-### ✅ Phase 1: Core Infrastructure (Completed)
-- [x] Core P2P networking foundation with libp2p
-- [x] QUIC-first transport layer with 0-RTT support  
-- [x] Comprehensive integration testing infrastructure
-- [x] Node discovery and peer management
+### ✅ Completed (v0.1.8)
+- [x] Core P2P networking with QUIC transport
+- [x] Privacy-first identity system with encrypted profiles
+- [x] DHT-based distributed storage
+- [x] Desktop application (Saorsa) with full UI
+- [x] Three-word address system
+- [x] MCP integration for AI capabilities
+- [x] Published to crates.io
 
-### ✅ Phase 2: Secure DHT Implementation (Completed)  
-- [x] S/Kademlia DHT with enhanced security features
-- [x] Disjoint path routing for attack resistance
-- [x] IPv6 diversity enforcement and reputation system
-- [x] Distance verification and routing table validation
-- [x] Security buckets and sibling list management
+### 🔄 In Progress
+- [ ] Enhanced NAT traversal techniques
+- [ ] Mobile app development (Flutter)
+- [ ] Advanced bootstrap strategies
+- [ ] Performance optimizations
 
-### ✅ Phase 3: IPv6/IPv4 Tunneling (Completed)
-- [x] Tunneling protocol architecture and trait system
-- [x] 6to4 automatic tunneling (RFC 3056)
-- [x] Teredo NAT traversal tunneling (RFC 4380)  
-- [x] 6in4 static tunneling (RFC 4213)
-- [x] DS-Lite ISP-provided tunneling (RFC 6333)
-- [x] ISATAP enterprise network tunneling (RFC 5214)
-- [x] MAP-E/MAP-T modern ISP transition mechanisms (RFC 7597/7599)
-- [x] Intelligent protocol auto-selection with scoring
-- [x] Network capability detection and performance monitoring
+### 📋 Planned
+- [ ] Voice/video calling capabilities
+- [ ] File sharing and synchronization
+- [ ] Advanced security features
+- [ ] Plugin system for extensibility
 
-### ✅ Phase 4: MCP Integration (Completed)
-- [x] Full Model Context Protocol server implementation
-- [x] Tool registration and discovery via DHT
-- [x] Remote tool execution with P2P message routing
-- [x] JWT-based authentication and authorization
-- [x] Multi-level security with permissions and rate limiting
-- [x] Comprehensive audit logging and security monitoring
+## 🤝 Contributing
 
-### ✅ Phase 5: Production Hardening (Completed)
-- [x] Comprehensive test coverage (30+ test files, 220+ tests)
-- [x] Security validation and penetration testing
-- [x] Performance benchmarking and optimization
-- [x] Error handling and graceful degradation
-- [x] Documentation and developer experience
+We welcome contributions! Please see our [contributing guidelines](CONTRIBUTING.md) for details.
 
-### 📋 Phase 6: Advanced Features (Planned)
-- [ ] Language bindings (Python, JavaScript, Go)
-- [ ] Mobile and IoT device optimization
-- [ ] Advanced performance monitoring and telemetry
-- [ ] Geographic routing and latency optimization
+### Development Workflow
 
-## License
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes following [CLAUDE.md](CLAUDE.md) guidelines
+4. Run tests and linting
+5. Submit a pull request
+
+## 📄 License
 
 Licensed under either of:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-- MIT license ([LICENSE-MIT](LICENSE-MIT))
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
 
-## Acknowledgments
+## 🔗 Links
+
+- **[Ant Core on crates.io](https://crates.io/crates/ant-core)**
+- **[Documentation](https://docs.rs/ant-core)**
+- **[Repository](https://github.com/dirvine/p2p)**
+- **[Issues](https://github.com/dirvine/p2p/issues)**
+
+## 🙏 Acknowledgments
 
 Built on top of excellent open source projects:
 - [Quinn](https://github.com/quinn-rs/quinn) - QUIC implementation
+- [Tauri](https://tauri.app/) - Desktop app framework
 - [Tokio](https://tokio.rs/) - Async runtime
-
-## Support
-
-- 🐛 Issues: [GitHub Issues](https://github.com/dirvine/p2p/issues)
 
 ---
 
-*Building the decentralized future, one node at a time.*
+*Building the decentralized future, one node at a time.* 🌐✨

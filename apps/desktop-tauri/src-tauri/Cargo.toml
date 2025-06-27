@@ -1,0 +1,47 @@
+[package]
+name = "saorsa"
+version = "0.1.8"
+description = "Saorsa - P2P Foundation Desktop Application"
+authors = ["David Irvine <david@maidsafe.net>"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "saorsa_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Core P2P library (direct access, no FFI overhead)
+ant-core = { path = "../../../crates/p2p-core" }
+
+# Tauri framework  
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Utilities
+anyhow = "1.0"
+uuid = { version = "1.0", features = ["v4"] }
+

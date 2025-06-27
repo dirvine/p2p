@@ -1,113 +1,71 @@
-[package]
-name = "p2p-foundation"
-version = "0.1.0"
+# P2P Foundation Workspace
+# Hybrid Architecture: Tauri Desktop + Flutter Mobile/Web + Shared Rust Core
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/p2p-core",           # Core P2P library (publishable to crates.io)
+    "crates/p2p-ffi",            # FFI bindings for Flutter
+    "crates/p2p-cli",            # CLI tools and utilities
+    "apps/desktop-tauri/src-tauri", # Tauri desktop application
+    "test-app",                  # Test application
+    "examples/*",                # Example applications
+]
+
+[workspace.package]
+version = "0.1.8"
 edition = "2021"
-authors = ["David Irvine <david@yourdomain.com>"]
-description = "A next-generation P2P networking foundation with human-friendly three-word addresses and built-in AI capabilities"
-documentation = "https://docs.rs/p2p-foundation"
+authors = ["David Irvine <david@maidsafe.net>"]
+license = "MIT OR Apache-2.0"
 homepage = "https://github.com/dirvine/p2p"
 repository = "https://github.com/dirvine/p2p"
-readme = "README.md"
-license = "MIT OR Apache-2.0"
-keywords = ["p2p", "networking", "three-word", "bootstrap", "flutter"]
-categories = ["network-programming", "asynchronous", "command-line-utilities"]
 
-[dependencies]
-# Async Runtime (minimal for now)
+[workspace.dependencies]
+# Shared dependencies across all workspace members
 tokio = { version = "1.35", features = ["full"] }
 futures = "0.3"
 async-trait = "0.1"
-
-# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-bytes = "1.0"
-
-# Error Handling
 anyhow = "1.0"
 thiserror = "1.0"
-
-# Logging
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Utilities
 uuid = { version = "1.0", features = ["v4"] }
-hex = "0.4"
-sha2 = "0.10"
-chrono = { version = "0.4", features = ["serde"] }
-base64 = "0.22"
-# Cryptography
-ed25519-dalek = { version = "1.0", features = ["rand"] }
-rand = { version = "0.7" }
 
-# QUIC Transport
+# P2P and networking
 quinn = "0.11"
 rustls = "0.23"
 rcgen = "0.13"
 
-# Configuration
-clap = { version = "4.4", features = ["derive"], optional = true }
-dirs = "5.0"
+# Cryptography
+ed25519-dalek = { version = "1.0", features = ["rand"] }
+rand = "0.7"
+sha2 = "0.10"
 
-# HTTP Client for tunneling auto-discovery
-reqwest = "0.11"
+# Utilities
+bytes = "1.0"
+hex = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
 
-# JWT for MCP authentication
-jsonwebtoken = "9.2"
-
-[dev-dependencies]
-tempfile = "3.10"
-pretty_assertions = "1.4"
-serial_test = "3.1"
-criterion = { version = "0.4", features = ["html_reports"] }
-
-[features]
-default = ["cli"]
-cli = ["clap"]
-
-[[bin]]
-name = "ant-connect"
-required-features = ["cli"]
-
-[[example]]
-name = "basic_node"
-
-[[example]]
-name = "dht_storage"
-
-[[example]]
-name = "mcp_service"
-
-[[example]]
-name = "chat"
-required-features = ["cli"]
-
-[[bench]]
-name = "dht_benchmark"
-harness = false
-
-[[bench]]
-name = "security_benchmark"
-harness = false
-
-[[bench]]
-name = "production_benchmark"
-harness = false
-
+# Workspace-level profiles
 [profile.release]
-lto = true
+lto = "thin"
 codegen-units = 1
 opt-level = 3
+panic = "abort"
 
 [profile.dev]
 opt-level = 0
+debug = true
 
 [profile.test]
 opt-level = 0
 
-[workspace]
-members = [
-    ".",
-    "examples/*",
-]
+# For faster builds during development
+[profile.dev.package."*"]
+opt-level = 2
+
+# Package-specific optimizations
+[profile.release.package.tauri]
+opt-level = 3
