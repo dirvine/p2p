@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 homepage = "https://github.com/dirvine/p2p"
 repository = "https://github.com/dirvine/p2p"
 documentation = "https://github.com/dirvine/p2p/tree/main/apps/desktop-tauri"
-readme = "../README.md"
+readme = "README.md"
 keywords = ["p2p", "messaging", "privacy", "decentralized", "tauri"]
 categories = ["gui", "network-programming", "cryptography"]
 
