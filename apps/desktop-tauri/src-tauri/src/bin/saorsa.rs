@@ -62,7 +62,32 @@ fn extract_bundled_frontend(target_dir: &Path) -> Result<()> {
     
     #[cfg(not(feature = "bundle-frontend"))]
     {
-        return Err(anyhow::anyhow!("Frontend assets not bundled. Please install from source or use the pre-built binaries."));
+        eprintln!();
+        eprintln!("╭─────────────────────────────────────────────────────────────────╮");
+        eprintln!("│                         🕊️ Saorsa v0.2.1                        │");
+        eprintln!("├─────────────────────────────────────────────────────────────────┤");
+        eprintln!("│                                                                 │");
+        eprintln!("│  The crates.io version doesn't include frontend assets.        │");
+        eprintln!("│  This is a limitation of how Tauri apps work with crates.io.   │");
+        eprintln!("│                                                                 │");
+        eprintln!("│  To run Saorsa desktop app, please use one of these methods:   │");
+        eprintln!("│                                                                 │");
+        eprintln!("│  📦 Option 1: Download Pre-built Binaries (Recommended)        │");
+        eprintln!("│     https://github.com/dirvine/p2p/releases                    │");
+        eprintln!("│                                                                 │");
+        eprintln!("│  🔨 Option 2: Build from Source                                │");
+        eprintln!("│     git clone https://github.com/dirvine/p2p                   │");
+        eprintln!("│     cd p2p/apps/desktop-tauri                                  │");
+        eprintln!("│     npm install && npm run tauri build                         │");
+        eprintln!("│                                                                 │");
+        eprintln!("│  📚 Option 3: Use as a Library                                 │");
+        eprintln!("│     Add to Cargo.toml: saorsa = \"0.2.1\"                       │");
+        eprintln!("│     Use the Rust API directly in your application              │");
+        eprintln!("│                                                                 │");
+        eprintln!("╰─────────────────────────────────────────────────────────────────╯");
+        eprintln!();
+        
+        return Err(anyhow::anyhow!("Frontend assets not bundled"));
     }
     
     Ok(())

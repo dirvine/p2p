@@ -258,6 +258,34 @@ class SaorsaApp {
 </div>
 ```
 
+## 📦 Installation
+
+### Option 1: Pre-built Binaries (Recommended)
+Download the latest release for your platform from:
+- 🔗 [GitHub Releases](https://github.com/dirvine/p2p/releases)
+
+### Option 2: Build from Source
+```bash
+# Clone the repository
+git clone https://github.com/dirvine/p2p
+cd p2p/apps/desktop-tauri
+
+# Install dependencies and build
+npm install
+npm run tauri build
+
+# The binary will be in src-tauri/target/release/
+```
+
+### Option 3: As a Rust Library
+```toml
+# In your Cargo.toml
+[dependencies]
+saorsa = "0.2.1"
+```
+
+**Note**: The `cargo install saorsa` command installs the binary without frontend assets. This is a limitation of distributing Tauri apps through crates.io. For the full desktop experience, use Options 1 or 2.
+
 ## 🔧 Technical Implementation
 
 ### Tauri Commands for Frontend-Backend Communication
