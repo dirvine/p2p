@@ -1150,10 +1150,14 @@ async fn bulk_delete_contacts(
 
 /// Initialize logging
 fn init_logging() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
+    // Use try_init() to avoid panics if already initialized
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            std::env::var("RUST_LOG")
+                .unwrap_or_else(|_| "saorsa=info,ant_core=info".to_string())
+        )
         .with_target(false)
-        .init();
+        .try_init();
 }
 
 
@@ -1244,14 +1248,7 @@ pub fn run_app() {
 
 /// Public API for running Saorsa from external binaries (for cargo install)
 pub fn run_desktop_app() -> anyhow::Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            std::env::var("RUST_LOG")
-                .unwrap_or_else(|_| "saorsa=info,ant_core=info".to_string())
-        )
-        .init();
-    
+    // Note: Logging is initialized in run_app() to avoid double initialization
     // Run the Tauri app
     run_app();
     Ok(())
