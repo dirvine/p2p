@@ -1,10 +1,16 @@
 [package]
 name = "saorsa"
 version = "0.1.8"
-description = "Saorsa - P2P Foundation Desktop Application"
+description = "Saorsa - Revolutionary P2P desktop messaging app with AI-powered invisible cryptocurrency management"
 authors = ["David Irvine <david@maidsafe.net>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
+homepage = "https://github.com/dirvine/p2p"
+repository = "https://github.com/dirvine/p2p"
+documentation = "https://github.com/dirvine/p2p/tree/main/apps/desktop-tauri"
+readme = "../README.md"
+keywords = ["p2p", "messaging", "privacy", "decentralized", "tauri"]
+categories = ["gui", "network-programming", "cryptography"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,8 +22,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# Core P2P library (direct access, no FFI overhead)
-ant-core = { path = "../../../crates/p2p-core" }
+# Core P2P library (published on crates.io)
+ant-core = "0.1.8"
 
 # Tauri framework  
 tauri = { version = "2", features = [] }
