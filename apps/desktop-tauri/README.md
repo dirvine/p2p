@@ -277,14 +277,21 @@ npm run tauri build
 # The binary will be in src-tauri/target/release/
 ```
 
-### Option 3: As a Rust Library
+### Option 3: From crates.io (v0.2.2+)
+```bash
+# Install with bundled frontend
+cargo install saorsa --features bundle-frontend
+
+# Run the app
+saorsa
+```
+
+### Option 4: As a Rust Library
 ```toml
 # In your Cargo.toml
 [dependencies]
-saorsa = "0.2.1"
+saorsa = "0.2.2"
 ```
-
-**Note**: The `cargo install saorsa` command installs the binary without frontend assets. This is a limitation of distributing Tauri apps through crates.io. For the full desktop experience, use Options 1 or 2.
 
 ## 🔧 Technical Implementation
 

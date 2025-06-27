@@ -7,14 +7,6 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "bundle-frontend")]
 include!(concat!(env!("OUT_DIR"), "/frontend_bundle_generated.rs"));
 
-// Provide empty constants when not bundling
-#[cfg(not(feature = "bundle-frontend"))]
-const INDEX_HTML: &str = "";
-#[cfg(not(feature = "bundle-frontend"))]
-const STYLES_CSS: &str = "";
-#[cfg(not(feature = "bundle-frontend"))]
-const MAIN_JS: &str = "";
-
 fn main() -> Result<()> {
     // Check if we need to extract bundled frontend
     let frontend_dir = get_frontend_dir()?;
@@ -47,48 +39,50 @@ fn get_frontend_dir() -> Result<PathBuf> {
 }
 
 fn extract_bundled_frontend(target_dir: &Path) -> Result<()> {
-    // Create target directory
-    fs::create_dir_all(target_dir)?;
-    
     #[cfg(feature = "bundle-frontend")]
     {
-        // Write files from the embedded strings (defined at module level)
+        // Create target directory
+        fs::create_dir_all(target_dir)?;
+        
+        // Write files from the embedded strings
         fs::write(target_dir.join("index.html"), INDEX_HTML)?;
         fs::write(target_dir.join("styles.css"), STYLES_CSS)?;
         fs::write(target_dir.join("main.js"), MAIN_JS)?;
         
-        println!("Extracted frontend assets to {:?}", target_dir);
+        println!("🕊️ Saorsa v0.2.2 - Extracted frontend assets to {:?}", target_dir);
+        Ok(())
     }
     
     #[cfg(not(feature = "bundle-frontend"))]
     {
-        eprintln!();
-        eprintln!("╭─────────────────────────────────────────────────────────────────╮");
-        eprintln!("│                         🕊️ Saorsa v0.2.1                        │");
-        eprintln!("├─────────────────────────────────────────────────────────────────┤");
-        eprintln!("│                                                                 │");
-        eprintln!("│  The crates.io version doesn't include frontend assets.        │");
-        eprintln!("│  This is a limitation of how Tauri apps work with crates.io.   │");
-        eprintln!("│                                                                 │");
-        eprintln!("│  To run Saorsa desktop app, please use one of these methods:   │");
-        eprintln!("│                                                                 │");
-        eprintln!("│  📦 Option 1: Download Pre-built Binaries (Recommended)        │");
-        eprintln!("│     https://github.com/dirvine/p2p/releases                    │");
-        eprintln!("│                                                                 │");
-        eprintln!("│  🔨 Option 2: Build from Source                                │");
-        eprintln!("│     git clone https://github.com/dirvine/p2p                   │");
-        eprintln!("│     cd p2p/apps/desktop-tauri                                  │");
-        eprintln!("│     npm install && npm run tauri build                         │");
-        eprintln!("│                                                                 │");
-        eprintln!("│  📚 Option 3: Use as a Library                                 │");
-        eprintln!("│     Add to Cargo.toml: saorsa = \"0.2.1\"                       │");
-        eprintln!("│     Use the Rust API directly in your application              │");
-        eprintln!("│                                                                 │");
-        eprintln!("╰─────────────────────────────────────────────────────────────────╯");
-        eprintln!();
-        
-        return Err(anyhow::anyhow!("Frontend assets not bundled"));
+        // For development builds, check if frontend exists in the source directory
+        let src_frontend = Path::new("../src");
+        if src_frontend.exists() {
+            // Copy from source
+            fs::create_dir_all(target_dir)?;
+            fs::copy(src_frontend.join("index.html"), target_dir.join("index.html"))?;
+            fs::copy(src_frontend.join("styles.css"), target_dir.join("styles.css"))?;
+            fs::copy(src_frontend.join("main.js"), target_dir.join("main.js"))?;
+            println!("🕊️ Saorsa v0.2.2 - Copied frontend assets from source");
+            Ok(())
+        } else {
+            eprintln!();
+            eprintln!("╭─────────────────────────────────────────────────────────────────╮");
+            eprintln!("│                         🕊️ Saorsa v0.2.2                        │");
+            eprintln!("├─────────────────────────────────────────────────────────────────┤");
+            eprintln!("│                                                                 │");
+            eprintln!("│  Frontend assets not found. Running from source?               │");
+            eprintln!("│                                                                 │");
+            eprintln!("│  Make sure you're in the correct directory:                    │");
+            eprintln!("│     cd p2p/apps/desktop-tauri/src-tauri                       │");
+            eprintln!("│                                                                 │");
+            eprintln!("│  Or install the bundled version from crates.io:               │");
+            eprintln!("│     cargo install saorsa --features bundle-frontend           │");
+            eprintln!("│                                                                 │");
+            eprintln!("╰─────────────────────────────────────────────────────────────────╯");
+            eprintln!();
+            
+            Err(anyhow::anyhow!("Frontend assets not found"))
+        }
     }
-    
-    Ok(())
 }

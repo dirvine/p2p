@@ -1,6 +1,6 @@
 [package]
 name = "saorsa"
-version = "0.2.1"
+version = "0.2.2"
 description = "Saorsa - P2P messaging with comprehensive contact management, identity persistence, and AI integration"
 authors = ["David Irvine <david@maidsafe.net>"]
 edition = "2021"
