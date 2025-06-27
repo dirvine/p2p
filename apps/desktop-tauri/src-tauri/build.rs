@@ -47,57 +47,28 @@ fn bundle_frontend_assets() {
     content.push("/// This file embeds the complete frontend application".to_string());
     content.push("".to_string());
     
-    // Read files or use defaults
-    let index_html = if src_dir.join("index.html").exists() {
-        fs::read_to_string(src_dir.join("index.html"))
-            .unwrap_or_else(|_| include_str!("../src/index.html").to_string())
+    // Try to read actual files first, with better error handling
+    let (index_html, styles_css, main_js) = if src_dir.exists() {
+        println!("cargo:warning=Reading frontend files from ../src");
+        let index = fs::read_to_string(src_dir.join("index.html"))
+            .unwrap_or_else(|e| {
+                println!("cargo:warning=Failed to read index.html: {}", e);
+                get_fallback_index()
+            });
+        let styles = fs::read_to_string(src_dir.join("styles.css"))
+            .unwrap_or_else(|e| {
+                println!("cargo:warning=Failed to read styles.css: {}", e);
+                get_fallback_styles()
+            });
+        let main = fs::read_to_string(src_dir.join("main.js"))
+            .unwrap_or_else(|e| {
+                println!("cargo:warning=Failed to read main.js: {}", e);
+                get_fallback_main()
+            });
+        (index, styles, main)
     } else {
-        r#"<!DOCTYPE html>
-<html>
-<head>
-    <title>Saorsa</title>
-    <meta charset="UTF-8">
-    <style>
-        body { 
-            font-family: system-ui; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            height: 100vh; 
-            margin: 0;
-            background: #f0f0f0;
-        }
-        .loading { 
-            text-align: center;
-            padding: 2rem;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-    </style>
-</head>
-<body>
-    <div class="loading">
-        <h1>🕊️ Saorsa</h1>
-        <p>P2P Messaging Application</p>
-        <p>Please build from source for the full experience.</p>
-    </div>
-</body>
-</html>"#.to_string()
-    };
-    
-    let styles_css = if src_dir.join("styles.css").exists() {
-        fs::read_to_string(src_dir.join("styles.css"))
-            .unwrap_or_else(|_| "/* Saorsa styles */".to_string())
-    } else {
-        "/* Saorsa styles - minimal */".to_string()
-    };
-    
-    let main_js = if src_dir.join("main.js").exists() {
-        fs::read_to_string(src_dir.join("main.js"))
-            .unwrap_or_else(|_| "console.log('Saorsa');".to_string())
-    } else {
-        "console.log('Saorsa v0.2.2 - Minimal frontend');".to_string()
+        println!("cargo:warning=Frontend directory not found, using minimal fallback");
+        (get_fallback_index(), get_fallback_styles(), get_fallback_main())
     };
     
     // Escape the content for inclusion in Rust source
@@ -135,4 +106,47 @@ fn bundle_frontend_assets() {
         .expect("Failed to write generated frontend bundle");
     
     println!("cargo:warning=Generated frontend bundle at {:?}", generated_path);
+}
+
+fn get_fallback_index() -> String {
+    r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>Saorsa</title>
+    <meta charset="UTF-8">
+    <style>
+        body { 
+            font-family: system-ui; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            margin: 0;
+            background: #f0f0f0;
+        }
+        .loading { 
+            text-align: center;
+            padding: 2rem;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="loading">
+        <h1>🕊️ Saorsa</h1>
+        <p>P2P Messaging Application</p>
+        <p>Please build from source for the full experience.</p>
+    </div>
+</body>
+</html>"#.to_string()
+}
+
+fn get_fallback_styles() -> String {
+    "/* Saorsa styles - minimal */".to_string()
+}
+
+fn get_fallback_main() -> String {
+    "console.log('Saorsa - Minimal frontend');".to_string()
 }

@@ -1,6 +1,6 @@
 [package]
 name = "saorsa"
-version = "0.2.3"
+version = "0.2.4"
 description = "Saorsa - P2P messaging with comprehensive contact management, identity persistence, and AI integration"
 authors = ["David Irvine <david@maidsafe.net>"]
 edition = "2021"
@@ -31,7 +31,7 @@ name = "saorsa"
 path = "src/bin/saorsa.rs"
 
 [features]
-default = []
+default = ["bundle-frontend"]
 bundle-frontend = []
 
 [build-dependencies]

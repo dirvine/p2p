@@ -1161,6 +1161,66 @@ fn init_logging() {
 }
 
 
+/// Create a custom protocol handler for serving frontend files
+fn create_frontend_protocol_handler<R: tauri::Runtime>() -> impl Fn(tauri::UriSchemeContext<'_, R>, tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> + Send + Sync + 'static {
+    move |_ctx, request| {
+        // Get the frontend directory
+        let frontend_dir = if let Ok(custom_dir) = std::env::var("SAORSA_FRONTEND_PATH") {
+            std::path::PathBuf::from(custom_dir)
+        } else {
+            // Check for extracted frontend in user directory
+            let home_dir = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+            let user_frontend = home_dir.join(".saorsa").join("frontend");
+            
+            if user_frontend.exists() {
+                user_frontend
+            } else {
+                // Fallback to relative path for development
+                std::path::PathBuf::from("../src")
+            }
+        };
+        
+        // Get the requested path from the URL
+        let uri = request.uri();
+        let path = uri.path().trim_start_matches('/');
+        let path = if path.is_empty() { "index.html" } else { path };
+        let file_path = frontend_dir.join(path);
+        
+        info!("Serving file from: {:?}", file_path);
+        
+        // Try to read the file
+        if let Ok(content) = std::fs::read(&file_path) {
+            let content_type = match file_path.extension().and_then(|s| s.to_str()) {
+                Some("html") => "text/html",
+                Some("js") => "application/javascript",
+                Some("css") => "text/css",
+                Some("json") => "application/json",
+                Some("png") => "image/png",
+                Some("jpg") | Some("jpeg") => "image/jpeg",
+                Some("svg") => "image/svg+xml",
+                Some("ico") => "image/x-icon",
+                _ => "application/octet-stream",
+            };
+            
+            tauri::http::Response::builder()
+                .status(200)
+                .header("Content-Type", content_type)
+                .header("Cache-Control", "no-cache")
+                .body(content)
+                .unwrap()
+        } else {
+            warn!("File not found: {:?}", file_path);
+            
+            // Return a 404 response
+            tauri::http::Response::builder()
+                .status(404)
+                .header("Content-Type", "text/html")
+                .body(b"<h1>404 - File not found</h1>".to_vec())
+                .unwrap()
+        }
+    }
+}
+
 /// Main Tauri application entry point
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run_app() {
@@ -1168,6 +1228,7 @@ pub fn run_app() {
     info!("Starting Saorsa");
 
     tauri::Builder::default()
+        .register_uri_scheme_protocol("saorsa", create_frontend_protocol_handler())
         .manage(AppState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
@@ -1214,7 +1275,7 @@ pub fn run_app() {
             info!("Tauri application setup starting");
             
             // Initialize identity storage
-            let app_handle = app.handle();
+            let app_handle = app.handle().clone();
             let storage_config = IdentityStorageConfig::default();
             
             match IdentityStorage::new(app_handle.clone(), storage_config) {
@@ -1239,6 +1300,17 @@ pub fn run_app() {
                 }
             }
             
+            // Create the main window with our custom protocol
+            let _window = tauri::WebviewWindowBuilder::new(
+                app,
+                "main",
+                tauri::WebviewUrl::External("saorsa://localhost/index.html".parse().unwrap())
+            )
+            .title("Saorsa - P2P Foundation")
+            .inner_size(800.0, 600.0)
+            .build()?;
+            
+            info!("Main window created");
             info!("Tauri application setup complete");
             Ok(())
         })
