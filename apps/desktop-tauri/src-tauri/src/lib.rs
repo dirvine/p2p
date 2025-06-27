@@ -13,6 +13,7 @@
 //! - Cross-platform desktop support (macOS, Windows, Linux)
 
 mod identity_storage;
+pub mod frontend_bundle;
 
 use identity_storage::{IdentityStorage, IdentityStorageConfig};
 use std::collections::HashMap;
@@ -1148,6 +1149,17 @@ async fn bulk_delete_contacts(
     Ok(())
 }
 
+/// Extract frontend assets to a specific directory
+fn extract_frontend_to(target_dir: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(target_dir)?;
+    
+    std::fs::write(target_dir.join("index.html"), frontend_bundle::INDEX_HTML)?;
+    std::fs::write(target_dir.join("styles.css"), frontend_bundle::STYLES_CSS)?;
+    std::fs::write(target_dir.join("main.js"), frontend_bundle::MAIN_JS)?;
+    
+    Ok(())
+}
+
 /// Initialize logging
 fn init_logging() {
     // Use try_init() to avoid panics if already initialized
@@ -1172,11 +1184,18 @@ fn create_frontend_protocol_handler<R: tauri::Runtime>() -> impl Fn(tauri::UriSc
             let home_dir = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
             let user_frontend = home_dir.join(".saorsa").join("frontend");
             
-            if user_frontend.exists() {
-                user_frontend
+            // Extract frontend if it doesn't exist
+            if !user_frontend.join("index.html").exists() {
+                info!("Extracting frontend to {:?}", user_frontend);
+                if let Err(e) = extract_frontend_to(&user_frontend) {
+                    warn!("Failed to extract frontend: {}", e);
+                    // Fallback to relative path for development
+                    std::path::PathBuf::from("../src")
+                } else {
+                    user_frontend
+                }
             } else {
-                // Fallback to relative path for development
-                std::path::PathBuf::from("../src")
+                user_frontend
             }
         };
         

@@ -1,6 +1,6 @@
 [package]
 name = "saorsa"
-version = "0.2.4"
+version = "0.2.5"
 description = "Saorsa - P2P messaging with comprehensive contact management, identity persistence, and AI integration"
 authors = ["David Irvine <david@maidsafe.net>"]
 edition = "2021"
@@ -30,9 +30,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "saorsa"
 path = "src/bin/saorsa.rs"
 
-[features]
-default = ["bundle-frontend"]
-bundle-frontend = []
+# No features needed - frontend is always bundled
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
