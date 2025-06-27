@@ -24,6 +24,14 @@ Saorsa (pronounced "SEER-sha", Irish for "freedom") is a revolutionary desktop m
 - **Universal Connectivity**: Works on any network through intelligent tunneling
 - **Cross-Device Sync**: Access your data from any device worldwide
 
+### 👥 Comprehensive Contact Management (v0.2.0)
+- **Smart Contact Organization**: Categorize contacts (Friends, Family, Work)
+- **Enhanced Privacy Controls**: Per-contact permissions for profile visibility
+- **Contact Blocking**: Block unwanted contacts with visual indicators
+- **Rich Contact Profiles**: Add nicknames, notes, and trust levels
+- **Right-Click Context Menu**: Quick access to contact actions
+- **Bulk Operations**: Manage multiple contacts efficiently
+
 ## 🏗️ Architecture Overview
 
 ```

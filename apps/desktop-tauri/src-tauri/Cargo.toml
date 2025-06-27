@@ -1,7 +1,7 @@
 [package]
 name = "saorsa"
-version = "0.1.8"
-description = "Saorsa - Revolutionary P2P desktop messaging app with AI-powered invisible cryptocurrency management"
+version = "0.2.0"
+description = "Saorsa - P2P messaging with comprehensive contact management, identity persistence, and AI integration"
 authors = ["David Irvine <david@maidsafe.net>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
