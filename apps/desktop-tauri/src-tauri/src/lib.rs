@@ -21,7 +21,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, State};
+use tauri::{Manager, State, Emitter};
 use tokio::sync::{Mutex, RwLock};
 use tracing::{error, info, warn};
 use base64;
@@ -320,6 +320,94 @@ async fn send_message(
     }
     
     Ok("Message sent".to_string())
+}
+
+// ================== WebRTC Call Commands ==================
+
+/// Send a WebRTC call offer
+#[tauri::command]
+async fn send_call_offer(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    user_id: String,
+    channel_id: String,
+    offer: String,
+    is_video: bool,
+) -> Result<(), String> {
+    info!("Sending call offer to user: {} for channel: {}", user_id, channel_id);
+    
+    // TODO: Send offer through P2P network to the target user
+    // For now, emit event for local testing
+    app.emit("incoming-call", &serde_json::json!({
+        "userId": user_id,
+        "channelId": channel_id,
+        "offer": offer,
+        "isVideo": is_video
+    })).map_err(|e| format!("Failed to emit call offer: {}", e))?;
+    
+    Ok(())
+}
+
+/// Send a WebRTC call answer
+#[tauri::command]
+async fn send_call_answer(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    user_id: String,
+    channel_id: String,
+    answer: String,
+) -> Result<(), String> {
+    info!("Sending call answer to user: {} for channel: {}", user_id, channel_id);
+    
+    // TODO: Send answer through P2P network to the target user
+    // For now, emit event for local testing
+    app.emit("call-answer", &serde_json::json!({
+        "userId": user_id,
+        "answer": answer
+    })).map_err(|e| format!("Failed to emit call answer: {}", e))?;
+    
+    Ok(())
+}
+
+/// Send ICE candidate
+#[tauri::command]
+async fn send_ice_candidate(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    user_id: String,
+    candidate: serde_json::Value,
+) -> Result<(), String> {
+    info!("Sending ICE candidate to user: {}", user_id);
+    
+    // TODO: Send ICE candidate through P2P network to the target user
+    // For now, emit event for local testing
+    app.emit("ice-candidate", &serde_json::json!({
+        "userId": user_id,
+        "candidate": candidate
+    })).map_err(|e| format!("Failed to emit ICE candidate: {}", e))?;
+    
+    Ok(())
+}
+
+/// End a call
+#[tauri::command]
+async fn end_call(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    user_id: String,
+    channel_id: String,
+    reason: String,
+) -> Result<(), String> {
+    info!("Ending call with user: {} for channel: {} - reason: {}", user_id, channel_id, reason);
+    
+    // TODO: Send end call signal through P2P network to the target user
+    // For now, emit event for local testing
+    app.emit("call-ended", &serde_json::json!({
+        "userId": user_id,
+        "reason": reason
+    })).map_err(|e| format!("Failed to emit call ended: {}", e))?;
+    
+    Ok(())
 }
 
 /// Get all contacts
@@ -1289,6 +1377,11 @@ pub fn run_app() {
             add_contact_category,
             get_contact_details,
             bulk_delete_contacts,
+            // WebRTC call commands
+            send_call_offer,
+            send_call_answer,
+            send_ice_candidate,
+            end_call,
         ])
         .setup(|app| {
             info!("Tauri application setup starting");

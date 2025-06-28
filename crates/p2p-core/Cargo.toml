@@ -41,8 +41,16 @@ reqwest = "0.11"
 jsonwebtoken = "9.2"
 
 # Identity system dependencies
-aes-gcm = "0.10"
+aes-gcm.workspace = true
 blake3 = "1.5"
+hkdf.workspace = true
+
+# Post-quantum cryptography (temporarily disabled)
+# ml-kem.workspace = true
+# ml-dsa.workspace = true
+# frost-ed25519.workspace = true
+# shamir.workspace = true
+# vsss-rs.workspace = true
 
 # Optional CLI dependencies
 clap = { version = "4.4", features = ["derive"], optional = true }
@@ -63,7 +71,12 @@ dht = []
 mcp = []
 tunneling = []
 three-word-addresses = []
+quantum-resistant = []
+threshold = []
 cli = ["clap", "warp", "mime_guess", "include_dir"]
+# Commercial license features
+commercial = []
+agpl-compliance = []
 
 [[bench]]
 name = "dht_benchmark"

@@ -87,10 +87,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## ✨ Key Features
 
 ### 🔒 **Privacy-First Architecture**
-- End-to-end encryption by default
-- Encrypted user profiles stored in DHT
-- Friend-based access control with granular permissions
-- Anti-spoofing with cryptographic verification
+- Quantum-resistant end-to-end encryption
+- Encrypted user profiles with threshold access control
+- Hierarchical team permissions with cryptographic enforcement
+- Multi-signature authorization for sensitive operations
+- Anti-spoofing with dual-signature verification (ML-DSA + Ed25519)
 
 ### 🌐 **Universal Connectivity**
 - IPv6-first with comprehensive IPv4 tunneling
@@ -102,6 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - MCP (Model Context Protocol) server integration
 - Built for AI agent communication
 - Tool system for extensible functionality
+- Threshold-based AI resource authorization
 
 ### 🎯 **Developer Experience**
 - Human-readable three-word addresses (`forest.lightning.compass`)
@@ -115,11 +117,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ┌─────────────────────────────────────┐
 │          Saorsa Desktop App         │  ← Tauri-based UI
 ├─────────────────────────────────────┤
-│        Identity Management          │  ← Encrypted profiles, friends
+│    Threshold Group Management       │  ← Teams, hierarchies, permissions
+├─────────────────────────────────────┤
+│        Identity Management          │  ← Quantum-resistant profiles
 ├─────────────────────────────────────┤
 │     MCP Server Layer (AI Tools)     │  ← Tool discovery, remote execution
 ├─────────────────────────────────────┤
 │   Kademlia DHT (Secure Storage)     │  ← Distributed data storage
+├─────────────────────────────────────┤
+│   Quantum Crypto Layer (ML-KEM/DSA) │  ← Post-quantum security
 ├─────────────────────────────────────┤
 │      QUIC Transport Layer           │  ← Modern, secure transport
 ├─────────────────────────────────────┤
@@ -131,21 +137,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 - **Network**: P2P node management and configuration
 - **DHT**: Distributed hash table for decentralized storage
-- **Transport**: QUIC and TCP transport implementations
-- **Identity**: Privacy-first user identity and profile management
+- **Transport**: QUIC and TCP transport implementations with quantum-safe handshakes
+- **Identity**: Privacy-first user identity with ML-DSA signatures
+- **Threshold**: Dynamic group management with FROST protocol
+- **Cryptography**: Quantum-resistant primitives (ML-KEM, ML-DSA)
 - **MCP**: Model Context Protocol server for AI integration
 - **Bootstrap**: Peer discovery and network bootstrapping
 
 ## 🔐 Security & Privacy
 
-The P2P Foundation implements comprehensive **defense-in-depth** security:
+The P2P Foundation implements comprehensive **defense-in-depth** security with **quantum-resistant cryptography** and **threshold mechanisms**:
 
+### Quantum-Resistant Cryptography
+- **Key Exchange**: ML-KEM-768 (FIPS 203) - quantum-safe key encapsulation
+- **Digital Signatures**: ML-DSA-65 (FIPS 204) - lattice-based signatures
+- **Hybrid Mode**: Support for both classical and post-quantum algorithms during transition
+- **Algorithm Agility**: Easy upgrade path as standards evolve
+
+### Threshold Cryptography
+- **FROST Protocol**: Threshold signatures for multi-party authorization
+- **Dynamic Groups**: Add/remove members without key regeneration
+- **Hierarchical Authority**: Cryptographically enforced access levels
+- **Team Management**: Leaders and groups with verifiable permissions
+- **Consensus Operations**: Byzantine fault-tolerant group decisions
+
+### Core Security Features
 - **Transport encryption**: End-to-end via QUIC/TLS 1.3
-- **Peer authentication**: Ed25519 cryptographic identities
-- **Privacy-first profiles**: Encrypted data with friend-based sharing
-- **Access control**: Fine-grained capability-based permissions
+- **Peer authentication**: Dual signatures (ML-DSA + Ed25519)
+- **Privacy-first profiles**: Encrypted data with threshold-based sharing
+- **Access control**: Cryptographically enforced hierarchical permissions
 - **Rate limiting**: Per-peer request throttling and DoS protection
 - **Audit logging**: Comprehensive security event tracking
+- **Forward secrecy**: Proactive secret refresh for long-term security
 
 ### Privacy Model
 
@@ -154,6 +177,8 @@ The P2P Foundation implements comprehensive **defense-in-depth** security:
 3. **Granular Control**: Choose what information friends can see
 4. **Bloom Filter Discovery**: Find friends without revealing contacts
 5. **IPv6 Identity Binding**: Anti-spoofing cryptographic proofs
+6. **Threshold Access**: Require t-of-n approval for sensitive operations
+7. **Dynamic Permissions**: Update access rights without re-encryption
 
 ## 📱 Cross-Platform Support
 
@@ -252,12 +277,18 @@ See the [`examples/`](examples/) directory for:
 - [x] Published to crates.io
 
 ### 🔄 In Progress
+- [ ] Quantum-resistant cryptography integration (ML-KEM, ML-DSA)
+- [ ] Threshold group management with FROST protocol
+- [ ] Dynamic membership and permission updates
 - [ ] Enhanced NAT traversal techniques
 - [ ] Mobile app development (Flutter)
 - [ ] Advanced bootstrap strategies
 - [ ] Performance optimizations
 
 ### 📋 Planned
+- [ ] Hierarchical authority structures
+- [ ] Proactive secret refresh for forward security
+- [ ] Byzantine fault-tolerant consensus
 - [ ] Voice/video calling capabilities
 - [ ] File sharing and synchronization
 - [ ] Advanced security features
@@ -277,12 +308,24 @@ We welcome contributions! Please see our [contributing guidelines](CONTRIBUTING.
 
 ## 📄 License
 
-Licensed under either of:
+P2P Foundation is dual-licensed to support both open-source and commercial use:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+### Open Source License (AGPL-3.0)
+- For open source projects, personal use, and non-commercial applications
+- Requires source code disclosure for all modifications
+- Network use provisions apply (Section 13)
+- See [LICENSE-AGPL-3.0](LICENSE-AGPL-3.0) for full terms
 
-at your option.
+### Commercial License
+- For proprietary applications and commercial use
+- No source code disclosure required
+- Professional support included
+- Flexible pricing tiers (SMB, Enterprise, OEM)
+- Contact: saorsalabs@gmail.com
+
+**Quick Guide**: If you're building a proprietary product, charging users, or have >$1M annual revenue, you need a commercial license. See [LICENSING.md](LICENSING.md) for detailed guidance.
+
+For questions, contact saorsalabs@gmail.com or visit https://maidsafe.net/licensing
 
 ## 🔗 Links
 

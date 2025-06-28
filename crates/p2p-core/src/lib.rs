@@ -1,3 +1,16 @@
+// Copyright 2024 MaidSafe Limited
+//
+// This software is dual-licensed under:
+// - GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
+// - Commercial License
+//
+// For AGPL-3.0 license, see LICENSE-AGPL-3.0
+// For commercial licensing, contact: saorsalabs@gmail.com
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under these licenses is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
 //! # P2P Foundation
 //! 
 //! A next-generation peer-to-peer networking foundation built in Rust.
@@ -52,6 +65,18 @@ pub mod security;
 /// User identity and privacy system
 pub mod identity;
 
+/// DHT-based storage for multi-device sync
+pub mod storage;
+
+/// Chat system (Slack-like)
+pub mod chat;
+
+/// Discuss system (Discourse-like)
+pub mod discuss;
+
+/// Projects system with hierarchical organization
+pub mod projects;
+
 /// Utility functions and types
 pub mod utils;
 
@@ -71,6 +96,34 @@ pub use mcp::{MCPServer, Tool, MCPService};
 pub use production::{ProductionConfig, ResourceManager, ResourceMetrics};
 pub use bootstrap::{BootstrapManager, BootstrapCache, ContactEntry, CacheConfig};
 pub use error::{P2PError, Result};
+
+// Enhanced identity exports
+#[cfg(feature = "quantum-resistant")]
+pub use identity::enhanced::{
+    EnhancedIdentity, EnhancedIdentityManager, Organization, 
+    Department, Team, Permission,
+};
+
+// Storage exports
+pub use storage::{StorageManager, SyncManager, FileChunker};
+
+// Chat exports
+pub use chat::{
+    Channel, ChannelId, Message, MessageId, Thread, 
+    ChatManager, ChannelType, Call,
+};
+
+// Discuss exports
+pub use discuss::{
+    Category, CategoryId, Topic, TopicId, Reply, ReplyId,
+    DiscussManager, Poll, Badge, UserStats,
+};
+
+// Projects exports
+pub use projects::{
+    Project, ProjectId, Document, DocumentId, Folder,
+    ProjectsManager, WorkflowState, ProjectAnalytics,
+};
 
 // Placeholder types (will be replaced with actual libp2p types)
 /// Peer identifier used throughout the P2P Foundation

@@ -1,0 +1,114 @@
+P2P FOUNDATION COMMERCIAL LICENSE AGREEMENT
+
+This Commercial License Agreement ("Agreement") is entered into by and between MaidSafe Limited ("Licensor") and the entity or individual purchasing a commercial license ("Licensee").
+
+WHEREAS, Licensor has developed certain software known as the P2P Foundation, which includes quantum-resistant cryptography, AI integration, and distributed networking capabilities;
+
+WHEREAS, Licensee desires to use the Software under commercial terms rather than under the GNU Affero General Public License version 3.0 (AGPL-3.0);
+
+NOW, THEREFORE, in consideration of the mutual covenants and agreements set forth herein, the parties agree as follows:
+
+## 1. LICENSE TIERS
+
+### 1.1 Small & Medium Business (SMB) License
+- **Price**: $50-200/month (based on features)
+- **User Limit**: Up to 50 users
+- **Features**: Core P2P functionality, standard support
+- **Support**: Email support, 48-hour response time
+- **Updates**: Quarterly updates included
+
+### 1.2 Enterprise License
+- **Price**: $500-2000/month (based on deployment size)
+- **User Limit**: Unlimited users
+- **Features**: Full feature set, priority support
+- **Support**: 24/7 support, dedicated account manager
+- **Updates**: Continuous updates, early access to new features
+- **SLA**: 99.9% uptime guarantee for support services
+
+### 1.3 OEM/Reseller License
+- **Price**: Negotiated based on volume and use case
+- **Features**: White-label options, redistribution rights
+- **Support**: Custom support agreements
+- **Terms**: Custom terms based on specific requirements
+
+## 2. GRANT OF LICENSE
+
+2.1 Subject to the terms and conditions of this Agreement and payment of applicable fees, Licensor grants Licensee a non-exclusive, non-transferable license to:
+   a) Use the Software in accordance with the selected license tier
+   b) Integrate the Software into Licensee's proprietary applications
+   c) Distribute applications containing the Software to end users
+   d) Modify the Software for internal use
+
+2.2 This license explicitly exempts Licensee from AGPL-3.0 requirements including:
+   - Source code disclosure obligations
+   - Copyleft requirements
+   - Network use provisions under AGPL Section 13
+
+## 3. RESTRICTIONS
+
+Licensee shall not:
+- Sublicense the Software separately from Licensee's applications
+- Remove or alter any proprietary notices
+- Use the Software to compete directly with Licensor
+- Reverse engineer the Software except as permitted by law
+- Use the Software for illegal or malicious purposes
+
+## 4. PROPRIETARY RIGHTS
+
+4.1 The Software remains the exclusive property of Licensor
+4.2 Licensee acknowledges that no title to the Software is transferred
+4.3 All modifications made by Licensee remain subject to this Agreement
+
+## 5. FEES AND PAYMENT
+
+5.1 Licensee shall pay the applicable license fees based on the selected tier
+5.2 Fees are due monthly/annually in advance
+5.3 Late payments subject to 1.5% monthly interest
+5.4 All fees are non-refundable except as specified herein
+
+## 6. WARRANTY AND LIABILITY
+
+6.1 LIMITED WARRANTY: Licensor warrants that the Software will perform substantially in accordance with documentation for 90 days
+
+6.2 DISCLAIMER: EXCEPT AS EXPRESSLY PROVIDED, THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND
+
+6.3 LIMITATION OF LIABILITY: IN NO EVENT SHALL LICENSOR'S LIABILITY EXCEED THE FEES PAID IN THE PRECEDING 12 MONTHS
+
+## 7. INDEMNIFICATION
+
+7.1 Licensor will defend and indemnify Licensee against third-party claims that the Software infringes intellectual property rights
+
+7.2 Licensee will defend and indemnify Licensor against claims arising from Licensee's use of the Software
+
+## 8. TERM AND TERMINATION
+
+8.1 This Agreement continues until terminated
+8.2 Either party may terminate with 30 days written notice
+8.3 Licensor may terminate immediately for breach
+8.4 Upon termination, all rights granted cease immediately
+
+## 9. CONFIDENTIALITY
+
+Both parties agree to maintain confidentiality of proprietary information disclosed under this Agreement
+
+## 10. GENERAL PROVISIONS
+
+10.1 This Agreement is governed by the laws of Scotland
+10.2 Disputes shall be resolved through binding arbitration
+10.3 This Agreement constitutes the entire agreement between parties
+10.4 Amendments must be in writing and signed by both parties
+
+## CONTACT INFORMATION
+
+For commercial licensing inquiries:
+- Email: saorsalabs@gmail.com
+- Website: https://maidsafe.net/licensing
+- Phone: [To be provided]
+- Address: MaidSafe Limited, Scotland, UK
+
+By purchasing a commercial license, Licensee agrees to all terms and conditions set forth in this Agreement.
+
+_________________                    _________________
+LICENSOR                             LICENSEE
+
+Date: __________                     Date: __________

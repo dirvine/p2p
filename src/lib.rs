@@ -1,3 +1,16 @@
+// Copyright 2024 MaidSafe Limited
+//
+// This software is dual-licensed under:
+// - GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
+// - Commercial License
+//
+// For AGPL-3.0 license, see LICENSE-AGPL-3.0
+// For commercial licensing, contact: saorsalabs@gmail.com
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under these licenses is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
 //! # P2P Foundation
 //! 
 //! A next-generation peer-to-peer networking foundation built in Rust.
@@ -49,6 +62,14 @@ pub mod mcp;
 /// Security and cryptography
 pub mod security;
 
+/// Quantum-resistant cryptography
+#[cfg(feature = "quantum-resistant")]
+pub mod quantum_crypto;
+
+/// Threshold cryptography and group management
+#[cfg(feature = "threshold")]
+pub mod threshold;
+
 /// Utility functions and types
 pub mod utils;
 
@@ -61,6 +82,9 @@ pub mod bootstrap;
 /// Error types
 pub mod error;
 
+/// License management and enforcement
+pub mod licensing;
+
 // Re-export main types
 pub use network::{P2PNode, NodeConfig, NodeBuilder, P2PEvent};
 pub use dht::{Key, Record};
@@ -68,6 +92,19 @@ pub use mcp::{MCPServer, Tool, MCPService};
 pub use production::{ProductionConfig, ResourceManager, ResourceMetrics};
 pub use bootstrap::{BootstrapManager, BootstrapCache, ContactEntry, CacheConfig};
 pub use error::{P2PError, Result};
+pub use licensing::{LicenseChecker, LicenseType, LicenseStatus, Feature};
+
+#[cfg(feature = "quantum-resistant")]
+pub use quantum_crypto::{
+    QuantumPeerIdentity, CryptoCapabilities, SignatureScheme,
+    generate_keypair, negotiate_algorithms,
+};
+
+#[cfg(feature = "threshold")]
+pub use threshold::{
+    ThresholdGroup, ThresholdGroupManager, GroupOperation,
+    ParticipantInfo, ParticipantRole, ParticipantStatus,
+};
 
 // Placeholder types (will be replaced with actual libp2p types)
 /// Peer identifier used throughout the P2P Foundation

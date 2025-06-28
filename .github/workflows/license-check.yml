@@ -1,0 +1,210 @@
+name: License Compliance Check
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  license-headers:
+    name: Check License Headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check Rust file headers
+        run: |
+          echo "Checking for license headers in Rust files..."
+          missing_headers=0
+          
+          for file in $(find . -name "*.rs" -not -path "./target/*" -not -path "./node_modules/*"); do
+            if ! head -n 15 "$file" | grep -q "Copyright.*MaidSafe Limited"; then
+              echo "Missing license header: $file"
+              missing_headers=$((missing_headers + 1))
+            fi
+          done
+          
+          if [ $missing_headers -gt 0 ]; then
+            echo "❌ Found $missing_headers files without proper license headers"
+            exit 1
+          else
+            echo "✅ All Rust files have license headers"
+          fi
+
+  dependency-licenses:
+    name: Check Dependency Licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install cargo-deny
+        run: cargo install cargo-deny
+      
+      - name: Create deny.toml if not exists
+        run: |
+          if [ ! -f "deny.toml" ]; then
+            cat > deny.toml << 'EOF'
+          [licenses]
+          unlicensed = "deny"
+          allow = [
+            "MIT",
+            "Apache-2.0",
+            "Apache-2.0 WITH LLVM-exception",
+            "BSD-2-Clause",
+            "BSD-3-Clause",
+            "ISC",
+            "Unicode-DFS-2016",
+            "CC0-1.0",
+            "AGPL-3.0",
+            "MPL-2.0",
+          ]
+          copyleft = "warn"
+          
+          [[licenses.exceptions]]
+          name = "ring"
+          allow = ["LicenseRef-ring"]
+          
+          [bans]
+          multiple-versions = "warn"
+          EOF
+          fi
+      
+      - name: Check licenses
+        run: cargo deny check licenses
+
+  agpl-compliance:
+    name: AGPL Compliance Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check for source disclosure
+        run: |
+          echo "Checking AGPL compliance requirements..."
+          
+          # Check if LICENSE-AGPL-3.0 exists
+          if [ ! -f "LICENSE-AGPL-3.0" ]; then
+            echo "❌ LICENSE-AGPL-3.0 file not found"
+            exit 1
+          fi
+          
+          # Check if LICENSING.md exists
+          if [ ! -f "LICENSING.md" ]; then
+            echo "❌ LICENSING.md file not found"
+            exit 1
+          fi
+          
+          # Check README for license section
+          if ! grep -q "License" README.md; then
+            echo "❌ README.md missing License section"
+            exit 1
+          fi
+          
+          echo "✅ AGPL compliance files present"
+
+  build-features:
+    name: Test License Features
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features: [
+          "",  # Default (AGPL)
+          "agpl-compliance",
+          "commercial",
+        ]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Build with features
+        run: |
+          if [ "${{ matrix.features }}" = "commercial" ]; then
+            # For commercial builds, set enforcement to false in CI
+            export P2P_ENFORCE_LICENSE=false
+          fi
+          
+          if [ -z "${{ matrix.features }}" ]; then
+            echo "Building with default features (AGPL)..."
+            cargo build --all
+          else
+            echo "Building with features: ${{ matrix.features }}..."
+            cargo build --all --features "${{ matrix.features }}"
+          fi
+      
+      - name: Run tests
+        run: |
+          if [ "${{ matrix.features }}" = "commercial" ]; then
+            export P2P_ENFORCE_LICENSE=false
+          fi
+          
+          if [ -z "${{ matrix.features }}" ]; then
+            cargo test --all
+          else
+            cargo test --all --features "${{ matrix.features }}"
+          fi
+
+  license-validation:
+    name: Validate License Implementation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Test license detection
+        run: |
+          cd examples/licensing
+          
+          # Test AGPL compliance example
+          echo "Testing AGPL compliance example..."
+          cargo build --bin agpl-compliance
+          
+          # Test commercial integration (with mock license)
+          echo "Testing commercial integration example..."
+          P2P_ENFORCE_LICENSE=false cargo build --bin commercial-integration
+          
+          # Test license migration
+          echo "Testing license migration example..."
+          cargo build --bin license-migration
+
+  documentation:
+    name: Check License Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Verify documentation files
+        run: |
+          required_docs=(
+            "LICENSING.md"
+            "LICENSE-FAQ.md"
+            "COMMERCIAL-LICENSE-TERMS.md"
+            "docs/licensing/compliance-guide.md"
+            "docs/licensing/migration-guide.md"
+            "docs/licensing/enforcement-policy.md"
+            "examples/licensing/README.md"
+          )
+          
+          missing_docs=0
+          for doc in "${required_docs[@]}"; do
+            if [ ! -f "$doc" ]; then
+              echo "❌ Missing documentation: $doc"
+              missing_docs=$((missing_docs + 1))
+            else
+              echo "✅ Found: $doc"
+            fi
+          done
+          
+          if [ $missing_docs -gt 0 ]; then
+            echo "❌ Missing $missing_docs documentation files"
+            exit 1
+          else
+            echo "✅ All license documentation present"
+          fi
