@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Saorsa</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        #debug {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: white;
+            border: 2px solid red;
+            padding: 20px;
+            max-width: 400px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 9999;
+        }
+        #debug div {
+            margin: 5px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="app-container">
+        <!-- Copy header from index.html -->
+        <header class="app-header">
+            <div class="header-left">
+                <h1>🕊️ Saorsa TEST</h1>
+                <span id="network-status" class="status-offline">Offline</span>
+            </div>
+            <div class="header-right">
+                <button id="settings-btn" class="icon-btn" title="Settings">⚙️</button>
+                <button id="test-btn" class="icon-btn" title="Test">🧪</button>
+            </div>
+        </header>
+        
+        <div id="debug">
+            <h3>Debug Log:</h3>
+        </div>
+    </div>
+    
+    <script>
+        function log(msg) {
+            const debug = document.getElementById('debug');
+            const div = document.createElement('div');
+            div.textContent = new Date().toISOString().substr(11,8) + ' - ' + msg;
+            debug.appendChild(div);
+            console.log(msg);
+        }
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            log('DOM loaded');
+            
+            const settingsBtn = document.getElementById('settings-btn');
+            log('Settings button: ' + (settingsBtn ? 'FOUND' : 'NOT FOUND'));
+            
+            if (settingsBtn) {
+                settingsBtn.addEventListener('click', () => {
+                    log('Settings button CLICKED!');
+                    alert('Settings button works!');
+                });
+                
+                // Also try onclick
+                settingsBtn.onclick = () => {
+                    log('Settings onclick fired!');
+                };
+            }
+            
+            // Test button
+            const testBtn = document.getElementById('test-btn');
+            if (testBtn) {
+                testBtn.addEventListener('click', () => {
+                    log('Test button clicked');
+                    
+                    // Check if Tauri is available
+                    if (window.__TAURI__) {
+                        log('Tauri is available');
+                        window.__TAURI__.core.invoke('get_user_identity').then(identity => {
+                            log('Got identity: ' + identity.three_word_address);
+                        }).catch(err => {
+                            log('Error: ' + err);
+                        });
+                    } else {
+                        log('Tauri NOT available');
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

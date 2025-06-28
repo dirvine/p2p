@@ -1,17 +1,17 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [],
+    "withGlobalTauri": true,
+    "security": {
+      "csp": null
+    }
+  },
   "productName": "Saorsa",
   "version": "0.1.8",
   "identifier": "com.saorsa.app",
   "build": {
     "frontendDist": "../src"
-  },
-  "app": {
-    "withGlobalTauri": true,
-    "windows": [],
-    "security": {
-      "csp": null
-    }
   },
   "bundle": {
     "active": true,

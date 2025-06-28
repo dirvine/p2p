@@ -15,19 +15,57 @@ let appState = {
   contactModalOpen: false
 };
 
+// Debug logging to UI
+function debugLog(msg) {
+  console.log(msg);
+  // Also show in the network status area temporarily
+  const statusEl = document.getElementById('network-status');
+  if (statusEl) {
+    statusEl.textContent = msg;
+  }
+}
+
 // Initialize the application
 window.addEventListener('DOMContentLoaded', async () => {
-  console.log('Saorsa starting...');
+  debugLog('Starting...');
   
-  initializeEventListeners();
-  await initializeNetwork();
-  await loadUserProfile(); // Load user identity and profile (await to ensure it completes)
-  loadContacts();
-  loadSettings();
+  try {
+    initializeEventListeners();
+    debugLog('Event listeners initialized');
+    await initializeNetwork();
+    debugLog('Network initialized');
+    await loadUserProfile(); // Load user identity and profile (await to ensure it completes)
+    debugLog('Profile loaded');
+    loadContacts();
+    loadSettings();
+  } catch (error) {
+    console.error('Error during initialization:', error);
+    debugLog('Error: ' + error.message);
+  }
+  
+  // Fallback: Try to attach settings button listener after a delay
+  setTimeout(() => {
+    const settingsBtn = document.getElementById('settings-btn');
+    if (settingsBtn && !settingsBtn.hasAttribute('data-listener-attached')) {
+      console.log('Attaching settings button listener (fallback)');
+      settingsBtn.addEventListener('click', openProfileModal);
+      settingsBtn.setAttribute('data-listener-attached', 'true');
+    }
+  }, 1000);
 });
 
 // Initialize all event listeners
 function initializeEventListeners() {
+  console.log('Initializing event listeners...');
+  
+  // Check if settings button exists
+  const settingsBtn = document.getElementById('settings-btn');
+  if (settingsBtn) {
+    console.log('Settings button found:', settingsBtn);
+  } else {
+    console.error('Settings button NOT found!');
+  }
+  
   // Layout positioning
   document.getElementById('layout-btn').addEventListener('click', openLayoutModal);
   document.getElementById('close-layout-modal').addEventListener('click', closeLayoutModal);
@@ -57,7 +95,11 @@ function initializeEventListeners() {
   sendBtn.addEventListener('click', sendMessage);
   
   // Settings button
-  document.getElementById('settings-btn').addEventListener('click', openProfileModal);
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', openProfileModal);
+    settingsBtn.setAttribute('data-listener-attached', 'true');
+    console.log('Settings button listener attached');
+  }
   
   // System menu
   document.getElementById('system-menu').addEventListener('click', (e) => {
@@ -126,6 +168,16 @@ function initializeEventListeners() {
   // Profile modal click outside to close
   document.getElementById('profile-modal').addEventListener('click', (e) => {
     if (e.target.id === 'profile-modal') closeProfileModal();
+  });
+  
+  // Add keyboard shortcut for debugging (Ctrl+Shift+I)
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && e.key === 'I') {
+      console.log('Debug info:');
+      console.log('Settings button:', document.getElementById('settings-btn'));
+      console.log('Profile modal:', document.getElementById('profile-modal'));
+      console.log('App state:', appState);
+    }
   });
   
   // Contact modal click outside to close
@@ -555,9 +607,19 @@ console.log('Saorsa initialized');
 // ================== Profile Management Functions ==================
 
 function openProfileModal() {
-  document.getElementById('profile-modal').classList.remove('hidden');
-  appState.profileModalOpen = true;
-  loadUserProfile();
+  debugLog('Opening profile modal...');
+  console.log('Opening profile modal...');
+  const modal = document.getElementById('profile-modal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    appState.profileModalOpen = true;
+    loadUserProfile();
+    console.log('Profile modal opened');
+    debugLog('Profile modal opened');
+  } else {
+    console.error('Profile modal element not found!');
+    debugLog('ERROR: Profile modal not found!');
+  }
 }
 
 function closeProfileModal() {
@@ -593,8 +655,13 @@ async function loadUserProfile() {
       
       // Also display three-word address in the header
       const headerElement = document.querySelector('.app-header h1');
+      console.log('Header element:', headerElement);
+      console.log('Three-word address:', identity.three_word_address);
       if (headerElement && identity.three_word_address) {
         headerElement.innerHTML = `🕊️ Saorsa <span style="font-size: 0.6em; opacity: 0.7; margin-left: 10px;">${identity.three_word_address}</span>`;
+        console.log('Updated header with three-word address');
+      } else {
+        console.error('Could not update header - element or address missing');
       }
       
       // Update verification status

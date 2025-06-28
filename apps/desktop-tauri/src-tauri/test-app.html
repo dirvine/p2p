@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Saorsa UI</title>
+    <style>
+        .test-btn {
+            padding: 10px 20px;
+            margin: 10px;
+            cursor: pointer;
+        }
+        #output {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            min-height: 200px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Testing Saorsa UI Elements</h1>
+    
+    <button class="test-btn" onclick="testSettings()">Test Settings Button</button>
+    <button class="test-btn" onclick="testIdentity()">Test Identity</button>
+    <button class="test-btn" onclick="testTauri()">Test Tauri</button>
+    
+    <div id="output"></div>
+    
+    <script>
+        function log(msg) {
+            document.getElementById('output').innerHTML += msg + '<br>';
+        }
+        
+        function testSettings() {
+            log('Testing settings button...');
+            const btn = document.getElementById('settings-btn');
+            if (btn) {
+                log('✓ Settings button found: ' + btn.outerHTML);
+                btn.click();
+                log('✓ Clicked settings button');
+            } else {
+                log('✗ Settings button NOT found');
+            }
+        }
+        
+        function testIdentity() {
+            log('Testing identity display...');
+            const header = document.querySelector('.app-header h1');
+            if (header) {
+                log('✓ Header found: ' + header.innerHTML);
+            } else {
+                log('✗ Header NOT found');
+            }
+        }
+        
+        function testTauri() {
+            log('Testing Tauri...');
+            if (window.__TAURI__) {
+                log('✓ Tauri is available');
+                window.__TAURI__.core.invoke('get_user_identity').then(identity => {
+                    log('✓ Got identity: ' + JSON.stringify(identity));
+                }).catch(err => {
+                    log('✗ Error getting identity: ' + err);
+                });
+            } else {
+                log('✗ Tauri NOT available');
+            }
+        }
+    </script>
+</body>
+</html>

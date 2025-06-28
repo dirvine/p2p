@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Frontend Loading</title>
+</head>
+<body>
+    <h1>Testing Saorsa Frontend</h1>
+    <div id="test-output"></div>
+    
+    <script>
+        // Check if Tauri is available
+        if (window.__TAURI__) {
+            document.getElementById('test-output').innerHTML = 'Tauri is loaded!';
+        } else {
+            document.getElementById('test-output').innerHTML = 'Tauri is NOT loaded!';
+        }
+        
+        // Try to load the main.js
+        const script = document.createElement('script');
+        script.src = 'file:///Users/davidirvine/.saorsa/frontend/main.js';
+        script.onload = () => console.log('Script loaded');
+        script.onerror = (e) => console.error('Script error:', e);
+        document.head.appendChild(script);
+    </script>
+</body>
+</html>
