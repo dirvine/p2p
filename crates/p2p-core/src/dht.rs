@@ -22,6 +22,9 @@ pub mod skademlia;
 // IPv6-based node identity system
 pub mod ipv6_identity;
 
+// Enhanced storage with K=8 replication
+pub mod enhanced_storage;
+
 /// DHT configuration parameters
 #[derive(Debug, Clone)]
 pub struct DHTConfig {
