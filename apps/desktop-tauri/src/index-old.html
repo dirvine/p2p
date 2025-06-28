@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Saorsa - P2P Foundation</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <div id="app" class="app-container">
+      <!-- Header -->
+      <header class="app-header">
+        <div class="header-left">
+          <h1>🕊️ Saorsa</h1>
+          <span id="network-status" class="status-offline">Offline</span>
+        </div>
+        <div class="header-right">
+          <button id="settings-btn" class="icon-btn" title="Settings">
+            ⚙️
+          </button>
+          <button id="layout-btn" class="icon-btn" title="Change Layout">
+            📱
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Content Area -->
+      <main id="main-content" class="main-content contacts-left">
+        <!-- Contacts Panel -->
+        <aside id="contacts-panel" class="contacts-panel">
+          <div class="panel-header">
+            <h3>Contacts</h3>
+            <button id="add-contact-btn" class="icon-btn" title="Add Contact">
+              ➕
+            </button>
+          </div>
+          <div id="contacts-list" class="contacts-list">
+            <!-- Contacts will be populated here -->
+          </div>
+        </aside>
+
+        <!-- Chat Area -->
+        <section class="chat-section">
+          <div id="chat-header" class="chat-header">
+            <div class="chat-title">
+              <h2 id="current-contact-name">Select a contact to start chatting</h2>
+              <span id="current-contact-status" class="contact-status"></span>
+            </div>
+          </div>
+          
+          <div id="messages-container" class="messages-container">
+            <div id="messages-list" class="messages-list">
+              <!-- Messages will be populated here -->
+            </div>
+          </div>
+
+          <div id="message-input-area" class="message-input-area">
+            <div class="input-group">
+              <input 
+                type="text" 
+                id="message-input" 
+                class="message-input" 
+                placeholder="Type a message..." 
+                disabled
+              />
+              <button id="send-btn" class="send-btn" disabled>
+                📤
+              </button>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- System Menu Overlay -->
+      <div id="system-menu" class="system-menu hidden">
+        <div class="menu-content">
+          <div class="menu-header">
+            <h3>System Assistant</h3>
+            <button id="close-menu-btn" class="close-btn">✕</button>
+          </div>
+          <div class="menu-options">
+            <button class="menu-option" data-command="status">
+              📊 Network Status
+            </button>
+            <button class="menu-option" data-command="peers">
+              👥 Connected Peers
+            </button>
+            <button class="menu-option" data-command="tunnels">
+              🚇 Tunnel Information
+            </button>
+            <button class="menu-option" data-command="addresses">
+              🏠 Three-word Addresses
+            </button>
+            <button class="menu-option" data-command="inbox">
+              📬 Create DHT Inbox
+            </button>
+            <button class="menu-option" data-command="profile">
+              👤 Manage Profile
+            </button>
+            <button class="menu-option" data-command="contacts">
+              📋 Manage Contacts
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Layout Settings Modal -->
+      <div id="layout-modal" class="modal hidden">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>Layout Settings</h3>
+            <button id="close-layout-modal" class="close-btn">✕</button>
+          </div>
+          <div class="modal-body">
+            <h4>Contacts Panel Position</h4>
+            <div class="layout-options">
+              <button class="layout-option active" data-position="left">
+                📱 Left
+              </button>
+              <button class="layout-option" data-position="right">
+                📱 Right
+              </button>
+              <button class="layout-option" data-position="top">
+                📱 Top
+              </button>
+              <button class="layout-option" data-position="bottom">
+                📱 Bottom
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Connection Dialog -->
+      <div id="connect-dialog" class="modal hidden">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>Connect to Peer</h3>
+            <button id="close-connect-dialog" class="close-btn">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="input-group">
+              <label for="peer-address">Peer Address (Three-word or Multiaddr):</label>
+              <input 
+                type="text" 
+                id="peer-address" 
+                placeholder="swift.lighthouse.mountain or /ip4/..." 
+              />
+            </div>
+            <div class="modal-actions">
+              <button id="connect-btn" class="primary-btn">
+                Connect
+              </button>
+              <button id="cancel-connect-btn" class="secondary-btn">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profile Management Modal -->
+      <div id="profile-modal" class="modal hidden">
+        <div class="modal-content large-modal">
+          <div class="modal-header">
+            <h3>Profile Management</h3>
+            <button id="close-profile-modal" class="close-btn">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="profile-tabs">
+              <button class="tab-btn active" data-tab="profile">👤 Profile</button>
+              <button class="tab-btn" data-tab="privacy">🔒 Privacy</button>
+              <button class="tab-btn" data-tab="identity">🆔 Identity</button>
+            </div>
+            
+            <!-- Profile Tab -->
+            <div id="profile-tab" class="tab-content active">
+              <div class="profile-section">
+                <h4>Personal Information</h4>
+                <div class="input-group">
+                  <label for="display-name">Display Name:</label>
+                  <input type="text" id="display-name" placeholder="Your display name" />
+                </div>
+                <div class="input-group">
+                  <label for="status-message">Status Message:</label>
+                  <input type="text" id="status-message" placeholder="What's on your mind?" />
+                </div>
+                <div class="input-group">
+                  <label for="three-word-address">Three-word Address:</label>
+                  <input type="text" id="three-word-address" placeholder="your.unique.address" readonly />
+                  <small>This is your unique network address that others can use to find you</small>
+                </div>
+              </div>
+              
+              <div class="profile-section">
+                <h4>Avatar</h4>
+                <div class="avatar-section">
+                  <div id="avatar-preview" class="avatar-preview">
+                    <div class="avatar-placeholder">📷</div>
+                  </div>
+                  <div class="avatar-controls">
+                    <input type="file" id="avatar-upload" accept="image/*" style="display: none;" />
+                    <button id="upload-avatar-btn" class="secondary-btn">Choose Image</button>
+                    <button id="remove-avatar-btn" class="secondary-btn">Remove</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Privacy Tab -->
+            <div id="privacy-tab" class="tab-content">
+              <div class="profile-section">
+                <h4>Discovery Settings</h4>
+                <div class="checkbox-group">
+                  <label>
+                    <input type="checkbox" id="discoverable-by-name" />
+                    Allow others to find me by display name
+                  </label>
+                  <label>
+                    <input type="checkbox" id="discoverable-by-friends" />
+                    Allow friends to recommend me to others
+                  </label>
+                  <label>
+                    <input type="checkbox" id="allow-contact-requests" />
+                    Accept contact requests from strangers
+                  </label>
+                  <label>
+                    <input type="checkbox" id="require-mutual-friends" />
+                    Only allow contact requests from friends-of-friends
+                  </label>
+                </div>
+              </div>
+              
+              <div class="profile-section">
+                <h4>Default Permissions for New Contacts</h4>
+                <div class="checkbox-group">
+                  <label>
+                    <input type="checkbox" id="default-see-name" />
+                    Can see display name
+                  </label>
+                  <label>
+                    <input type="checkbox" id="default-see-avatar" />
+                    Can see avatar
+                  </label>
+                  <label>
+                    <input type="checkbox" id="default-see-status" />
+                    Can see status message
+                  </label>
+                  <label>
+                    <input type="checkbox" id="default-see-last-seen" />
+                    Can see when I was last online
+                  </label>
+                </div>
+              </div>
+              
+              <div class="profile-section">
+                <h4>Security Settings</h4>
+                <div class="checkbox-group">
+                  <label>
+                    <input type="checkbox" id="require-proof-of-humanity" />
+                    Require proof-of-humanity for contact requests
+                  </label>
+                  <label>
+                    <input type="checkbox" id="enable-forward-secrecy" />
+                    Enable perfect forward secrecy for messages
+                  </label>
+                  <label>
+                    <input type="checkbox" id="auto-rotate-keys" />
+                    Automatically rotate profile keys
+                  </label>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Identity Tab -->
+            <div id="identity-tab" class="tab-content">
+              <div class="profile-section">
+                <h4>Identity Information</h4>
+                <div class="info-group">
+                  <div class="info-item">
+                    <label>User ID:</label>
+                    <span id="user-id" class="monospace">Not generated</span>
+                    <button id="copy-user-id" class="icon-btn" title="Copy User ID">📋</button>
+                  </div>
+                  <div class="info-item">
+                    <label>Public Key:</label>
+                    <span id="public-key" class="monospace">Not generated</span>
+                    <button id="copy-public-key" class="icon-btn" title="Copy Public Key">📋</button>
+                  </div>
+                  <div class="info-item">
+                    <label>Verification Level:</label>
+                    <span id="verification-level" class="verification-badge">Unverified</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="profile-section">
+                <h4>Network Security</h4>
+                <div class="security-status">
+                  <div class="security-item">
+                    <span class="security-label">IPv6 Binding:</span>
+                    <span id="ipv6-binding-status" class="status-indicator">❌ Not bound</span>
+                  </div>
+                  <button id="bind-ipv6-btn" class="secondary-btn">Bind to IPv6 Identity</button>
+                </div>
+              </div>
+              
+              <div class="profile-section">
+                <h4>Identity Actions</h4>
+                <div class="action-buttons">
+                  <button id="export-identity-btn" class="secondary-btn">
+                    📤 Export Identity
+                  </button>
+                  <button id="import-identity-btn" class="secondary-btn">
+                    📥 Import Identity
+                  </button>
+                  <input type="file" id="identity-file-input" accept=".json" style="display: none;" />
+                  <button id="create-new-identity-btn" class="primary-btn">
+                    ✨ Create New Identity
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <div class="modal-actions">
+              <button id="save-profile-btn" class="primary-btn">
+                💾 Save Changes
+              </button>
+              <button id="cancel-profile-btn" class="secondary-btn">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Contact Management Modal -->
+      <div id="contact-modal" class="modal hidden">
+        <div class="modal-content large-modal">
+          <div class="modal-header">
+            <h3>Contact Management</h3>
+            <button id="close-contact-modal" class="close-btn">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="contact-tabs">
+              <button class="tab-btn active" data-tab="contacts">👥 Contacts</button>
+              <button class="tab-btn" data-tab="requests">📨 Requests</button>
+              <button class="tab-btn" data-tab="search">🔍 Find People</button>
+            </div>
+            
+            <!-- Contacts Tab -->
+            <div id="contacts-tab" class="tab-content active">
+              <div class="contact-list-container">
+                <div class="list-header">
+                  <h4>Your Contacts</h4>
+                  <button id="refresh-contacts-btn" class="icon-btn" title="Refresh">🔄</button>
+                </div>
+                <div id="contact-list" class="contact-list">
+                  <!-- Contacts will be populated here -->
+                </div>
+              </div>
+            </div>
+            
+            <!-- Requests Tab -->
+            <div id="requests-tab" class="tab-content">
+              <div class="requests-container">
+                <h4>Pending Contact Requests</h4>
+                <div id="pending-requests" class="request-list">
+                  <!-- Pending requests will be populated here -->
+                </div>
+                
+                <h4>Sent Requests</h4>
+                <div id="sent-requests" class="request-list">
+                  <!-- Sent requests will be populated here -->
+                </div>
+              </div>
+            </div>
+            
+            <!-- Search Tab -->
+            <div id="search-tab" class="tab-content">
+              <div class="search-container">
+                <div class="input-group">
+                  <label for="search-query">Search for people:</label>
+                  <input type="text" id="search-query" placeholder="Display name, user ID, or three-word address" />
+                  <button id="search-btn" class="primary-btn">Search</button>
+                </div>
+                
+                <div id="search-results" class="search-results">
+                  <!-- Search results will be populated here -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

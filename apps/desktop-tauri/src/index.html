@@ -1,400 +1,500 @@
 <!doctype html>
 <html lang="en">
-  <head>
+<head>
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Saorsa - P2P Foundation</title>
+    <title>Saorsa Professional - Secure Collaboration Suite</title>
     <script type="module" src="/main.js" defer></script>
-  </head>
+</head>
 
-  <body>
+<body>
     <div id="app" class="app-container">
-      <!-- Header -->
-      <header class="app-header">
-        <div class="header-left">
-          <h1>🕊️ Saorsa</h1>
-          <span id="network-status" class="status-offline">Offline</span>
-        </div>
-        <div class="header-right">
-          <button id="settings-btn" class="icon-btn" title="Settings">
-            ⚙️
-          </button>
-          <button id="layout-btn" class="icon-btn" title="Change Layout">
-            📱
-          </button>
-        </div>
-      </header>
+        <!-- Top Navigation Bar -->
+        <nav class="top-nav">
+            <div class="nav-left">
+                <div class="app-logo">
+                    <svg width="32" height="32" viewBox="0 0 32 32" class="logo-icon">
+                        <circle cx="16" cy="16" r="14" fill="#3B82F6" opacity="0.1"/>
+                        <path d="M16 8 L8 16 L16 24 L24 16 Z" fill="#3B82F6"/>
+                    </svg>
+                    <span class="app-name">Saorsa</span>
+                </div>
+                
+                <div class="nav-tabs">
+                    <button class="nav-tab active" data-section="chat">
+                        <svg class="tab-icon" width="20" height="20" viewBox="0 0 20 20">
+                            <path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5z" fill="currentColor"/>
+                            <path d="M5 7h10M5 10h7M5 13h5" stroke="white" stroke-width="1.5"/>
+                        </svg>
+                        Chat
+                    </button>
+                    <button class="nav-tab" data-section="discuss">
+                        <svg class="tab-icon" width="20" height="20" viewBox="0 0 20 20">
+                            <path d="M9 2a4 4 0 100 8 4 4 0 000-8zM3 18a6 6 0 0112 0H3z" fill="currentColor"/>
+                        </svg>
+                        Discuss
+                    </button>
+                    <button class="nav-tab" data-section="projects">
+                        <svg class="tab-icon" width="20" height="20" viewBox="0 0 20 20">
+                            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" fill="currentColor"/>
+                            <path d="M4 5a2 2 0 012-2 1 1 0 000 2H6a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2 1 1 0 100-2 2 2 0 012 2v11a4 4 0 01-4 4H6a4 4 0 01-4-4V5z" fill="currentColor"/>
+                        </svg>
+                        Projects
+                    </button>
+                </div>
+            </div>
+            
+            <div class="nav-right">
+                <button class="nav-action" title="Search">
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <path d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" fill="currentColor"/>
+                    </svg>
+                </button>
+                <button class="nav-action" title="Notifications">
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6z" fill="currentColor"/>
+                        <path d="M10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" fill="currentColor"/>
+                    </svg>
+                    <span class="notification-badge">3</span>
+                </button>
+                
+                <div class="user-menu">
+                    <button class="user-avatar">
+                        <img src="" alt="User" id="user-avatar-img" style="display: none;" />
+                        <div class="avatar-placeholder">JD</div>
+                    </button>
+                    <div class="user-dropdown hidden">
+                        <div class="user-info">
+                            <div class="user-name">John Doe</div>
+                            <div class="user-role">Team Leader</div>
+                        </div>
+                        <div class="dropdown-divider"></div>
+                        <a href="#" class="dropdown-item">Profile Settings</a>
+                        <a href="#" class="dropdown-item">Organization</a>
+                        <a href="#" class="dropdown-item">Teams</a>
+                        <div class="dropdown-divider"></div>
+                        <a href="#" class="dropdown-item">Sign Out</a>
+                    </div>
+                </div>
+            </div>
+        </nav>
 
-      <!-- Main Content Area -->
-      <main id="main-content" class="main-content contacts-left">
-        <!-- Contacts Panel -->
-        <aside id="contacts-panel" class="contacts-panel">
-          <div class="panel-header">
-            <h3>Contacts</h3>
-            <button id="add-contact-btn" class="icon-btn" title="Add Contact">
-              ➕
-            </button>
-          </div>
-          <div id="contacts-list" class="contacts-list">
-            <!-- Contacts will be populated here -->
-          </div>
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Chat Section -->
+            <section id="chat-section" class="content-section active">
+                <div class="chat-container">
+                    <!-- Sidebar -->
+                    <aside class="chat-sidebar">
+                        <div class="sidebar-header">
+                            <div class="org-selector">
+                                <select class="org-dropdown">
+                                    <option>Acme Corporation</option>
+                                    <option>Personal Workspace</option>
+                                </select>
+                            </div>
+                            <button class="compose-btn">
+                                <svg width="16" height="16" viewBox="0 0 16 16">
+                                    <path d="M14 1a1 1 0 011 1v12a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1h12zM8 7H5v2h3v3h2V9h3V7h-3V4H8v3z" fill="white"/>
+                                </svg>
+                                New Message
+                            </button>
+                        </div>
+                        
+                        <div class="sidebar-search">
+                            <input type="text" placeholder="Search channels and DMs" class="search-input" />
+                        </div>
+                        
+                        <div class="channel-list">
+                            <div class="channel-section">
+                                <div class="section-header">
+                                    <svg class="expand-icon" width="12" height="12" viewBox="0 0 12 12">
+                                        <path d="M4 5l2 2 2-2" stroke="currentColor" fill="none"/>
+                                    </svg>
+                                    <span>Channels</span>
+                                    <button class="add-btn" title="Add channel">+</button>
+                                </div>
+                                <div class="channel-items">
+                                    <div class="channel-item active">
+                                        <span class="channel-prefix">#</span>
+                                        <span class="channel-name">general</span>
+                                        <span class="unread-badge">2</span>
+                                    </div>
+                                    <div class="channel-item">
+                                        <span class="channel-prefix">#</span>
+                                        <span class="channel-name">engineering</span>
+                                    </div>
+                                    <div class="channel-item">
+                                        <svg class="channel-prefix lock-icon" width="12" height="12" viewBox="0 0 12 12">
+                                            <rect x="3" y="5" width="6" height="5" rx="1" fill="currentColor"/>
+                                            <path d="M4 5V3a2 2 0 114 0v2" stroke="currentColor" fill="none"/>
+                                        </svg>
+                                        <span class="channel-name">leadership</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="channel-section">
+                                <div class="section-header">
+                                    <svg class="expand-icon" width="12" height="12" viewBox="0 0 12 12">
+                                        <path d="M4 5l2 2 2-2" stroke="currentColor" fill="none"/>
+                                    </svg>
+                                    <span>Direct Messages</span>
+                                    <button class="add-btn" title="New DM">+</button>
+                                </div>
+                                <div class="channel-items">
+                                    <div class="channel-item">
+                                        <div class="user-status online"></div>
+                                        <span class="channel-name">Alice Johnson</span>
+                                    </div>
+                                    <div class="channel-item">
+                                        <div class="user-status away"></div>
+                                        <span class="channel-name">Bob Smith</span>
+                                        <span class="unread-badge">5</span>
+                                    </div>
+                                    <div class="channel-item">
+                                        <div class="user-status offline"></div>
+                                        <span class="channel-name">Carol Williams</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </aside>
+                    
+                    <!-- Chat Main Area -->
+                    <div class="chat-main">
+                        <header class="chat-header">
+                            <div class="chat-info">
+                                <h2 class="chat-title"># general</h2>
+                                <span class="chat-subtitle">Company-wide announcements and general discussion</span>
+                            </div>
+                            <div class="chat-actions">
+                                <button class="action-btn" title="Voice call">
+                                    <svg width="20" height="20" viewBox="0 0 20 20">
+                                        <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" fill="currentColor"/>
+                                    </svg>
+                                </button>
+                                <button class="action-btn" title="Video call">
+                                    <svg width="20" height="20" viewBox="0 0 20 20">
+                                        <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" fill="currentColor"/>
+                                    </svg>
+                                </button>
+                                <button class="action-btn" title="Channel info">
+                                    <svg width="20" height="20" viewBox="0 0 20 20">
+                                        <path d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" fill="currentColor"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </header>
+                        
+                        <div class="messages-area">
+                            <div class="messages-list">
+                                <!-- Messages will be rendered here -->
+                                <div class="message">
+                                    <img src="" alt="User" class="message-avatar" />
+                                    <div class="message-content">
+                                        <div class="message-header">
+                                            <span class="message-author">System</span>
+                                            <span class="message-time">10:00 AM</span>
+                                        </div>
+                                        <div class="message-text">Welcome to #general! This is the beginning of your conversation.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="message-composer">
+                            <div class="composer-toolbar">
+                                <button class="toolbar-btn" title="Bold">B</button>
+                                <button class="toolbar-btn" title="Italic">I</button>
+                                <button class="toolbar-btn" title="Code">&lt;/&gt;</button>
+                                <div class="toolbar-separator"></div>
+                                <button class="toolbar-btn" title="Attach file">📎</button>
+                                <button class="toolbar-btn" title="Emoji">😊</button>
+                            </div>
+                            <div class="composer-input-wrapper">
+                                <textarea 
+                                    class="composer-input" 
+                                    placeholder="Type a message in #general"
+                                    rows="1"
+                                ></textarea>
+                                <button class="send-button">
+                                    <svg width="20" height="20" viewBox="0 0 20 20">
+                                        <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" fill="currentColor"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Thread Panel (Hidden by default) -->
+                    <aside class="thread-panel hidden">
+                        <div class="thread-header">
+                            <h3>Thread</h3>
+                            <button class="close-thread">×</button>
+                        </div>
+                        <div class="thread-content">
+                            <!-- Thread messages -->
+                        </div>
+                    </aside>
+                </div>
+            </section>
+
+            <!-- Discuss Section -->
+            <section id="discuss-section" class="content-section">
+                <div class="discuss-container">
+                    <!-- Categories Sidebar -->
+                    <aside class="categories-sidebar">
+                        <div class="sidebar-header">
+                            <h3>Categories</h3>
+                            <button class="new-topic-btn">New Topic</button>
+                        </div>
+                        
+                        <div class="category-list">
+                            <div class="category-item active">
+                                <svg class="category-icon" width="16" height="16" viewBox="0 0 16 16">
+                                    <rect x="2" y="2" width="12" height="12" rx="2" fill="currentColor"/>
+                                </svg>
+                                <div class="category-info">
+                                    <div class="category-name">General Discussion</div>
+                                    <div class="category-stats">125 topics</div>
+                                </div>
+                            </div>
+                            <div class="category-item">
+                                <svg class="category-icon" width="16" height="16" viewBox="0 0 16 16">
+                                    <path d="M8 1l2 3h3l-2.5 2L12 9l-4-2-4 2 1.5-3L3 4h3z" fill="currentColor"/>
+                                </svg>
+                                <div class="category-info">
+                                    <div class="category-name">Announcements</div>
+                                    <div class="category-stats">8 topics</div>
+                                </div>
+                            </div>
+                            <div class="category-item">
+                                <svg class="category-icon" width="16" height="16" viewBox="0 0 16 16">
+                                    <circle cx="8" cy="8" r="6" fill="currentColor"/>
+                                </svg>
+                                <div class="category-info">
+                                    <div class="category-name">Knowledge Base</div>
+                                    <div class="category-stats">342 topics</div>
+                                </div>
+                            </div>
+                        </div>
+                    </aside>
+                    
+                    <!-- Topics List -->
+                    <div class="topics-main">
+                        <header class="topics-header">
+                            <h2>General Discussion</h2>
+                            <div class="topics-filters">
+                                <select class="filter-select">
+                                    <option>Latest</option>
+                                    <option>Top</option>
+                                    <option>Unread</option>
+                                </select>
+                            </div>
+                        </header>
+                        
+                        <div class="topics-list">
+                            <div class="topic-item">
+                                <div class="topic-avatar">
+                                    <img src="" alt="Author" />
+                                </div>
+                                <div class="topic-content">
+                                    <h3 class="topic-title">
+                                        <span class="topic-tag">Pinned</span>
+                                        Welcome to our new discussion platform!
+                                    </h3>
+                                    <div class="topic-meta">
+                                        <span class="topic-author">Admin</span>
+                                        <span class="topic-category">in Announcements</span>
+                                        <span class="topic-time">2 hours ago</span>
+                                    </div>
+                                    <div class="topic-stats">
+                                        <span class="stat-item">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <path d="M8 1C4 1 1 4 1 8s3 7 7 7 7-3 7-7-3-7-7-7zm0 12V8l3 3-3 1z" fill="currentColor"/>
+                                            </svg>
+                                            24 replies
+                                        </span>
+                                        <span class="stat-item">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <path d="M2 6.5C2 5.7 2.7 5 3.5 5h9c.8 0 1.5.7 1.5 1.5v5c0 .8-.7 1.5-1.5 1.5h-9c-.8 0-1.5-.7-1.5-1.5v-5z" fill="currentColor"/>
+                                            </svg>
+                                            156 views
+                                        </span>
+                                        <span class="stat-item">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <path d="M8 14l-4-4h2V6h4v4h2l-4 4z" fill="currentColor"/>
+                                            </svg>
+                                            12
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- More topics... -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Projects Section -->
+            <section id="projects-section" class="content-section">
+                <div class="projects-container">
+                    <!-- Projects Sidebar -->
+                    <aside class="projects-sidebar">
+                        <div class="sidebar-header">
+                            <h3>Projects</h3>
+                            <button class="new-project-btn">
+                                <svg width="16" height="16" viewBox="0 0 16 16">
+                                    <path d="M8 4v4H4v2h4v4h2v-4h4V8h-4V4H8z" fill="currentColor"/>
+                                </svg>
+                            </button>
+                        </div>
+                        
+                        <div class="project-tree">
+                            <div class="tree-item expanded">
+                                <div class="tree-node">
+                                    <svg class="tree-arrow" width="12" height="12" viewBox="0 0 12 12">
+                                        <path d="M3 4l3 3 3-3" stroke="currentColor" fill="none"/>
+                                    </svg>
+                                    <svg class="tree-icon" width="16" height="16" viewBox="0 0 16 16">
+                                        <path d="M2 3v10a1 1 0 001 1h10a1 1 0 001-1V5a1 1 0 00-1-1H8L6 2H3a1 1 0 00-1 1z" fill="currentColor"/>
+                                    </svg>
+                                    <span class="tree-label">Engineering</span>
+                                </div>
+                                <div class="tree-children">
+                                    <div class="tree-item">
+                                        <div class="tree-node">
+                                            <svg class="tree-icon" width="16" height="16" viewBox="0 0 16 16">
+                                                <path d="M9 2H4a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6l-4-4z" fill="currentColor"/>
+                                            </svg>
+                                            <span class="tree-label">Q4 Roadmap</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-item">
+                                        <div class="tree-node">
+                                            <svg class="tree-icon" width="16" height="16" viewBox="0 0 16 16">
+                                                <path d="M9 2H4a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6l-4-4z" fill="currentColor"/>
+                                            </svg>
+                                            <span class="tree-label">Architecture Docs</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="tree-item">
+                                <div class="tree-node">
+                                    <svg class="tree-arrow" width="12" height="12" viewBox="0 0 12 12">
+                                        <path d="M5 3l3 3-3 3" stroke="currentColor" fill="none"/>
+                                    </svg>
+                                    <svg class="tree-icon" width="16" height="16" viewBox="0 0 16 16">
+                                        <path d="M2 3v10a1 1 0 001 1h10a1 1 0 001-1V5a1 1 0 00-1-1H8L6 2H3a1 1 0 00-1 1z" fill="currentColor"/>
+                                    </svg>
+                                    <span class="tree-label">Marketing</span>
+                                </div>
+                            </div>
+                        </div>
+                    </aside>
+                    
+                    <!-- Project Content -->
+                    <div class="project-main">
+                        <header class="project-header">
+                            <div class="breadcrumb">
+                                <a href="#" class="breadcrumb-item">Engineering</a>
+                                <span class="breadcrumb-separator">/</span>
+                                <span class="breadcrumb-current">Q4 Roadmap</span>
+                            </div>
+                            <div class="project-actions">
+                                <button class="action-btn">Share</button>
+                                <button class="action-btn primary">Upload</button>
+                            </div>
+                        </header>
+                        
+                        <div class="file-grid">
+                            <div class="file-card">
+                                <div class="file-icon">
+                                    <svg width="48" height="48" viewBox="0 0 48 48">
+                                        <path d="M12 4h18l8 8v28a2 2 0 01-2 2H12a2 2 0 01-2-2V6a2 2 0 012-2z" fill="#E5E7EB"/>
+                                        <path d="M30 4v8h8" fill="#9CA3AF"/>
+                                        <rect x="14" y="20" width="20" height="2" fill="#6B7280"/>
+                                        <rect x="14" y="26" width="16" height="2" fill="#6B7280"/>
+                                        <rect x="14" y="32" width="18" height="2" fill="#6B7280"/>
+                                    </svg>
+                                </div>
+                                <div class="file-info">
+                                    <div class="file-name">Product Requirements.docx</div>
+                                    <div class="file-meta">Modified 2 hours ago • 1.2 MB</div>
+                                </div>
+                                <div class="file-actions">
+                                    <button class="icon-btn">⋮</button>
+                                </div>
+                            </div>
+                            
+                            <div class="file-card">
+                                <div class="file-icon">
+                                    <svg width="48" height="48" viewBox="0 0 48 48">
+                                        <path d="M12 4h18l8 8v28a2 2 0 01-2 2H12a2 2 0 01-2-2V6a2 2 0 012-2z" fill="#DBEAFE"/>
+                                        <path d="M30 4v8h8" fill="#60A5FA"/>
+                                        <rect x="14" y="20" width="8" height="8" fill="#3B82F6"/>
+                                        <rect x="26" y="20" width="8" height="12" fill="#60A5FA"/>
+                                        <rect x="14" y="32" width="8" height="6" fill="#93BBFC"/>
+                                    </svg>
+                                </div>
+                                <div class="file-info">
+                                    <div class="file-name">Q4 Metrics.xlsx</div>
+                                    <div class="file-meta">Modified yesterday • 856 KB</div>
+                                </div>
+                                <div class="file-actions">
+                                    <button class="icon-btn">⋮</button>
+                                </div>
+                            </div>
+                            
+                            <!-- More files... -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Right Sidebar (Activity/Info) -->
+        <aside class="right-sidebar">
+            <div class="sidebar-tabs">
+                <button class="sidebar-tab active">Activity</button>
+                <button class="sidebar-tab">Info</button>
+            </div>
+            
+            <div class="sidebar-content">
+                <div class="activity-list">
+                    <div class="activity-item">
+                        <div class="activity-icon">
+                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                <circle cx="8" cy="8" r="6" fill="#10B981"/>
+                            </svg>
+                        </div>
+                        <div class="activity-content">
+                            <div class="activity-title">Alice joined #engineering</div>
+                            <div class="activity-time">5 minutes ago</div>
+                        </div>
+                    </div>
+                    
+                    <div class="activity-item">
+                        <div class="activity-icon">
+                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                <rect x="3" y="3" width="10" height="10" rx="2" fill="#3B82F6"/>
+                            </svg>
+                        </div>
+                        <div class="activity-content">
+                            <div class="activity-title">New file uploaded to Q4 Roadmap</div>
+                            <div class="activity-time">1 hour ago</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </aside>
-
-        <!-- Chat Area -->
-        <section class="chat-section">
-          <div id="chat-header" class="chat-header">
-            <div class="chat-title">
-              <h2 id="current-contact-name">Select a contact to start chatting</h2>
-              <span id="current-contact-status" class="contact-status"></span>
-            </div>
-          </div>
-          
-          <div id="messages-container" class="messages-container">
-            <div id="messages-list" class="messages-list">
-              <!-- Messages will be populated here -->
-            </div>
-          </div>
-
-          <div id="message-input-area" class="message-input-area">
-            <div class="input-group">
-              <input 
-                type="text" 
-                id="message-input" 
-                class="message-input" 
-                placeholder="Type a message..." 
-                disabled
-              />
-              <button id="send-btn" class="send-btn" disabled>
-                📤
-              </button>
-            </div>
-          </div>
-        </section>
-      </main>
-
-      <!-- System Menu Overlay -->
-      <div id="system-menu" class="system-menu hidden">
-        <div class="menu-content">
-          <div class="menu-header">
-            <h3>System Assistant</h3>
-            <button id="close-menu-btn" class="close-btn">✕</button>
-          </div>
-          <div class="menu-options">
-            <button class="menu-option" data-command="status">
-              📊 Network Status
-            </button>
-            <button class="menu-option" data-command="peers">
-              👥 Connected Peers
-            </button>
-            <button class="menu-option" data-command="tunnels">
-              🚇 Tunnel Information
-            </button>
-            <button class="menu-option" data-command="addresses">
-              🏠 Three-word Addresses
-            </button>
-            <button class="menu-option" data-command="inbox">
-              📬 Create DHT Inbox
-            </button>
-            <button class="menu-option" data-command="profile">
-              👤 Manage Profile
-            </button>
-            <button class="menu-option" data-command="contacts">
-              📋 Manage Contacts
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Layout Settings Modal -->
-      <div id="layout-modal" class="modal hidden">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3>Layout Settings</h3>
-            <button id="close-layout-modal" class="close-btn">✕</button>
-          </div>
-          <div class="modal-body">
-            <h4>Contacts Panel Position</h4>
-            <div class="layout-options">
-              <button class="layout-option active" data-position="left">
-                📱 Left
-              </button>
-              <button class="layout-option" data-position="right">
-                📱 Right
-              </button>
-              <button class="layout-option" data-position="top">
-                📱 Top
-              </button>
-              <button class="layout-option" data-position="bottom">
-                📱 Bottom
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Connection Dialog -->
-      <div id="connect-dialog" class="modal hidden">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3>Connect to Peer</h3>
-            <button id="close-connect-dialog" class="close-btn">✕</button>
-          </div>
-          <div class="modal-body">
-            <div class="input-group">
-              <label for="peer-address">Peer Address (Three-word or Multiaddr):</label>
-              <input 
-                type="text" 
-                id="peer-address" 
-                placeholder="swift.lighthouse.mountain or /ip4/..." 
-              />
-            </div>
-            <div class="modal-actions">
-              <button id="connect-btn" class="primary-btn">
-                Connect
-              </button>
-              <button id="cancel-connect-btn" class="secondary-btn">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Profile Management Modal -->
-      <div id="profile-modal" class="modal hidden">
-        <div class="modal-content large-modal">
-          <div class="modal-header">
-            <h3>Profile Management</h3>
-            <button id="close-profile-modal" class="close-btn">✕</button>
-          </div>
-          <div class="modal-body">
-            <div class="profile-tabs">
-              <button class="tab-btn active" data-tab="profile">👤 Profile</button>
-              <button class="tab-btn" data-tab="privacy">🔒 Privacy</button>
-              <button class="tab-btn" data-tab="identity">🆔 Identity</button>
-            </div>
-            
-            <!-- Profile Tab -->
-            <div id="profile-tab" class="tab-content active">
-              <div class="profile-section">
-                <h4>Personal Information</h4>
-                <div class="input-group">
-                  <label for="display-name">Display Name:</label>
-                  <input type="text" id="display-name" placeholder="Your display name" />
-                </div>
-                <div class="input-group">
-                  <label for="status-message">Status Message:</label>
-                  <input type="text" id="status-message" placeholder="What's on your mind?" />
-                </div>
-                <div class="input-group">
-                  <label for="three-word-address">Three-word Address:</label>
-                  <input type="text" id="three-word-address" placeholder="your.unique.address" readonly />
-                  <small>This is your unique network address that others can use to find you</small>
-                </div>
-              </div>
-              
-              <div class="profile-section">
-                <h4>Avatar</h4>
-                <div class="avatar-section">
-                  <div id="avatar-preview" class="avatar-preview">
-                    <div class="avatar-placeholder">📷</div>
-                  </div>
-                  <div class="avatar-controls">
-                    <input type="file" id="avatar-upload" accept="image/*" style="display: none;" />
-                    <button id="upload-avatar-btn" class="secondary-btn">Choose Image</button>
-                    <button id="remove-avatar-btn" class="secondary-btn">Remove</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <!-- Privacy Tab -->
-            <div id="privacy-tab" class="tab-content">
-              <div class="profile-section">
-                <h4>Discovery Settings</h4>
-                <div class="checkbox-group">
-                  <label>
-                    <input type="checkbox" id="discoverable-by-name" />
-                    Allow others to find me by display name
-                  </label>
-                  <label>
-                    <input type="checkbox" id="discoverable-by-friends" />
-                    Allow friends to recommend me to others
-                  </label>
-                  <label>
-                    <input type="checkbox" id="allow-contact-requests" />
-                    Accept contact requests from strangers
-                  </label>
-                  <label>
-                    <input type="checkbox" id="require-mutual-friends" />
-                    Only allow contact requests from friends-of-friends
-                  </label>
-                </div>
-              </div>
-              
-              <div class="profile-section">
-                <h4>Default Permissions for New Contacts</h4>
-                <div class="checkbox-group">
-                  <label>
-                    <input type="checkbox" id="default-see-name" />
-                    Can see display name
-                  </label>
-                  <label>
-                    <input type="checkbox" id="default-see-avatar" />
-                    Can see avatar
-                  </label>
-                  <label>
-                    <input type="checkbox" id="default-see-status" />
-                    Can see status message
-                  </label>
-                  <label>
-                    <input type="checkbox" id="default-see-last-seen" />
-                    Can see when I was last online
-                  </label>
-                </div>
-              </div>
-              
-              <div class="profile-section">
-                <h4>Security Settings</h4>
-                <div class="checkbox-group">
-                  <label>
-                    <input type="checkbox" id="require-proof-of-humanity" />
-                    Require proof-of-humanity for contact requests
-                  </label>
-                  <label>
-                    <input type="checkbox" id="enable-forward-secrecy" />
-                    Enable perfect forward secrecy for messages
-                  </label>
-                  <label>
-                    <input type="checkbox" id="auto-rotate-keys" />
-                    Automatically rotate profile keys
-                  </label>
-                </div>
-              </div>
-            </div>
-            
-            <!-- Identity Tab -->
-            <div id="identity-tab" class="tab-content">
-              <div class="profile-section">
-                <h4>Identity Information</h4>
-                <div class="info-group">
-                  <div class="info-item">
-                    <label>User ID:</label>
-                    <span id="user-id" class="monospace">Not generated</span>
-                    <button id="copy-user-id" class="icon-btn" title="Copy User ID">📋</button>
-                  </div>
-                  <div class="info-item">
-                    <label>Public Key:</label>
-                    <span id="public-key" class="monospace">Not generated</span>
-                    <button id="copy-public-key" class="icon-btn" title="Copy Public Key">📋</button>
-                  </div>
-                  <div class="info-item">
-                    <label>Verification Level:</label>
-                    <span id="verification-level" class="verification-badge">Unverified</span>
-                  </div>
-                </div>
-              </div>
-              
-              <div class="profile-section">
-                <h4>Network Security</h4>
-                <div class="security-status">
-                  <div class="security-item">
-                    <span class="security-label">IPv6 Binding:</span>
-                    <span id="ipv6-binding-status" class="status-indicator">❌ Not bound</span>
-                  </div>
-                  <button id="bind-ipv6-btn" class="secondary-btn">Bind to IPv6 Identity</button>
-                </div>
-              </div>
-              
-              <div class="profile-section">
-                <h4>Identity Actions</h4>
-                <div class="action-buttons">
-                  <button id="export-identity-btn" class="secondary-btn">
-                    📤 Export Identity
-                  </button>
-                  <button id="import-identity-btn" class="secondary-btn">
-                    📥 Import Identity
-                  </button>
-                  <input type="file" id="identity-file-input" accept=".json" style="display: none;" />
-                  <button id="create-new-identity-btn" class="primary-btn">
-                    ✨ Create New Identity
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            <div class="modal-actions">
-              <button id="save-profile-btn" class="primary-btn">
-                💾 Save Changes
-              </button>
-              <button id="cancel-profile-btn" class="secondary-btn">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Contact Management Modal -->
-      <div id="contact-modal" class="modal hidden">
-        <div class="modal-content large-modal">
-          <div class="modal-header">
-            <h3>Contact Management</h3>
-            <button id="close-contact-modal" class="close-btn">✕</button>
-          </div>
-          <div class="modal-body">
-            <div class="contact-tabs">
-              <button class="tab-btn active" data-tab="contacts">👥 Contacts</button>
-              <button class="tab-btn" data-tab="requests">📨 Requests</button>
-              <button class="tab-btn" data-tab="search">🔍 Find People</button>
-            </div>
-            
-            <!-- Contacts Tab -->
-            <div id="contacts-tab" class="tab-content active">
-              <div class="contact-list-container">
-                <div class="list-header">
-                  <h4>Your Contacts</h4>
-                  <button id="refresh-contacts-btn" class="icon-btn" title="Refresh">🔄</button>
-                </div>
-                <div id="contact-list" class="contact-list">
-                  <!-- Contacts will be populated here -->
-                </div>
-              </div>
-            </div>
-            
-            <!-- Requests Tab -->
-            <div id="requests-tab" class="tab-content">
-              <div class="requests-container">
-                <h4>Pending Contact Requests</h4>
-                <div id="pending-requests" class="request-list">
-                  <!-- Pending requests will be populated here -->
-                </div>
-                
-                <h4>Sent Requests</h4>
-                <div id="sent-requests" class="request-list">
-                  <!-- Sent requests will be populated here -->
-                </div>
-              </div>
-            </div>
-            
-            <!-- Search Tab -->
-            <div id="search-tab" class="tab-content">
-              <div class="search-container">
-                <div class="input-group">
-                  <label for="search-query">Search for people:</label>
-                  <input type="text" id="search-query" placeholder="Display name, user ID, or three-word address" />
-                  <button id="search-btn" class="primary-btn">Search</button>
-                </div>
-                
-                <div id="search-results" class="search-results">
-                  <!-- Search results will be populated here -->
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
-  </body>
+
+    <!-- Modals and overlays will be added here -->
+</body>
 </html>
