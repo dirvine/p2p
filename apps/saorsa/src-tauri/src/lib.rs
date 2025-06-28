@@ -1244,6 +1244,7 @@ fn extract_frontend_to(target_dir: &std::path::Path) -> std::io::Result<()> {
     std::fs::write(target_dir.join("index.html"), frontend_bundle::INDEX_HTML)?;
     std::fs::write(target_dir.join("styles.css"), frontend_bundle::STYLES_CSS)?;
     std::fs::write(target_dir.join("main.js"), frontend_bundle::MAIN_JS)?;
+    std::fs::write(target_dir.join("test.html"), frontend_bundle::TEST_HTML)?;
     
     Ok(())
 }
@@ -1413,10 +1414,12 @@ pub fn run_app() {
             }
             
             // Create the main window with our custom protocol
+            // Use a unique label to avoid conflicts
+            let window_label = format!("main-{}", uuid::Uuid::new_v4().simple());
             let _window = tauri::WebviewWindowBuilder::new(
                 app,
-                "main",
-                tauri::WebviewUrl::External("saorsa://localhost/index.html".parse().unwrap())
+                &window_label,
+                tauri::WebviewUrl::External("saorsa://localhost/test.html".parse().unwrap())
             )
             .title("Saorsa - P2P Foundation")
             .inner_size(800.0, 600.0)

@@ -7,15 +7,7 @@
     "frontendDist": "../src"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Saorsa Professional",
-        "width": 1200,
-        "height": 800,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }
