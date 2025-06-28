@@ -1106,3 +1106,619 @@ impl RepairScheduler {
 ```
 
 ---
+
+## 5. Storage Manager Integration
+
+The storage manager provides a unified interface for handling DHT operations with enhanced encryption, serialization, and replication capabilities. It integrates all the components we've built into a cohesive system.
+
+### 5.1 Enhanced Storage Manager
+
+```rust
+use std::time::{Duration, SystemTime};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+/// Main storage manager that coordinates DHT operations
+#[derive(Debug)]
+pub struct EnhancedDhtStorageManager {
+    /// K=8 replication manager
+    replication_manager: Arc<RwLock<EnhancedRecordManager>>,
+    /// Encryption service for data protection
+    encryption_service: Arc<EncryptionService>,
+    /// Serialization service for data formatting
+    serialization_service: Arc<SerializationService>,
+    /// Local storage for caching and metadata
+    local_storage: Arc<RwLock<LocalStorageManager>>,
+    /// Configuration for the storage system
+    config: StorageManagerConfig,
+    /// Event publisher for notifications
+    event_publisher: Arc<EventPublisher>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StorageManagerConfig {
+    /// K=8 replication configuration
+    pub replication_config: ReplicationConfig,
+    /// Local cache configuration
+    pub cache_config: CacheConfig,
+    /// Encryption preferences
+    pub encryption_config: EncryptionConfig,
+    /// Serialization preferences
+    pub serialization_config: SerializationConfig,
+    /// Performance tuning
+    pub performance_config: PerformanceConfig,
+}
+
+impl Default for StorageManagerConfig {
+    fn default() -> Self {
+        Self {
+            replication_config: ReplicationConfig::default(),
+            cache_config: CacheConfig::default(),
+            encryption_config: EncryptionConfig::default(),
+            serialization_config: SerializationConfig::default(),
+            performance_config: PerformanceConfig::default(),
+        }
+    }
+}
+```
+
+### 5.2 High-Level Storage Operations
+
+```rust
+impl EnhancedDhtStorageManager {
+    /// Create a new storage manager with the given configuration
+    pub async fn new(config: StorageManagerConfig) -> Result<Self, StorageError> {
+        let replication_manager = Arc::new(RwLock::new(
+            EnhancedRecordManager::new(config.replication_config.clone())
+        ));
+        
+        let encryption_service = Arc::new(
+            EncryptionService::new(config.encryption_config.clone())?
+        );
+        
+        let serialization_service = Arc::new(
+            SerializationService::new(config.serialization_config.clone())
+        );
+        
+        let local_storage = Arc::new(RwLock::new(
+            LocalStorageManager::new(config.cache_config.clone()).await?
+        ));
+        
+        let event_publisher = Arc::new(EventPublisher::new());
+        
+        Ok(Self {
+            replication_manager,
+            encryption_service,
+            serialization_service,
+            local_storage,
+            config,
+            event_publisher,
+        })
+    }
+    
+    /// Store data with specified access level and encryption
+    pub async fn store<T>(&self, request: StoreRequest<T>) -> Result<StoreResponse, StorageError>
+    where
+        T: Serialize + DeserializeOwned + Send + Sync + 'static,
+    {
+        let operation_id = OperationId::new();
+        self.publish_event(StorageEvent::OperationStarted {
+            operation_id: operation_id.clone(),
+            operation_type: OperationType::Store,
+            key: request.key.clone(),
+        }).await;
+        
+        // Step 1: Validate the request
+        self.validate_store_request(&request)?;
+        
+        // Step 2: Serialize the data with the specified format
+        let serialized_data = self.serialization_service
+            .serialize(&request.data, request.serialization_format)
+            .await?;
+        
+        // Step 3: Apply encryption based on access level
+        let encrypted_data = self.encryption_service
+            .encrypt(serialized_data, &request.access_level)
+            .await?;
+        
+        // Step 4: Create enhanced DHT record
+        let dht_record = self.create_dht_record(
+            request.key.clone(),
+            encrypted_data,
+            request.metadata.clone(),
+            request.access_level.clone(),
+        ).await?;
+        
+        // Step 5: Store locally first for immediate availability
+        if request.cache_locally {
+            self.store_locally(&dht_record).await?;
+        }
+        
+        // Step 6: Replicate across the network with K=8
+        let replication_result = {
+            let mut manager = self.replication_manager.write().await;
+            manager.store_with_replication(dht_record.clone()).await?
+        };
+        
+        // Step 7: Create response
+        let response = StoreResponse {
+            operation_id: operation_id.clone(),
+            key: request.key.clone(),
+            replication_result,
+            storage_metadata: StorageMetadata {
+                stored_at: SystemTime::now(),
+                size_bytes: dht_record.serialized_size(),
+                access_level: request.access_level,
+                serialization_format: request.serialization_format,
+                local_cached: request.cache_locally,
+            },
+        };
+        
+        // Step 8: Publish completion event
+        self.publish_event(StorageEvent::OperationCompleted {
+            operation_id,
+            success: replication_result.is_sufficient,
+            details: response.clone().into(),
+        }).await;
+        
+        Ok(response)
+    }
+    
+    /// Retrieve data with automatic decryption and deserialization
+    pub async fn retrieve<T>(&self, request: RetrieveRequest) -> Result<RetrieveResponse<T>, StorageError>
+    where
+        T: Serialize + DeserializeOwned + Send + Sync + 'static,
+    {
+        let operation_id = OperationId::new();
+        self.publish_event(StorageEvent::OperationStarted {
+            operation_id: operation_id.clone(),
+            operation_type: OperationType::Retrieve,
+            key: request.key.clone(),
+        }).await;
+        
+        // Step 1: Try local storage first if enabled
+        if request.prefer_local {
+            if let Some(local_record) = self.retrieve_locally(&request.key).await? {
+                let response = self.process_retrieved_record(
+                    local_record,
+                    request.access_credentials.clone(),
+                    operation_id.clone(),
+                ).await?;
+                
+                self.publish_event(StorageEvent::OperationCompleted {
+                    operation_id,
+                    success: true,
+                    details: response.clone().into(),
+                }).await;
+                
+                return Ok(response);
+            }
+        }
+        
+        // Step 2: Retrieve from DHT network
+        let replica_info = {
+            let manager = self.replication_manager.read().await;
+            manager.get_replica_info(&request.key)
+        };
+        
+        let dht_record = if let Some(info) = replica_info {
+            // We know where replicas are, try them in order of health
+            self.retrieve_from_replicas(&request.key, &info).await?
+        } else {
+            // Fallback to general DHT lookup
+            self.retrieve_from_dht(&request.key).await?
+        };
+        
+        // Step 3: Process the retrieved record
+        let response = self.process_retrieved_record(
+            dht_record,
+            request.access_credentials,
+            operation_id.clone(),
+        ).await?;
+        
+        // Step 4: Cache locally if requested
+        if request.cache_locally && response.record.is_some() {
+            self.store_locally(response.record.as_ref().unwrap()).await.ok();
+        }
+        
+        // Step 5: Publish completion event
+        self.publish_event(StorageEvent::OperationCompleted {
+            operation_id,
+            success: response.record.is_some(),
+            details: response.clone().into(),
+        }).await;
+        
+        Ok(response)
+    }
+    
+    /// Update existing data with conflict resolution
+    pub async fn update<T>(&self, request: UpdateRequest<T>) -> Result<UpdateResponse, StorageError>
+    where
+        T: Serialize + DeserializeOwned + Send + Sync + 'static,
+    {
+        let operation_id = OperationId::new();
+        self.publish_event(StorageEvent::OperationStarted {
+            operation_id: operation_id.clone(),
+            operation_type: OperationType::Update,
+            key: request.key.clone(),
+        }).await;
+        
+        // Step 1: Retrieve current version
+        let current_record = self.retrieve_from_dht(&request.key).await?;
+        
+        // Step 2: Apply conflict resolution strategy
+        let resolved_data = match request.conflict_resolution {
+            ConflictResolution::LastWriterWins => {
+                // Simply use the new data
+                request.new_data
+            },
+            ConflictResolution::MergeStrategy(merger) => {
+                // Decrypt and deserialize current data for merging
+                let current_data = self.decrypt_and_deserialize::<T>(
+                    &current_record,
+                    &request.access_credentials,
+                ).await?;
+                
+                // Apply custom merge function
+                merger.merge(current_data, request.new_data)?
+            },
+            ConflictResolution::VersionVector => {
+                // Use version vector for conflict resolution
+                self.resolve_with_version_vector(
+                    &current_record,
+                    request.new_data,
+                    &request.version_vector,
+                ).await?
+            },
+        };
+        
+        // Step 3: Store the resolved data
+        let store_request = StoreRequest {
+            key: request.key.clone(),
+            data: resolved_data,
+            access_level: request.access_level,
+            metadata: request.metadata,
+            serialization_format: request.serialization_format,
+            cache_locally: request.cache_locally,
+            ttl: request.ttl,
+        };
+        
+        let store_response = self.store(store_request).await?;
+        
+        // Step 4: Create update response
+        let response = UpdateResponse {
+            operation_id: operation_id.clone(),
+            key: request.key,
+            old_version: current_record.version_vector.clone(),
+            new_version: store_response.storage_metadata,
+            conflict_detected: matches!(request.conflict_resolution, ConflictResolution::MergeStrategy(_)),
+            replication_result: store_response.replication_result,
+        };
+        
+        // Step 5: Publish completion event
+        self.publish_event(StorageEvent::OperationCompleted {
+            operation_id,
+            success: response.replication_result.is_sufficient,
+            details: response.clone().into(),
+        }).await;
+        
+        Ok(response)
+    }
+    
+    /// Delete data from the DHT with proper cleanup
+    pub async fn delete(&self, request: DeleteRequest) -> Result<DeleteResponse, StorageError> {
+        let operation_id = OperationId::new();
+        self.publish_event(StorageEvent::OperationStarted {
+            operation_id: operation_id.clone(),
+            operation_type: OperationType::Delete,
+            key: request.key.clone(),
+        }).await;
+        
+        // Step 1: Verify deletion permissions
+        self.verify_delete_permissions(&request).await?;
+        
+        // Step 2: Create tombstone record
+        let tombstone = self.create_tombstone_record(&request).await?;
+        
+        // Step 3: Store tombstone across replicas
+        let replication_result = {
+            let mut manager = self.replication_manager.write().await;
+            manager.store_with_replication(tombstone.clone()).await?
+        };
+        
+        // Step 4: Remove from local storage
+        if request.remove_local {
+            self.remove_locally(&request.key).await?;
+        }
+        
+        // Step 5: Schedule cleanup for later
+        self.schedule_cleanup(&request.key, request.cleanup_delay).await?;
+        
+        let response = DeleteResponse {
+            operation_id: operation_id.clone(),
+            key: request.key,
+            deleted_at: SystemTime::now(),
+            replication_result,
+            cleanup_scheduled: request.cleanup_delay.is_some(),
+        };
+        
+        // Step 6: Publish completion event
+        self.publish_event(StorageEvent::OperationCompleted {
+            operation_id,
+            success: replication_result.is_sufficient,
+            details: response.clone().into(),
+        }).await;
+        
+        Ok(response)
+    }
+}
+```
+
+### 5.3 Request and Response Types
+
+```rust
+#[derive(Debug, Clone)]
+pub struct StoreRequest<T> {
+    pub key: Key,
+    pub data: T,
+    pub access_level: DataAccessLevel,
+    pub metadata: HashMap<String, String>,
+    pub serialization_format: SerializationFormat,
+    pub cache_locally: bool,
+    pub ttl: Option<Duration>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StoreResponse {
+    pub operation_id: OperationId,
+    pub key: Key,
+    pub replication_result: ReplicationResult,
+    pub storage_metadata: StorageMetadata,
+}
+
+#[derive(Debug, Clone)]
+pub struct RetrieveRequest {
+    pub key: Key,
+    pub access_credentials: AccessCredentials,
+    pub prefer_local: bool,
+    pub cache_locally: bool,
+    pub timeout: Option<Duration>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RetrieveResponse<T> {
+    pub operation_id: OperationId,
+    pub key: Key,
+    pub record: Option<T>,
+    pub metadata: Option<StorageMetadata>,
+    pub retrieved_from: RetrievalSource,
+    pub retrieval_stats: RetrievalStatistics,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateRequest<T> {
+    pub key: Key,
+    pub new_data: T,
+    pub access_level: DataAccessLevel,
+    pub access_credentials: AccessCredentials,
+    pub conflict_resolution: ConflictResolution<T>,
+    pub version_vector: Option<VersionVector>,
+    pub metadata: HashMap<String, String>,
+    pub serialization_format: SerializationFormat,
+    pub cache_locally: bool,
+    pub ttl: Option<Duration>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateResponse {
+    pub operation_id: OperationId,
+    pub key: Key,
+    pub old_version: VersionVector,
+    pub new_version: StorageMetadata,
+    pub conflict_detected: bool,
+    pub replication_result: ReplicationResult,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteRequest {
+    pub key: Key,
+    pub access_credentials: AccessCredentials,
+    pub reason: String,
+    pub remove_local: bool,
+    pub cleanup_delay: Option<Duration>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteResponse {
+    pub operation_id: OperationId,
+    pub key: Key,
+    pub deleted_at: SystemTime,
+    pub replication_result: ReplicationResult,
+    pub cleanup_scheduled: bool,
+}
+```
+
+### 5.4 Supporting Types and Enums
+
+```rust
+#[derive(Debug, Clone)]
+pub struct AccessCredentials {
+    pub user_id: String,
+    pub access_tokens: Vec<AccessToken>,
+    pub group_memberships: Vec<GroupMembership>,
+    pub capability_tokens: Vec<CapabilityToken>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ConflictResolution<T> {
+    LastWriterWins,
+    MergeStrategy(Box<dyn MergeStrategy<T>>),
+    VersionVector,
+}
+
+#[derive(Debug, Clone)]
+pub enum RetrievalSource {
+    LocalCache,
+    DhtNetwork { replica_count: usize },
+    BootstrapNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct RetrievalStatistics {
+    pub total_time: Duration,
+    pub network_time: Option<Duration>,
+    pub decryption_time: Duration,
+    pub deserialization_time: Duration,
+    pub replicas_contacted: usize,
+    pub replicas_responded: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct StorageMetadata {
+    pub stored_at: SystemTime,
+    pub size_bytes: usize,
+    pub access_level: DataAccessLevel,
+    pub serialization_format: SerializationFormat,
+    pub local_cached: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum OperationType {
+    Store,
+    Retrieve,
+    Update,
+    Delete,
+}
+
+#[derive(Debug, Clone)]
+pub struct OperationId(String);
+
+impl OperationId {
+    pub fn new() -> Self {
+        Self(uuid::Uuid::new_v4().to_string())
+    }
+}
+```
+
+### 5.5 Event System for Monitoring
+
+```rust
+#[derive(Debug, Clone)]
+pub enum StorageEvent {
+    OperationStarted {
+        operation_id: OperationId,
+        operation_type: OperationType,
+        key: Key,
+    },
+    OperationCompleted {
+        operation_id: OperationId,
+        success: bool,
+        details: EventDetails,
+    },
+    ReplicationEvent {
+        key: Key,
+        event_type: ReplicationEventType,
+        peer_id: PeerId,
+    },
+    EncryptionEvent {
+        operation_id: OperationId,
+        event_type: EncryptionEventType,
+    },
+    ErrorEvent {
+        operation_id: OperationId,
+        error: StorageError,
+        context: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum ReplicationEventType {
+    ReplicaCreated,
+    ReplicaVerified,
+    ReplicaFailed,
+    RepairScheduled,
+    RepairCompleted,
+}
+
+#[derive(Debug, Clone)]
+pub enum EncryptionEventType {
+    EncryptionStarted,
+    EncryptionCompleted,
+    DecryptionStarted,
+    DecryptionCompleted,
+    KeyRotationStarted,
+    KeyRotationCompleted,
+}
+
+#[derive(Debug)]
+pub struct EventPublisher {
+    subscribers: Arc<RwLock<Vec<Box<dyn EventSubscriber>>>>,
+}
+
+#[async_trait::async_trait]
+pub trait EventSubscriber: Send + Sync {
+    async fn handle_event(&self, event: StorageEvent);
+}
+
+impl EventPublisher {
+    pub fn new() -> Self {
+        Self {
+            subscribers: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+    
+    pub async fn subscribe(&self, subscriber: Box<dyn EventSubscriber>) {
+        let mut subscribers = self.subscribers.write().await;
+        subscribers.push(subscriber);
+    }
+    
+    pub async fn publish(&self, event: StorageEvent) {
+        let subscribers = self.subscribers.read().await;
+        for subscriber in subscribers.iter() {
+            subscriber.handle_event(event.clone()).await;
+        }
+    }
+}
+```
+
+### 5.6 Error Handling
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum StorageError {
+    #[error("Serialization error: {0}")]
+    SerializationError(#[from] SerializationError),
+    
+    #[error("Encryption error: {0}")]
+    EncryptionError(#[from] EncryptionError),
+    
+    #[error("Replication error: {0}")]
+    ReplicationError(#[from] ReplicationError),
+    
+    #[error("Access denied: {reason}")]
+    AccessDenied { reason: String },
+    
+    #[error("Key not found: {key:?}")]
+    KeyNotFound { key: Key },
+    
+    #[error("Conflict resolution failed: {reason}")]
+    ConflictResolutionFailed { reason: String },
+    
+    #[error("Network timeout after {timeout:?}")]
+    NetworkTimeout { timeout: Duration },
+    
+    #[error("Local storage error: {0}")]
+    LocalStorageError(String),
+    
+    #[error("Validation error: {field}: {reason}")]
+    ValidationError { field: String, reason: String },
+    
+    #[error("System error: {0}")]
+    SystemError(String),
+}
+
+pub type StorageResult<T> = Result<T, StorageError>;
+```
+
+---
