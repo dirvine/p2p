@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Settings Button</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .header {
+            background: #f0f0f0;
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .icon-btn {
+            padding: 8px 12px;
+            border: none;
+            background: #007AFF;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .icon-btn:hover {
+            background: #005BBB;
+        }
+        #debug {
+            margin-top: 20px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Test Settings Button</h1>
+        <button id="settings-btn" class="icon-btn" title="Settings">⚙️ Settings</button>
+    </div>
+    
+    <div id="debug">
+        <h3>Debug Log:</h3>
+    </div>
+
+    <script>
+        function log(msg) {
+            const debug = document.getElementById('debug');
+            const p = document.createElement('p');
+            p.textContent = new Date().toISOString().substr(11,8) + ' - ' + msg;
+            debug.appendChild(p);
+            console.log(msg);
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            log('DOM loaded');
+            
+            const settingsBtn = document.getElementById('settings-btn');
+            if (settingsBtn) {
+                log('Settings button found: ' + settingsBtn.id);
+                
+                settingsBtn.addEventListener('click', function() {
+                    log('Settings button CLICKED!');
+                    alert('Settings button works!');
+                });
+                
+                log('Event listener attached');
+            } else {
+                log('ERROR: Settings button not found!');
+            }
+        });
+    </script>
+</body>
+</html>

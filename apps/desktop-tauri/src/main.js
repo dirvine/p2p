@@ -15,32 +15,31 @@ let appState = {
   contactModalOpen: false
 };
 
-// Debug logging to UI
-function debugLog(msg) {
-  console.log(msg);
-  // Also show in the network status area temporarily
-  const statusEl = document.getElementById('network-status');
-  if (statusEl) {
-    statusEl.textContent = msg;
-  }
-}
-
 // Initialize the application
 window.addEventListener('DOMContentLoaded', async () => {
-  debugLog('Starting...');
+  console.log('Saorsa starting...');
+  
+  // Show initialization status in the UI
+  const statusEl = document.getElementById('network-status');
   
   try {
+    if (statusEl) statusEl.textContent = 'Initializing...';
     initializeEventListeners();
-    debugLog('Event listeners initialized');
+    
+    if (statusEl) statusEl.textContent = 'Connecting...';
     await initializeNetwork();
-    debugLog('Network initialized');
-    await loadUserProfile(); // Load user identity and profile (await to ensure it completes)
-    debugLog('Profile loaded');
+    
+    if (statusEl) statusEl.textContent = 'Loading profile...';
+    await loadUserProfile(); // Load user identity and profile
+    
     loadContacts();
     loadSettings();
+    
+    // If we get here, everything loaded successfully
+    if (statusEl) statusEl.textContent = 'Connected';
   } catch (error) {
     console.error('Error during initialization:', error);
-    debugLog('Error: ' + error.message);
+    if (statusEl) statusEl.textContent = 'Error: ' + error.message;
   }
   
   // Fallback: Try to attach settings button listener after a delay
@@ -52,19 +51,21 @@ window.addEventListener('DOMContentLoaded', async () => {
       settingsBtn.setAttribute('data-listener-attached', 'true');
     }
   }, 1000);
+  
+  // Add debug click handler directly to test
+  const debugBtn = document.getElementById('settings-btn');
+  if (debugBtn) {
+    debugBtn.onclick = () => {
+      console.log('Direct onclick fired!');
+      openProfileModal();
+    };
+  }
 });
 
 // Initialize all event listeners
 function initializeEventListeners() {
   console.log('Initializing event listeners...');
   
-  // Check if settings button exists
-  const settingsBtn = document.getElementById('settings-btn');
-  if (settingsBtn) {
-    console.log('Settings button found:', settingsBtn);
-  } else {
-    console.error('Settings button NOT found!');
-  }
   
   // Layout positioning
   document.getElementById('layout-btn').addEventListener('click', openLayoutModal);
@@ -95,10 +96,12 @@ function initializeEventListeners() {
   sendBtn.addEventListener('click', sendMessage);
   
   // Settings button
+  const settingsBtn = document.getElementById('settings-btn');
   if (settingsBtn) {
     settingsBtn.addEventListener('click', openProfileModal);
-    settingsBtn.setAttribute('data-listener-attached', 'true');
     console.log('Settings button listener attached');
+  } else {
+    console.error('Settings button not found!');
   }
   
   // System menu
@@ -607,18 +610,13 @@ console.log('Saorsa initialized');
 // ================== Profile Management Functions ==================
 
 function openProfileModal() {
-  debugLog('Opening profile modal...');
-  console.log('Opening profile modal...');
   const modal = document.getElementById('profile-modal');
   if (modal) {
     modal.classList.remove('hidden');
     appState.profileModalOpen = true;
     loadUserProfile();
-    console.log('Profile modal opened');
-    debugLog('Profile modal opened');
   } else {
     console.error('Profile modal element not found!');
-    debugLog('ERROR: Profile modal not found!');
   }
 }
 
@@ -643,25 +641,33 @@ function switchProfileTab(tabName) {
 
 async function loadUserProfile() {
   try {
+    console.log('Loading user profile...');
     // Load user identity if available
     const identity = await invoke('get_user_identity');
-    console.log('Loaded identity:', identity);
+    console.log('Got identity:', identity);
     if (identity) {
       appState.userIdentity = identity;
-      document.getElementById('user-id').textContent = identity.user_id;
-      document.getElementById('public-key').textContent = identity.public_key.slice(0, 32) + '...';
-      document.getElementById('three-word-address').value = identity.three_word_address;
-      document.getElementById('display-name').value = identity.display_name_hint.split(':')[0];
+      
+      // Update profile modal fields if they exist
+      const userIdEl = document.getElementById('user-id');
+      if (userIdEl) userIdEl.textContent = identity.user_id;
+      
+      const publicKeyEl = document.getElementById('public-key');
+      if (publicKeyEl) publicKeyEl.textContent = identity.public_key.slice(0, 32) + '...';
+      
+      const threeWordEl = document.getElementById('three-word-address');
+      if (threeWordEl) threeWordEl.value = identity.three_word_address;
+      
+      const displayNameEl = document.getElementById('display-name');
+      if (displayNameEl) displayNameEl.value = identity.display_name_hint.split(':')[0];
       
       // Also display three-word address in the header
       const headerElement = document.querySelector('.app-header h1');
-      console.log('Header element:', headerElement);
-      console.log('Three-word address:', identity.three_word_address);
       if (headerElement && identity.three_word_address) {
+        console.log('Updating header with three-word address:', identity.three_word_address);
         headerElement.innerHTML = `🕊️ Saorsa <span style="font-size: 0.6em; opacity: 0.7; margin-left: 10px;">${identity.three_word_address}</span>`;
-        console.log('Updated header with three-word address');
       } else {
-        console.error('Could not update header - element or address missing');
+        console.log('Header element not found or no three-word address');
       }
       
       // Update verification status
@@ -674,10 +680,6 @@ async function loadUserProfile() {
         document.getElementById('ipv6-binding-status').innerHTML = '✅ Bound';
         document.getElementById('ipv6-binding-status').className = 'status-indicator success';
       }
-    } else {
-      // No identity exists - create one automatically for first-time users
-      console.log('No identity found, creating new identity...');
-      await createNewIdentity();
     }
     
     // Load user profile if available

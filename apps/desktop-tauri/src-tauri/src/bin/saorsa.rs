@@ -45,6 +45,6 @@ fn extract_bundled_frontend(target_dir: &Path) -> Result<()> {
     fs::write(target_dir.join("styles.css"), saorsa_lib::frontend_bundle::STYLES_CSS)?;
     fs::write(target_dir.join("main.js"), saorsa_lib::frontend_bundle::MAIN_JS)?;
     
-    println!("🕊️ Saorsa v0.2.5 - Extracted frontend assets to {:?}", target_dir);
+    println!("🕊️ Saorsa v0.2.7 - Extracted frontend assets to {:?}", target_dir);
     Ok(())
 }
