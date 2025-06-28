@@ -9,7 +9,7 @@ members = [
     "crates/p2p-cli",            # CLI tools and utilities
     "apps/saorsa/src-tauri", # Tauri desktop application
     "test-app",                  # Test application
-    "examples/*",                # Example applications
+    # "examples/*",                # Example applications - temporarily disabled for Tauri testing
 ]
 
 [workspace.package]

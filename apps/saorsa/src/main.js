@@ -49,15 +49,50 @@ function setupNavigationTabs() {
     const tabs = document.querySelectorAll('.nav-tab');
     console.log('Found', tabs.length, 'navigation tabs');
     
+    if (tabs.length === 0) {
+        console.error('ERROR: No navigation tabs found! Check HTML structure.');
+        return;
+    }
+    
     tabs.forEach(function(tab, index) {
         console.log('Setting up tab', index, 'with section:', tab.dataset.section);
+        console.log('Tab element:', tab);
+        console.log('Tab computed style:', window.getComputedStyle(tab).pointerEvents);
+        
+        // Add multiple event listeners for debugging
         tab.addEventListener('click', function(e) {
             e.preventDefault();
-            console.log('Tab clicked:', tab.dataset.section);
+            console.log('🖱️ CLICK EVENT: Tab clicked:', tab.dataset.section);
+            console.log('Event target:', e.target);
+            console.log('Current target:', e.currentTarget);
             const section = tab.dataset.section;
             switchSection(section);
+            
+            // Visual feedback
+            tab.style.backgroundColor = '#059669';
+            setTimeout(function() {
+                tab.style.backgroundColor = '';
+            }, 200);
         });
+        
+        tab.addEventListener('mousedown', function(e) {
+            console.log('🖱️ MOUSEDOWN EVENT on tab:', tab.dataset.section);
+        });
+        
+        tab.addEventListener('mouseup', function(e) {
+            console.log('🖱️ MOUSEUP EVENT on tab:', tab.dataset.section);
+        });
+        
+        tab.addEventListener('mouseover', function(e) {
+            console.log('🖱️ HOVER EVENT on tab:', tab.dataset.section);
+        });
+        
+        // Make sure the tab is clearly clickable
+        tab.style.cursor = 'pointer';
+        tab.style.userSelect = 'none';
     });
+    
+    console.log('✅ Navigation setup complete!');
 }
 
 function switchSection(section) {
