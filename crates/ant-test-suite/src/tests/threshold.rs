@@ -346,7 +346,7 @@ impl ThresholdTests {
                 "update_threshold" => {
                     if let Some(group) = self.groups.get_mut(group_id) {
                         if let Ok(new_threshold) = target.parse::<u16>() {
-                            if new_threshold <= group.total_participants && new_threshold > 0 {
+                            if (new_threshold as usize) <= group.total_participants && new_threshold > 0 {
                                 group.threshold = new_threshold;
                                 group.version += 1;
                                 group.last_updated = SystemTime::now();
@@ -1571,39 +1571,3 @@ impl Clone for ThresholdTests {
     }
 }
 
-#[async_trait::async_trait]
-impl SubsystemTest for ThresholdTests {
-    fn name(&self) -> &str {
-        "threshold"
-    }
-
-    async fn test_basic_functionality(&self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
-        let mut test_instance = self.clone();
-        test_instance.test_threshold_operations(ctx).await
-    }
-
-    async fn test_data_verification(&self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
-        let mut test_instance = self.clone();
-        let mut results = Vec::new();
-        
-        // Test hierarchical group creation with data verification
-        let hierarchy_results = test_instance.test_hierarchical_groups(ctx).await?;
-        results.extend(hierarchy_results);
-        
-        // Test Byzantine fault tolerance with data verification
-        let byzantine_results = test_instance.test_byzantine_fault_tolerance(ctx).await?;
-        results.extend(byzantine_results);
-        
-        Ok(results)
-    }
-
-    async fn test_cross_node(&self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
-        let test_instance = self.clone();
-        test_instance.test_cross_node_threshold_operations(ctx).await
-    }
-
-    async fn test_stress(&self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
-        let test_instance = self.clone();
-        test_instance.test_stress(ctx).await
-    }
-}

@@ -134,12 +134,12 @@ impl TestDataGenerator {
             encrypted_messaging: self.rng.gen_bool(0.9),
             require_proof_of_humanity: self.rng.gen_bool(0.3),
             max_contact_request_age: Duration::from_secs(
-                self.rng.gen_range(86400..86400 * 90) // 1-90 days
+                self.rng.gen_range(86400, 86400 * 90) // 1-90 days
             ),
             enable_forward_secrecy: self.rng.gen_bool(0.8),
             auto_rotate_keys: self.rng.gen_bool(0.7),
             key_rotation_interval: Duration::from_secs(
-                self.rng.gen_range(86400 * 30..86400 * 180) // 30-180 days
+                self.rng.gen_range(86400 * 30, 86400 * 180) // 30-180 days
             ),
         }
     }
@@ -159,7 +159,7 @@ impl TestDataGenerator {
     /// Generate random chat message content
     pub fn generate_chat_message(&mut self) -> TestChatMessage {
         let message_types = ["text", "emoji", "code", "quote"];
-        let message_type = message_types[self.rng.gen_range(0..message_types.len())];
+        let message_type = message_types[self.rng.gen_range(0, message_types.len())];
         
         let content = match message_type {
             "text" => format!("Test message {}", self.rng.gen::<u16>()),
@@ -200,13 +200,13 @@ impl TestDataGenerator {
             ("archive", "zip", "application/zip"),
         ];
         
-        let (category, extension, mime_type) = file_types[self.rng.gen_range(0..file_types.len())];
+        let (category, extension, mime_type) = file_types[self.rng.gen_range(0, file_types.len())];
         let filename = format!("{}.{}", format!("word{}", self.rng.gen::<u16>()), extension);
         let size = match category {
-            "image" => self.rng.gen_range(1024..1024 * 1024 * 5), // 1KB - 5MB
-            "document" => self.rng.gen_range(1024..1024 * 1024), // 1KB - 1MB
-            "archive" => self.rng.gen_range(1024 * 10..1024 * 1024 * 50), // 10KB - 50MB
-            _ => self.rng.gen_range(1024..1024 * 1024),
+            "image" => self.rng.gen_range(1024, 1024 * 1024 * 5), // 1KB - 5MB
+            "document" => self.rng.gen_range(1024, 1024 * 1024), // 1KB - 1MB
+            "archive" => self.rng.gen_range(1024 * 10, 1024 * 1024 * 50), // 10KB - 50MB
+            _ => self.rng.gen_range(1024, 1024 * 1024),
         };
 
         TestFileAttachment {
@@ -221,7 +221,7 @@ impl TestDataGenerator {
     /// Generate project document
     pub fn generate_project_document(&mut self) -> TestProjectDocument {
         let doc_types = ["markdown", "text", "code", "design", "specification"];
-        let doc_type = doc_types[self.rng.gen_range(0..doc_types.len())];
+        let doc_type = doc_types[self.rng.gen_range(0, doc_types.len())];
         
         let content = match doc_type {
             "markdown" => self.generate_markdown_content(),
@@ -237,7 +237,7 @@ impl TestDataGenerator {
             title: format!("Title {}", self.rng.gen::<u16>()),
             content,
             doc_type: doc_type.to_string(),
-            version: self.rng.gen_range(1..10),
+            version: self.rng.gen_range(1, 10),
             author_id: Uuid::new_v4().to_string(),
             created_at: self.generate_past_time(Duration::from_secs(86400 * 30)),
             updated_at: self.generate_recent_time(Duration::from_secs(86400 * 7)),
@@ -255,9 +255,9 @@ impl TestDataGenerator {
             author_id: Uuid::new_v4().to_string(),
             created_at: self.generate_past_time(Duration::from_secs(86400 * 7)),
             updated_at: self.generate_recent_time(Duration::from_secs(86400)),
-            view_count: self.rng.gen_range(0..1000),
-            reply_count: self.rng.gen_range(0..50),
-            vote_score: self.rng.gen_range(-10..100),
+            view_count: self.rng.gen_range(0, 1000),
+            reply_count: self.rng.gen_range(0, 50),
+            vote_score: self.rng.gen_range(-10, 100),
             is_pinned: self.rng.gen_bool(0.05),
             is_locked: self.rng.gen_bool(0.02),
             tags: self.generate_tags(1..5),
@@ -279,8 +279,8 @@ impl TestDataGenerator {
             description: format!("Test bio for user {}", self.rng.gen::<u16>()),
             metadata: self.generate_metadata_map(),
             nested_data: TestNestedData {
-                numbers: (0..self.rng.gen_range(5..20)).map(|_| self.rng.gen::<f64>()).collect(),
-                flags: (0..self.rng.gen_range(3..10)).map(|_| self.rng.gen::<bool>()).collect(),
+                numbers: (0..self.rng.gen_range(5, 20)).map(|_| self.rng.gen::<f64>()).collect(),
+                flags: (0..self.rng.gen_range(3, 10)).map(|_| self.rng.gen::<bool>()).collect(),
                 timestamp: SystemTime::now(),
             },
             optional_field: if self.rng.gen_bool(0.6) {
@@ -293,8 +293,8 @@ impl TestDataGenerator {
 
     /// Generate threshold group test data
     pub fn generate_threshold_group_data(&mut self) -> TestThresholdGroup {
-        let participant_count = self.rng.gen_range(3..10);
-        let threshold = self.rng.gen_range(2..=participant_count);
+        let participant_count = self.rng.gen_range(3, 10);
+        let threshold = self.rng.gen_range(2, participant_count + 1);
         
         TestThresholdGroup {
             group_id: GroupId([0u8; 32]), // TODO: Generate random bytes
@@ -318,22 +318,22 @@ impl TestDataGenerator {
     }
 
     fn generate_past_time(&mut self, max_age: Duration) -> SystemTime {
-        let age_secs = self.rng.gen_range(0..max_age.as_secs());
+        let age_secs = self.rng.gen_range(0, max_age.as_secs());
         SystemTime::now() - Duration::from_secs(age_secs)
     }
 
     fn generate_recent_time(&mut self, max_age: Duration) -> SystemTime {
-        let age_secs = self.rng.gen_range(0..max_age.as_secs());
+        let age_secs = self.rng.gen_range(0, max_age.as_secs());
         SystemTime::now() - Duration::from_secs(age_secs)
     }
 
     fn random_language(&mut self) -> String {
         let languages = ["en", "es", "fr", "de", "it", "pt", "ru", "zh", "ja", "ko"];
-        languages[self.rng.gen_range(0..languages.len())].to_string()
+        languages[self.rng.gen_range(0, languages.len())].to_string()
     }
 
     fn generate_tags(&mut self, range: std::ops::Range<usize>) -> Vec<String> {
-        let tag_count = self.rng.gen_range(range);
+        let tag_count = self.rng.gen_range(range.start, range.end);
         (0..tag_count)
             .map(|_| format!("word{}", self.rng.gen::<u16>()))
             .collect()
@@ -341,11 +341,11 @@ impl TestDataGenerator {
 
     fn generate_metadata_map(&mut self) -> HashMap<String, serde_json::Value> {
         let mut map = HashMap::new();
-        let field_count = self.rng.gen_range(2..8);
+        let field_count = self.rng.gen_range(2, 8);
         
         for _ in 0..field_count {
             let key: String = format!("word{}", self.rng.gen::<u16>());
-            let value = match self.rng.gen_range(0..4) {
+            let value = match self.rng.gen_range(0, 4) {
                 0 => serde_json::Value::String(format!("word{}", self.rng.gen::<u16>())),
                 1 => serde_json::Value::Number(serde_json::Number::from(self.rng.gen::<i32>())),
                 2 => serde_json::Value::Bool(self.rng.gen::<bool>()),
@@ -395,9 +395,9 @@ impl TestDataGenerator {
         format!(
             "Specification: {}\n\nVersion: {}.{}.{}\n\nDescription:\n{}\n\nAPI:\n{}",
             format!("word{}", self.rng.gen::<u16>()),
-            self.rng.gen_range(0..5),
-            self.rng.gen_range(0..10),
-            self.rng.gen_range(0..20),
+            self.rng.gen_range(0, 5),
+            self.rng.gen_range(0, 10),
+            self.rng.gen_range(0, 20),
             format!("API description {}", self.rng.gen::<u16>()),
             format!("Requirements {}", self.rng.gen::<u16>())
         )

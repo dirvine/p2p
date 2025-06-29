@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::{P2PError, Result};
-use ed25519_dalek::{PublicKey as Ed25519PublicKey, Signature, Signer};
+use ed25519_dalek::{PublicKey as Ed25519PublicKey, Keypair, Signature, Signer};
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
@@ -126,7 +126,6 @@ impl UserProfile {
 impl UserIdentity {
     /// Create new user identity
     pub fn new(display_name: String, three_word_address: String) -> Result<(Self, Keypair)> {
-        use ed25519_dalek::Keypair;
         use rand_core::OsRng;
         
         // Generate new keypair
@@ -525,7 +524,6 @@ impl ChallengeProof {
 use crate::dht::{Key, Record};
 use crate::security::IPv6NodeID;
 use crate::network::P2PNode;
-use ed25519_dalek::Keypair;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -1193,7 +1191,7 @@ mod tests {
         // Create response with local keypair
         let keypair_guard = manager.local_keypair.read().await;
         let keypair = keypair_guard.as_ref().unwrap();
-        let proof = challenge.create_response(identity.user_id.clone(), keypair).unwrap();
+        let proof = challenge.create_response(keypair);
         
         // Verify response
         let is_valid = manager.verify_challenge_response(&proof, &identity.public_key).await.unwrap();
