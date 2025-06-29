@@ -127,6 +127,9 @@ pub use quantum_crypto::{
     generate_keypair, negotiate_algorithms,
 };
 
+#[cfg(feature = "quantum-resistant")]
+pub use quantum_crypto::types::{GroupId, ParticipantId};
+
 #[cfg(feature = "threshold")]
 pub use threshold::{
     ThresholdGroup, ThresholdGroupManager, GroupOperation,

@@ -26,7 +26,7 @@ pub mod ipv6_identity;
 pub mod enhanced_storage;
 
 /// DHT configuration parameters
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DHTConfig {
     /// Replication parameter (k) - number of nodes to store each record
     pub replication_factor: usize,
@@ -1935,6 +1935,16 @@ impl DHT {
         } else {
             format!("inbox.{}.messages", inbox_id.chars().take(8).collect::<String>())
         }
+    }
+    
+    /// Add a node to the DHT routing table
+    pub async fn add_node(&self, node: DHTNode) -> Result<()> {
+        self.routing_table.add_node(node).await
+    }
+    
+    /// Remove a node from the DHT routing table
+    pub async fn remove_node(&self, peer_id: &PeerId) -> Result<()> {
+        self.routing_table.remove_node(peer_id).await
     }
 }
 

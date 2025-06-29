@@ -364,7 +364,7 @@ pub async fn generate_key_shares(
             ))?;
         
         participant_shares.insert(
-            participant_id,
+            participant_id.clone(),
             ParticipantShare {
                 participant_id: participant_id.clone(),
                 signing_share: signing_share.clone(),

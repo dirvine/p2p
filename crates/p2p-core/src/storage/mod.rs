@@ -4,11 +4,7 @@
 //! and multi-device access.
 
 use crate::dht::{DHT, Record, Key};
-// use crate::identity::enhanced::{EnhancedIdentity, DeviceId}; // Temporarily disabled
-
-// Placeholder types
-pub type EnhancedIdentity = String;
-pub type DeviceId = String;
+use crate::identity::enhanced::{EnhancedIdentity, DeviceId};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, Duration};
 use thiserror::Error;
@@ -160,7 +156,7 @@ impl StorageManager {
     pub fn new(dht: DHT, identity: &EnhancedIdentity) -> Result<Self> {
         // Derive master key from identity (simplified - use proper KDF in production)
         let mut hasher = Sha256::new();
-        hasher.update(identity.as_bytes()); // Placeholder implementation
+        hasher.update(identity.base_identity.user_id.as_bytes()); // Placeholder implementation
         let master_key: [u8; 32] = hasher.finalize().into();
         
         Ok(Self {

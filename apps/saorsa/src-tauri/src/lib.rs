@@ -590,7 +590,6 @@ async fn get_user_profile(state: State<'_, AppState>) -> Result<Option<serde_jso
             // Custom fields
             let custom_fields: serde_json::Map<String, serde_json::Value> = profile.custom_fields
                 .into_iter()
-                .map(|(k, v)| (k, serde_json::Value::String(v)))
                 .collect();
             response.insert("custom_fields".to_string(), serde_json::Value::Object(custom_fields));
             
@@ -638,38 +637,31 @@ async fn create_user_identity(
             // We'll export the identity data for storage instead
             
             // Create default profile
-            let profile = UserProfile {
-                display_name: display_name.clone(),
-                avatar_hash: None,
-                status_message: None,
-                created_at: std::time::SystemTime::now(),
-                updated_at: std::time::SystemTime::now(),
-                preferences: UserPreferences {
-                    discovery: DiscoverabilitySettings {
-                        discoverable_by_name: true,
-                        discoverable_by_friends: true,
-                        allow_contact_requests: true,
-                        require_mutual_friends: false,
-                        listed_in_directory: true,
-                    },
-                    default_permissions: ProfilePermissions {
-                        can_see_display_name: true,
-                        can_see_avatar: true,
-                        can_see_status: true,
-                        can_see_contact_info: true,
-                        can_see_last_seen: true,
-                        can_see_custom_fields: true,
-                    },
-                    privacy: PrivacySettings {
-                        require_proof_of_humanity: false,
-                        max_contact_request_age: std::time::Duration::from_secs(7 * 24 * 3600), // 7 days
-                        enable_forward_secrecy: true,
-                        auto_rotate_keys: false,
-                        key_rotation_interval: std::time::Duration::from_secs(30 * 24 * 3600), // 30 days
-                    },
-                },
-                custom_fields: std::collections::HashMap::new(),
-            };
+            let mut profile = UserProfile::new(display_name.clone());
+            profile.created_at = std::time::SystemTime::now();
+            profile.updated_at = std::time::SystemTime::now();
+            
+            // Configure discovery settings
+            profile.preferences.discovery.discoverable_by_name = true;
+            profile.preferences.discovery.discoverable_by_friends = true;
+            profile.preferences.discovery.allow_contact_requests = true;
+            profile.preferences.discovery.require_mutual_friends = false;
+            profile.preferences.discovery.listed_in_directory = true;
+            
+            // Configure default permissions
+            profile.preferences.default_permissions.can_see_display_name = true;
+            profile.preferences.default_permissions.can_see_avatar = true;
+            profile.preferences.default_permissions.can_see_status = true;
+            profile.preferences.default_permissions.can_see_contact_info = true;
+            profile.preferences.default_permissions.can_see_last_seen = true;
+            profile.preferences.default_permissions.can_see_custom_fields = true;
+            
+            // Configure privacy settings
+            profile.preferences.privacy.require_proof_of_humanity = false;
+            profile.preferences.privacy.max_contact_request_age = std::time::Duration::from_secs(7 * 24 * 3600); // 7 days
+            profile.preferences.privacy.enable_forward_secrecy = true;
+            profile.preferences.privacy.auto_rotate_keys = false;
+            profile.preferences.privacy.key_rotation_interval = std::time::Duration::from_secs(30 * 24 * 3600); // 30 days
             
             // Update the profile
             if let Err(e) = identity_manager.update_local_profile(profile).await {
@@ -835,7 +827,7 @@ async fn update_user_profile(
     if let Some(custom_fields) = updates.get("custom_fields").and_then(|v| v.as_object()) {
         updated_profile.custom_fields = custom_fields
             .iter()
-            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
     }
     
@@ -1419,7 +1411,7 @@ pub fn run_app() {
             let _window = tauri::WebviewWindowBuilder::new(
                 app,
                 &window_label,
-                tauri::WebviewUrl::External("saorsa://localhost/test.html".parse().unwrap())
+                tauri::WebviewUrl::External("saorsa://localhost/index.html".parse().unwrap())
             )
             .title("Saorsa - P2P Foundation")
             .inner_size(800.0, 600.0)

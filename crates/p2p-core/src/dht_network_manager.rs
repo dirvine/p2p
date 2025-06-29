@@ -357,8 +357,8 @@ impl DhtNetworkManager {
                     info!("Found value for key {} from peer: {}", key.to_hex(), source);
                     
                     // Cache locally for future requests
-                    let record = Record::new(key.clone(), value.clone(), source.clone());
-                    if let Err(e) = self.dht.write().await.storage.store(record).await {
+                    let mut dht_guard = self.dht.write().await;
+                    if let Err(e) = dht_guard.put(key.clone(), value.clone()).await {
                         warn!("Failed to cache retrieved value: {}", e);
                     }
                     
@@ -490,7 +490,10 @@ impl DhtNetworkManager {
         debug!("Finding {} closest nodes to key: {}", count, key.to_hex());
         
         // Start with local routing table
-        let local_nodes = self.dht.read().await.routing_table.closest_nodes(key, count).await;
+        let local_nodes = {
+            let dht_guard = self.dht.read().await;
+            dht_guard.find_node(key).await
+        };
         
         if local_nodes.len() >= count {
             return Ok(local_nodes.into_iter().take(count).collect());
@@ -605,9 +608,11 @@ impl DhtNetworkManager {
                     }
                 }
                 DhtNetworkOperation::FindNode { key } => {
-                    let nodes = self.dht.read().await.routing_table.closest_nodes(&key, 3).await;
+                    let dht_guard = self.dht.read().await;
+                    let nodes = dht_guard.find_node(&key).await;
                     let serializable_nodes: Vec<SerializableDHTNode> = nodes
                         .into_iter()
+                        .take(3)
                         .map(|node| node.to_serializable())
                         .collect();
                     Ok(DhtNetworkResult::NodesFound { key, nodes: serializable_nodes })
@@ -620,9 +625,11 @@ impl DhtNetworkManager {
                             source: peer_id.clone(),
                         })
                     } else {
-                        let nodes = self.dht.read().await.routing_table.closest_nodes(&key, 3).await;
+                        let dht_guard = self.dht.read().await;
+                        let nodes = dht_guard.find_node(&key).await;
                         let serializable_nodes: Vec<SerializableDHTNode> = nodes
                             .into_iter()
+                            .take(3)
                             .map(|node| node.to_serializable())
                             .collect();
                         Ok(DhtNetworkResult::NodesFound { key, nodes: serializable_nodes })
@@ -705,9 +712,11 @@ impl DhtNetworkManager {
             }
             DhtNetworkOperation::FindNode { key } => {
                 info!("Handling FIND_NODE request for key: {}", key.to_hex());
-                let nodes = self.dht.read().await.routing_table.closest_nodes(key, 8).await;
+                let dht_guard = self.dht.read().await;
+                let nodes = dht_guard.find_node(key).await;
                 let serializable_nodes: Vec<SerializableDHTNode> = nodes
                     .into_iter()
+                    .take(8)
                     .map(|node| node.to_serializable())
                     .collect();
                 Ok(DhtNetworkResult::NodesFound { key: key.clone(), nodes: serializable_nodes })
@@ -721,9 +730,11 @@ impl DhtNetworkManager {
                         source: self.config.local_peer_id.clone(),
                     })
                 } else {
-                    let nodes = self.dht.read().await.routing_table.closest_nodes(key, 8).await;
+                    let dht_guard = self.dht.read().await;
+                    let nodes = dht_guard.find_node(key).await;
                     let serializable_nodes: Vec<SerializableDHTNode> = nodes
                         .into_iter()
+                        .take(8)
                         .map(|node| node.to_serializable())
                         .collect();
                     Ok(DhtNetworkResult::NodesFound { key: key.clone(), nodes: serializable_nodes })
@@ -742,7 +753,8 @@ impl DhtNetworkManager {
                 let dht_key = Key::new(message.source.as_bytes());
                 let node = DHTNode::new(message.source.clone(), vec![], &dht_key);
                 
-                if let Err(e) = self.dht.write().await.routing_table.add_node(node).await {
+                let mut dht_guard = self.dht.write().await;
+        if let Err(e) = dht_guard.add_node(node).await {
                     warn!("Failed to add joining node to routing table: {}", e);
                 }
                 
@@ -754,7 +766,8 @@ impl DhtNetworkManager {
             DhtNetworkOperation::Leave => {
                 info!("Handling LEAVE request from: {}", message.source);
                 // Remove the leaving node from our routing table
-                if let Err(e) = self.dht.write().await.routing_table.remove_node(&message.source).await {
+                let mut dht_guard = self.dht.write().await;
+        if let Err(e) = dht_guard.remove_node(&message.source).await {
                     warn!("Failed to remove leaving node from routing table: {}", e);
                 }
                 
@@ -836,7 +849,8 @@ impl DhtNetworkManager {
         
         // Update DHT routing table
         let node = DHTNode::new(peer_id, peer_info.addresses.clone(), &dht_key);
-        if let Err(e) = self.dht.write().await.routing_table.add_node(node).await {
+        let mut dht_guard = self.dht.write().await;
+        if let Err(e) = dht_guard.add_node(node).await {
             warn!("Failed to update routing table: {}", e);
         }
     }
@@ -981,8 +995,8 @@ impl DhtNetworkManager {
                 
                 let routing_table_size = {
                     let dht_guard = dht_for_stats.read().await;
-                    let (total_nodes, _) = dht_guard.routing_table.stats().await;
-                    total_nodes
+                    let stats = dht_guard.stats().await;
+                    stats.total_nodes
                 };
                 
                 {
@@ -1017,7 +1031,9 @@ impl DhtNetworkManager {
     
     /// Get DHT routing table size
     pub async fn get_routing_table_size(&self) -> usize {
-        let (total_nodes, _) = self.dht.read().await.routing_table.stats().await;
+        let dht_guard = self.dht.read().await;
+        let stats = dht_guard.stats().await;
+        let total_nodes = stats.total_nodes;
         total_nodes
     }
 }

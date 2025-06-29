@@ -310,7 +310,7 @@ pub enum ToolHealthStatus {
 
 
 /// Health monitoring configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthMonitorConfig {
     /// Interval between health checks
     pub health_check_interval: Duration,
@@ -1481,16 +1481,16 @@ impl MCPServer {
     ) {
         let start_time = Instant::now();
         let service_id = service.service_id.clone();
-        let peer_id = service.peer_id.clone();
+        let peer_id = service.node_id.clone();
         
-        // Create health check request
-        let health_check_message = MCPMessage::Request {
-            id: uuid::Uuid::new_v4().to_string(),
-            method: "health/check".to_string(),
-            params: Some(json!({
+        // Create health check request using CallTool for now
+        // TODO: Add proper health check message type to MCPMessage enum
+        let health_check_message = MCPMessage::CallTool {
+            name: "health_check".to_string(),
+            arguments: json!({
                 "service_id": service_id,
                 "timestamp": SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
-            })),
+            }),
         };
         
         // Serialize and send health check
@@ -1609,9 +1609,10 @@ impl MCPServer {
             },
         };
         
-        let heartbeat_message = MCPMessage::Notification {
-            method: "heartbeat".to_string(),
-            params: Some(serde_json::to_value(&heartbeat).unwrap_or(json!({}))),
+        // Use CallTool for heartbeat until proper notification type is added
+        let heartbeat_message = MCPMessage::CallTool {
+            name: "heartbeat".to_string(),
+            arguments: serde_json::to_value(&heartbeat).unwrap_or(json!({})),
         };
         
         if let Ok(data) = serde_json::to_vec(&heartbeat_message) {
@@ -1805,37 +1806,6 @@ impl MCPServer {
             .collect()
     }
     
-    /// Discover remote services in the network
-    pub async fn discover_remote_services(&self) -> Result<Vec<MCPService>> {
-        if let Some(dht) = &self.dht {
-            let key = Key::new(b"mcp:services");
-            let dht_guard = dht.read().await;
-            
-            match dht_guard.get(&key).await {
-                Some(record) => {
-                    match serde_json::from_slice::<Vec<MCPService>>(&record.value) {
-                        Ok(services) => {
-                            // Update remote services cache
-                            {
-                                let mut remote_services = self.remote_services.write().await;
-                                for service in &services {
-                                    remote_services.insert(service.service_id.clone(), service.clone());
-                                }
-                            }
-                            Ok(services)
-                        }
-                        Err(e) => {
-                            debug!("Failed to deserialize services: {}", e);
-                            Ok(Vec::new())
-                        }
-                    }
-                }
-                None => Ok(Vec::new()),
-            }
-        } else {
-            Ok(Vec::new())
-        }
-    }
     
     /// Call a tool on a remote node
     pub async fn call_remote_tool(&self, peer_id: &PeerId, tool_name: &str, arguments: Value, context: MCPCallContext) -> Result<Value> {
@@ -1908,24 +1878,18 @@ impl MCPServer {
         
         debug!("Received MCP message from {}: {:?}", source_peer, p2p_message.message_type);
         
-        // Check if this is a heartbeat notification
-        if let MCPMessage::Notification { method, params } = &p2p_message.payload {
-            if method == "heartbeat" {
-                if let Some(params) = params {
-                    if let Ok(heartbeat) = serde_json::from_value::<Heartbeat>(params.clone()) {
-                        self.handle_heartbeat(heartbeat).await?;
-                        return Ok(None);
-                    }
+        // Check if this is a heartbeat or health check
+        if let MCPMessage::CallTool { name, arguments } = &p2p_message.payload {
+            if name == "heartbeat" {
+                if let Ok(heartbeat) = serde_json::from_value::<Heartbeat>(arguments.clone()) {
+                    self.handle_heartbeat(heartbeat).await?;
+                    return Ok(None);
                 }
-            } else if method == "health/check" {
+            } else if name == "health_check" {
                 // Respond to health check
-                let health_response = MCPMessage::Notification {
-                    method: "health/response".to_string(),
-                    params: Some(json!({
-                        "status": "healthy",
-                        "timestamp": SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
-                        "service_id": "mcp-server"
-                    })),
+                let health_response = MCPMessage::CallToolResult {
+                    content: vec![],
+                    is_error: false,
                 };
                 
                 let response_message = P2PMCPMessage {
@@ -1956,6 +1920,14 @@ impl MCPServer {
             }
             P2PMCPMessageType::ServiceDiscovery => {
                 self.handle_service_discovery(p2p_message).await
+            }
+            P2PMCPMessageType::Heartbeat => {
+                debug!("Received heartbeat message");
+                Ok(None)
+            }
+            P2PMCPMessageType::HealthCheck => {
+                debug!("Received health check message");
+                Ok(None)
             }
         }
     }
@@ -2347,7 +2319,7 @@ impl MCPServer {
             node_id: "local".to_string(), // TODO: Get actual peer ID from network layer
             tools: tool_names,
             capabilities: MCPCapabilities {
-                roots: None,
+                experimental: None,
                 sampling: None,
                 tools: Some(MCPToolsCapability {
                     list_changed: Some(true),
@@ -2402,15 +2374,8 @@ impl MCPServer {
         let service_data = serde_json::to_vec(service)
             .map_err(|e| P2PError::Serialization(e))?;
         
-        let record = crate::dht::Record {
-            key: service_key.clone(),
-            value: service_data,
-            publisher: None,
-            expires: None,
-        };
-        
         let mut dht_guard = dht.write().await;
-        dht_guard.put(record).await
+        dht_guard.put(service_key.clone(), service_data).await
             .map_err(|e| P2PError::DHT(format!("Failed to store service in DHT: {}", e)))?;
         
         // Also add to services index
@@ -2428,14 +2393,7 @@ impl MCPServer {
             let index_data = serde_json::to_vec(&service_ids)
                 .map_err(|e| P2PError::Serialization(e))?;
             
-            let index_record = crate::dht::Record {
-                key: services_key,
-                value: index_data,
-                publisher: None,
-                expires: None,
-            };
-            
-            dht_guard.put(index_record).await
+            dht_guard.put(services_key, index_data).await
                 .map_err(|e| P2PError::DHT(format!("Failed to update services index: {}", e)))?;
         }
         
@@ -2585,7 +2543,7 @@ impl MCPServer {
                 node_id: message.source_peer.clone(),
                 tools: tools.iter().map(|t| t.name.clone()).collect(),
                 capabilities: MCPCapabilities {
-                    roots: None,
+                    experimental: None,
                     sampling: None,
                     tools: Some(MCPToolsCapability {
                         list_changed: Some(true),

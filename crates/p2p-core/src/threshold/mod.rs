@@ -407,10 +407,10 @@ impl ThresholdGroupManager {
             threshold: config.threshold,
             participants: config.participants.len() as u16,
             frost_group_key: dkg_result.group_key,
-            active_participants: config.participants,
+            active_participants: config.participants.clone(),
             pending_participants: Vec::new(),
             version: 1,
-            metadata: config.metadata,
+            metadata: config.metadata.clone(),
             audit_log: vec![
                 GroupAuditEntry {
                     timestamp: SystemTime::now(),

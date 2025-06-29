@@ -351,7 +351,7 @@ pub async fn generate_key_shares(
     for i in 0..participants {
         let participant_id = ParticipantId(i);
         participant_shares.insert(
-            participant_id,
+            participant_id.clone(),
             ParticipantShare {
                 participant_id: participant_id.clone(),
                 signing_share: vec![i as u8; 32], // Placeholder

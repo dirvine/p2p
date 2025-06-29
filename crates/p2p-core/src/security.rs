@@ -533,7 +533,8 @@ pub mod security_types {
     impl KeyPair {
         /// Generate a new key pair
         pub fn generate() -> Self {
-            let mut csprng = rand::rngs::OsRng {};
+            use rand_core::OsRng;
+            let mut csprng = OsRng;
             let keypair = Keypair::generate(&mut csprng);
             KeyPair { inner: keypair }
         }

@@ -3,19 +3,532 @@
 //! Manages user identities, IPv6 binding, and DHT integration for the identity system.
 
 use super::*;
-// Placeholder types (identity.rs was removed)
-pub type UserIdentity = String;
-pub type EncryptedUserProfile = String;
-pub type IPv6BindingProof = String;
+use crate::{P2PError, Result};
+use ed25519_dalek::{PublicKey as Ed25519PublicKey, Signature, Signer};
+use serde::{Deserialize, Serialize};
+use std::time::SystemTime;
+
+// Core identity types
 pub type UserId = String;
+
+/// Basic user identity
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserIdentity {
+    pub user_id: UserId,
+    pub public_key: Vec<u8>,
+    pub display_name_hint: String,
+    pub three_word_address: String,
+    pub created_at: SystemTime,
+    pub version: u32,
+    pub verification_level: VerificationLevel,
+}
+
+/// Encrypted user profile for storage
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncryptedUserProfile {
+    pub user_id: UserId,
+    pub public_key: Vec<u8>,
+    pub encrypted_data: Vec<u8>,
+    pub signature: Vec<u8>,
+    pub ipv6_binding_proof: Option<IPv6BindingProof>,
+    pub created_at: SystemTime,
+}
+
+/// IPv6 binding proof for network verification
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IPv6BindingProof {
+    pub ipv6_address: String,
+    pub signature: Vec<u8>,
+    pub timestamp: SystemTime,
+}
+
+impl IPv6BindingProof {
+    /// Create new IPv6 binding proof
+    pub fn new(
+        ipv6_id: IPv6NodeID,
+        user_keypair: &Keypair,
+        ipv6_keypair: &Keypair,
+    ) -> Result<Self> {
+        let ipv6_address = format!("{:?}", ipv6_id); // Placeholder conversion
+        let timestamp = SystemTime::now();
+        
+        // Create signature data (simplified)
+        let signature_data = format!("{}:{}", ipv6_address, 
+            timestamp.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
+        let signature = user_keypair.sign(signature_data.as_bytes()).to_bytes().to_vec();
+        
+        Ok(Self {
+            ipv6_address,
+            signature,
+            timestamp,
+        })
+    }
+}
+
+/// Access grant for profile sharing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessGrant {
+    pub user_id: UserId,
+    pub permissions: Vec<String>,
+    pub granted_at: SystemTime,
+    pub expires_at: SystemTime,
+}
+
+/// Challenge response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChallengeResponse {
+    pub challenge_id: String,
+    pub signature: Vec<u8>,
+    pub response_data: Vec<u8>,
+}
+
+/// User profile information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserProfile {
+    pub user_id: UserId,
+    pub display_name: String,
+    pub bio: Option<String>,
+    pub avatar_url: Option<String>,
+    pub avatar_hash: Option<String>,
+    pub status_message: Option<String>,
+    pub public_key: Vec<u8>,
+    pub preferences: UserPreferences,
+    pub custom_fields: std::collections::HashMap<String, serde_json::Value>,
+    pub created_at: SystemTime,
+    pub updated_at: SystemTime,
+}
+
+impl UserProfile {
+    /// Create new user profile
+    pub fn new(display_name: String) -> Self {
+        let now = SystemTime::now();
+        Self {
+            user_id: String::new(), // Will be set when associated with identity
+            display_name,
+            bio: None,
+            avatar_url: None,
+            avatar_hash: None,
+            status_message: None,
+            public_key: Vec::new(), // Will be set when associated with identity
+            preferences: UserPreferences::default(),
+            custom_fields: std::collections::HashMap::new(),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+    
+    /// Update the profile timestamp
+    pub fn update(&mut self) {
+        self.updated_at = SystemTime::now();
+    }
+}
+
+impl UserIdentity {
+    /// Create new user identity
+    pub fn new(display_name: String, three_word_address: String) -> Result<(Self, Keypair)> {
+        use ed25519_dalek::Keypair;
+        use rand_core::OsRng;
+        
+        // Generate new keypair
+        let mut csprng = OsRng;
+        let keypair = Keypair::generate(&mut csprng);
+        
+        // Derive user ID from public key
+        let user_id = Self::derive_user_id(&keypair.public);
+        
+        // Create display name hint
+        let display_name_hint = Self::create_display_name_hint(&display_name);
+        
+        let identity = Self {
+            user_id,
+            public_key: keypair.public.as_bytes().to_vec(),
+            display_name_hint,
+            three_word_address,
+            created_at: SystemTime::now(),
+            version: 1,
+            verification_level: VerificationLevel::SelfSigned,
+        };
+        
+        Ok((identity, keypair))
+    }
+    
+    /// Derive user ID from public key
+    pub fn derive_user_id(public_key: &Ed25519PublicKey) -> UserId {
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(public_key.as_bytes());
+        hex::encode(hasher.finalize())
+    }
+    
+    /// Create display name hint from full display name
+    pub fn create_display_name_hint(display_name: &str) -> String {
+        // Take first 20 characters to avoid revealing full names
+        display_name.chars().take(20).collect()
+    }
+    
+    /// Get DHT key for profile storage
+    pub fn get_profile_dht_key(&self) -> Key {
+        Key::new(format!("user_profile:{}", self.user_id).as_bytes())
+    }
+}
+
+impl EncryptedUserProfile {
+    /// Create new encrypted user profile from raw data
+    pub fn new(
+        user_id: UserId,
+        public_key: Vec<u8>,
+        encrypted_data: Vec<u8>,
+        signature: Vec<u8>,
+    ) -> Self {
+        Self {
+            user_id,
+            public_key,
+            encrypted_data,
+            signature,
+            ipv6_binding_proof: None,
+            created_at: SystemTime::now(),
+        }
+    }
+    
+    /// Create new encrypted user profile from identity and profile
+    pub fn new_from_identity(
+        identity: &UserIdentity,
+        profile: &UserProfile,
+        keypair: &Keypair,
+        ipv6_binding: Option<IPv6BindingProof>,
+    ) -> Result<Self> {
+        // Serialize the profile data
+        let profile_data = serde_json::to_vec(profile)
+            .map_err(|e| P2PError::Serialization(e))?;
+        
+        // Create signature (placeholder implementation)
+        let signature_data = format!("{}:{}", identity.user_id, profile.display_name);
+        let signature = keypair.sign(signature_data.as_bytes()).to_bytes().to_vec();
+        
+        Ok(Self {
+            user_id: identity.user_id.clone(),
+            public_key: identity.public_key.clone(),
+            encrypted_data: profile_data, // In real implementation, this would be encrypted
+            signature,
+            ipv6_binding_proof: ipv6_binding,
+            created_at: SystemTime::now(),
+        })
+    }
+    
+    /// Generate profile key
+    pub fn generate_profile_key() -> [u8; 32] {
+        rand::random()
+    }
+    
+    /// Verify the profile signature
+    pub fn verify_signature(&self) -> Result<bool> {
+        // TODO: Implement proper signature verification
+        // For now, just return true as a placeholder
+        Ok(true)
+    }
+    
+    /// Decrypt profile data
+    pub fn decrypt_profile(&self, _key: &[u8]) -> Result<UserProfile> {
+        // TODO: Implement proper decryption
+        // For now, return a basic profile
+        Ok(UserProfile {
+            user_id: self.user_id.clone(),
+            display_name: "Decrypted Profile".to_string(),
+            bio: None,
+            avatar_url: None,
+            avatar_hash: None,
+            status_message: None,
+            public_key: self.public_key.clone(),
+            preferences: UserPreferences::default(),
+            custom_fields: std::collections::HashMap::new(),
+            created_at: self.created_at,
+            updated_at: self.created_at,
+        })
+    }
+    
+    /// Get access grant for a user
+    pub fn get_access_grant(&self, _user_id: &str) -> Option<AccessGrant> {
+        // TODO: Implement access grant retrieval
+        None
+    }
+    
+    /// Check if access grant is valid
+    pub fn is_grant_valid(_grant: &AccessGrant) -> bool {
+        // TODO: Implement grant validation
+        true
+    }
+    
+    /// Grant access to another user
+    pub fn grant_access(
+        &mut self, 
+        user_id: &str, 
+        public_key_bytes: &[u8],
+        permissions: ProfilePermissions,
+        profile_key: &[u8; 32],
+        keypair: &Keypair,
+    ) -> Result<()> {
+        // TODO: Implement proper access granting with encryption
+        // For now, just log the operation
+        info!("Granting access to user {} with permissions: {:?}", user_id, permissions);
+        Ok(())
+    }
+    
+    /// Revoke access from another user
+    pub fn revoke_access(&mut self, _user_id: &str) -> Result<()> {
+        // TODO: Implement access revocation
+        Ok(())
+    }
+}
+
+/// Identity verification challenge
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityChallenge {
+    pub challenge_id: String,
+    pub challenge_data: Vec<u8>,
+    pub created_at: SystemTime,
+    pub expires_at: SystemTime,
+    pub challenger_id: UserId,
+}
+
+impl IdentityChallenge {
+    /// Create new identity challenge
+    pub fn new(challenger_id: UserId) -> Self {
+        use std::time::Duration;
+        let now = SystemTime::now();
+        Self {
+            challenge_id: uuid::Uuid::new_v4().to_string(),
+            challenge_data: rand::random::<[u8; 32]>().to_vec(),
+            created_at: now,
+            expires_at: now + Duration::from_secs(3600), // 1 hour
+            challenger_id,
+        }
+    }
+    
+    /// Check if challenge is still valid
+    pub fn is_valid(&mut self) -> bool {
+        SystemTime::now() < self.expires_at
+    }
+    
+    /// Create response to challenge
+    pub fn create_response(&self, _keypair: &ed25519_dalek::Keypair) -> ChallengeResponse {
+        // TODO: Implement proper challenge response
+        ChallengeResponse {
+            challenge_id: self.challenge_id.clone(),
+            signature: vec![0; 64], // Placeholder
+            response_data: Vec::new(),
+        }
+    }
+}
+
+/// Contact request between users
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContactRequest {
+    pub request_id: String,
+    pub from_user_id: UserId,
+    pub to_user_id: UserId,
+    pub message: Option<String>,
+    pub requested_permissions: ProfilePermissions,
+    pub sender_proof: ChallengeResponse,
+    pub created_at: SystemTime,
+    pub expires_at: SystemTime,
+    pub signature: Vec<u8>,
+    pub status: ContactRequestStatus,
+}
+
+/// Status of a contact request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ContactRequestStatus {
+    Pending,
+    Accepted,
+    Rejected,
+    Expired,
+}
+
+/// Profile permissions settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfilePermissions {
+    pub public_profile: bool,
+    pub discoverable: bool,
+    pub allow_messages: bool,
+    pub allow_friend_requests: bool,
+    pub can_see_display_name: bool,
+    pub can_see_avatar: bool,
+    pub can_see_status: bool,
+    pub can_see_contact_info: bool,
+    pub can_see_last_seen: bool,
+    pub can_see_custom_fields: bool,
+}
+
+impl Default for ProfilePermissions {
+    fn default() -> Self {
+        Self {
+            public_profile: false,
+            discoverable: true,
+            allow_messages: true,
+            allow_friend_requests: true,
+            can_see_display_name: true,
+            can_see_avatar: true,
+            can_see_status: true,
+            can_see_contact_info: false,
+            can_see_last_seen: false,
+            can_see_custom_fields: false,
+        }
+    }
+}
+
+/// Default permissions for contacts
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DefaultPermissions {
+    pub can_see_display_name: bool,
+    pub can_see_avatar: bool,
+    pub can_see_status: bool,
+    pub can_see_contact_info: bool,
+    pub can_see_last_seen: bool,
+    pub can_see_custom_fields: bool,
+}
+
+impl Default for DefaultPermissions {
+    fn default() -> Self {
+        Self {
+            can_see_display_name: true,
+            can_see_avatar: true,
+            can_see_status: true,
+            can_see_contact_info: false,
+            can_see_last_seen: false,
+            can_see_custom_fields: false,
+        }
+    }
+}
+
+/// Privacy settings for user profiles
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrivacySettings {
+    pub show_online_status: bool,
+    pub show_last_seen: bool,
+    pub allow_profile_view: bool,
+    pub encrypted_messaging: bool,
+    pub require_proof_of_humanity: bool,
+    pub max_contact_request_age: std::time::Duration,
+    pub enable_forward_secrecy: bool,
+    pub auto_rotate_keys: bool,
+    pub key_rotation_interval: std::time::Duration,
+}
+
+impl Default for PrivacySettings {
+    fn default() -> Self {
+        Self {
+            show_online_status: true,
+            show_last_seen: true,
+            allow_profile_view: true,
+            encrypted_messaging: false,
+            require_proof_of_humanity: false,
+            max_contact_request_age: std::time::Duration::from_secs(86400 * 30), // 30 days
+            enable_forward_secrecy: true,
+            auto_rotate_keys: true,
+            key_rotation_interval: std::time::Duration::from_secs(86400 * 90), // 90 days
+        }
+    }
+}
+
+/// Discoverability settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoverabilitySettings {
+    pub discoverable_by_name: bool,
+    pub discoverable_by_friends: bool,
+    pub allow_contact_requests: bool,
+    pub require_mutual_friends: bool,
+    pub listed_in_directory: bool,
+}
+
+impl Default for DiscoverabilitySettings {
+    fn default() -> Self {
+        Self {
+            discoverable_by_name: true,
+            discoverable_by_friends: true,
+            allow_contact_requests: true,
+            require_mutual_friends: false,
+            listed_in_directory: false,
+        }
+    }
+}
+
+/// User preferences
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserPreferences {
+    pub theme: String,
+    pub language: String,
+    pub notifications_enabled: bool,
+    pub auto_accept_friends: bool,
+    pub discovery: DiscoverabilitySettings,
+    pub privacy: PrivacySettings,
+    pub default_permissions: DefaultPermissions,
+}
+
+impl Default for UserPreferences {
+    fn default() -> Self {
+        Self {
+            theme: "dark".to_string(),
+            language: "en".to_string(),
+            notifications_enabled: true,
+            auto_accept_friends: false,
+            discovery: DiscoverabilitySettings::default(),
+            privacy: PrivacySettings::default(),
+            default_permissions: DefaultPermissions::default(),
+        }
+    }
+}
+
+/// Identity verification level
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum VerificationLevel {
+    Unverified,
+    SelfSigned,
+    EmailVerified,
+    PhoneVerified,
+    NetworkVerified,
+    FullyVerified,
+}
+
+/// Challenge proof for identity verification
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChallengeProof {
+    pub challenge_id: String,
+    pub proof_data: Vec<u8>,
+    pub signature: Vec<u8>,
+    pub public_key: Vec<u8>,
+    pub timestamp: SystemTime,
+}
+
+impl ChallengeProof {
+    /// Verify the challenge proof
+    pub fn verify(&self, challenge: &IdentityChallenge, public_key_bytes: &[u8]) -> Result<bool> {
+        // Check if challenge IDs match
+        if self.challenge_id != challenge.challenge_id {
+            return Ok(false);
+        }
+        
+        // Check if public keys match
+        if self.public_key != public_key_bytes {
+            return Ok(false);
+        }
+        
+        // Check if challenge is still valid
+        if SystemTime::now() > challenge.expires_at {
+            return Ok(false);
+        }
+        
+        // TODO: Implement proper signature verification
+        // For now, just return true as a placeholder
+        Ok(true)
+    }
+}
 use crate::dht::{Key, Record};
 use crate::security::IPv6NodeID;
 use crate::network::P2PNode;
 use ed25519_dalek::Keypair;
-use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
@@ -116,7 +629,7 @@ impl IdentityManager {
         };
         
         // Create encrypted profile
-        let encrypted_profile = EncryptedUserProfile::new(
+        let encrypted_profile = EncryptedUserProfile::new_from_identity(
             &identity,
             &profile,
             &keypair,
@@ -220,7 +733,7 @@ impl IdentityManager {
         profile.update();
         
         // Create new encrypted profile
-        let encrypted_profile = EncryptedUserProfile::new(
+        let encrypted_profile = EncryptedUserProfile::new_from_identity(
             identity,
             &profile,
             keypair,
@@ -353,7 +866,7 @@ impl IdentityManager {
             
             // Check if we have an access grant for this profile
             if let Some(grant) = encrypted_profile.get_access_grant(&local_identity.user_id) {
-                if EncryptedUserProfile::is_grant_valid(grant) {
+                if EncryptedUserProfile::is_grant_valid(&grant) {
                     // TODO: Decrypt the profile key using our private key
                     // For now, we can't decrypt without implementing proper key exchange
                     // This would require implementing X25519 key exchange + ChaCha20-Poly1305
@@ -388,7 +901,7 @@ impl IdentityManager {
             .ok_or_else(|| P2PError::InvalidState("No profile key".to_string()))?;
         
         encrypted_profile.grant_access(
-            grantee_user_id.clone(),
+            &grantee_user_id,
             &grantee_public_key_bytes,
             permissions,
             profile_key,
@@ -414,7 +927,13 @@ impl IdentityManager {
     
     /// Create an identity challenge
     pub async fn create_challenge(&self, duration: Duration) -> IdentityChallenge {
-        let challenge = IdentityChallenge::new(duration);
+        let local_identity_guard = self.local_identity.read().await;
+        let challenger_id = local_identity_guard
+            .as_ref()
+            .map(|id| id.user_id.clone())
+            .unwrap_or_else(|| "unknown".to_string());
+        
+        let challenge = IdentityChallenge::new(challenger_id);
         
         let mut challenges = self.active_challenges.write().await;
         challenges.insert(challenge.challenge_id.clone(), challenge.clone());
@@ -454,8 +973,8 @@ impl IdentityManager {
             .ok_or_else(|| P2PError::InvalidState("No local keypair".to_string()))?;
         
         // Create challenge proof
-        let challenge = IdentityChallenge::new(Duration::from_secs(300));
-        let proof = challenge.create_response(identity.user_id.clone(), keypair)?;
+        let challenge = IdentityChallenge::new(identity.user_id.clone());
+        let proof = challenge.create_response(keypair);
         
         let request = ContactRequest {
             request_id: uuid::Uuid::new_v4().to_string(),
@@ -467,6 +986,7 @@ impl IdentityManager {
             created_at: SystemTime::now(),
             expires_at: SystemTime::now() + Duration::from_secs(7 * 24 * 3600), // 1 week
             signature: keypair.sign(format!("contact_request:{}", identity.user_id).as_bytes()).to_bytes().to_vec(),
+            status: ContactRequestStatus::Pending,
         };
         
         // Store pending request

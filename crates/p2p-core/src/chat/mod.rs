@@ -7,14 +7,10 @@
 //! - Voice/video calls via WebRTC
 //! - Rich media support
 
-// use crate::identity::enhanced::{EnhancedIdentity, OrganizationId, Permission}; // Temporarily disabled
-
-// Placeholder types
-pub type EnhancedIdentity = String;
-pub type OrganizationId = String;
-pub type Permission = String;
+use crate::identity::enhanced::{EnhancedIdentity, OrganizationId, Permission};
 use crate::storage::{StorageManager, keys, ttl};
-use crate::threshold::{ThresholdGroup, GroupId};
+use crate::threshold::ThresholdGroup;
+use crate::quantum_crypto::types::GroupId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::SystemTime;
@@ -466,8 +462,8 @@ impl ChatManager {
     /// Get user's channels
     pub async fn get_user_channels(&self) -> Result<Vec<ChannelId>> {
         let key = keys::user_channels(&self.identity.base_identity.user_id);
-        self.storage.get_encrypted(&key).await
-            .unwrap_or_else(|_| vec![])
+        Ok(self.storage.get_encrypted(&key).await
+            .unwrap_or_else(|_| vec![]))
     }
     
     /// Add channel to user's list

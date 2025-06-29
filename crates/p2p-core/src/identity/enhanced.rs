@@ -51,7 +51,7 @@ pub struct EnhancedIdentity {
 /// Group membership information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupMembership {
-    pub group_id: crate::threshold::GroupId,
+    pub group_id: crate::quantum_crypto::types::GroupId,
     pub role: ParticipantRole,
     pub joined_at: SystemTime,
     pub permissions: Vec<Permission>,
@@ -167,7 +167,7 @@ pub struct Organization {
     pub id: OrganizationId,
     pub name: String,
     pub description: String,
-    pub root_group: crate::threshold::GroupId,
+    pub root_group: crate::quantum_crypto::types::GroupId,
     pub departments: Vec<Department>,
     pub created_at: SystemTime,
     pub settings: OrganizationSettings,
@@ -179,7 +179,7 @@ pub struct Department {
     pub id: DepartmentId,
     pub name: String,
     pub description: String,
-    pub manager_group: crate::threshold::GroupId,
+    pub manager_group: crate::quantum_crypto::types::GroupId,
     pub teams: Vec<Team>,
     pub parent_org: OrganizationId,
 }
@@ -190,8 +190,8 @@ pub struct Team {
     pub id: TeamId,
     pub name: String,
     pub description: String,
-    pub lead_group: crate::threshold::GroupId,
-    pub member_group: crate::threshold::GroupId,
+    pub lead_group: crate::quantum_crypto::types::GroupId,
+    pub member_group: crate::quantum_crypto::types::GroupId,
     pub parent_dept: DepartmentId,
 }
 
@@ -287,7 +287,7 @@ impl EnhancedIdentityManager {
             frost_public_key: keypair.public.frost.map(|k| 
                 crate::quantum_crypto::types::FrostPublicKey(k)
             ),
-            legacy_key: keypair.public.ed25519.map(|k|
+            legacy_key: keypair.public.ed25519.clone().map(|k|
                 crate::quantum_crypto::types::Ed25519PublicKey(
                     k.try_into().unwrap_or([0; 32])
                 )
@@ -340,7 +340,7 @@ impl EnhancedIdentityManager {
     ) -> Result<Organization> {
         // Create root threshold group for organization
         let owner_info = ParticipantInfo {
-            participant_id: crate::threshold::ParticipantId(0),
+            participant_id: crate::quantum_crypto::types::ParticipantId(0),
             public_key: owner_identity.quantum_identity.ml_dsa_public_key.clone(),
             frost_share_commitment: crate::quantum_crypto::types::FrostCommitment(vec![0; 32]),
             role: ParticipantRole::Leader {

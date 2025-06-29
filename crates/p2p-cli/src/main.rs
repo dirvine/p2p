@@ -14,8 +14,8 @@
 
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use p2p_core::bootstrap::BootstrapDiscovery;
-use p2p_core::Multiaddr;
+use ant_core::bootstrap::BootstrapDiscovery;
+use ant_core::Multiaddr;
 use std::path::PathBuf;
 use std::process::{Command as StdCommand, Stdio};
 use std::time::{Duration, Instant};

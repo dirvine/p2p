@@ -4,7 +4,7 @@ use super::{QuantumCryptoError, Result};
 use crate::quantum_crypto::types::*;
 use crate::quantum_crypto::{ml_kem, ml_dsa};
 use ed25519_dalek::{Keypair as Ed25519Keypair, PublicKey, SecretKey, Signer, Verifier};
-use rand::rngs::OsRng;
+use rand_core::OsRng;
 use sha2::{Sha256, Digest};
 
 /// Hybrid key exchange state
@@ -112,24 +112,30 @@ impl HybridSigner {
         let ml_dsa_public = self.ml_dsa_state.generate_keypair()?;
         
         // Generate Ed25519 keypair
-        let ed25519_keypair = Ed25519Keypair::generate(&mut OsRng);
-        let ed25519_public = ed25519_keypair.public.to_bytes().to_vec();
-        let ed25519_private = ed25519_keypair.secret.to_bytes().to_vec();
+        let mut csprng = OsRng;
+        let ed25519_keypair = Ed25519Keypair::generate(&mut csprng);
+        let ed25519_public = ed25519_keypair.public.to_bytes();
+        let ed25519_secret = ed25519_keypair.secret.to_bytes();
+        
+        // Combine secret and public key for Ed25519 (64 bytes total)
+        let mut ed25519_private = [0u8; 64];
+        ed25519_private[..32].copy_from_slice(&ed25519_secret);
+        ed25519_private[32..].copy_from_slice(&ed25519_public);
         
         self.ed25519_keypair = Some(ed25519_keypair);
         
         let public_keys = PublicKeySet {
-            ml_dsa: Some(ml_dsa_public.0),
+            ml_dsa: Some(MlDsaPublicKey(ml_dsa_public.0)),
             ml_kem: None,
-            ed25519: Some(ed25519_public.clone()),
+            ed25519: Some(Ed25519PublicKey(ed25519_public)),
             frost: None,
         };
         
         let private_keys = PrivateKeySet {
-            ml_dsa: self.ml_dsa_state.keypair.as_ref().map(|(_, priv_key)| priv_key.0.clone()),
+            ml_dsa: self.ml_dsa_state.keypair.as_ref().map(|(_, priv_key)| MlDsaPrivateKey(priv_key.0.clone())),
             ml_kem: None,
-            ed25519: Some(ed25519_private),
-            frost_share: None,
+            ed25519: Some(Ed25519PrivateKey(ed25519_private)),
+            frost: None,
         };
         
         Ok((public_keys, private_keys))
@@ -162,7 +168,7 @@ impl HybridSigner {
     ) -> Result<()> {
         // Verify ML-DSA signature
         if let Some(ml_dsa_key) = &public_keys.ml_dsa {
-            ml_dsa::verify(ml_dsa_key, message, &signature.post_quantum.0)?;
+            ml_dsa::verify(&ml_dsa_key.0, message, &signature.post_quantum.0)?;
         } else {
             return Err(QuantumCryptoError::InvalidKeyError(
                 "No ML-DSA public key".to_string()
@@ -171,7 +177,7 @@ impl HybridSigner {
         
         // Verify Ed25519 signature
         if let Some(ed25519_key) = &public_keys.ed25519 {
-            let public_key = PublicKey::from_bytes(&ed25519_key)
+            let public_key = PublicKey::from_bytes(&ed25519_key.0)
                 .map_err(|e| QuantumCryptoError::InvalidKeyError(e.to_string()))?;
             
             let signature = ed25519_dalek::Signature::from_bytes(&signature.classical.0)
@@ -204,18 +210,24 @@ pub mod migration {
         // Generate new ML-KEM keypair
         let (ml_kem_public, ml_kem_private) = ml_kem::generate_keypair()?;
         
+        // Convert slices to arrays
+        let ed25519_pub_array: [u8; 32] = ed25519_public.try_into()
+            .map_err(|_| QuantumCryptoError::InvalidKeyError("Ed25519 public key must be 32 bytes".to_string()))?;
+        let ed25519_priv_array: [u8; 64] = ed25519_private.try_into()
+            .map_err(|_| QuantumCryptoError::InvalidKeyError("Ed25519 private key must be 64 bytes".to_string()))?;
+        
         let public_keys = PublicKeySet {
-            ml_dsa: Some(ml_dsa_public),
-            ml_kem: Some(ml_kem_public),
-            ed25519: Some(ed25519_public.to_vec()),
+            ml_dsa: Some(MlDsaPublicKey(ml_dsa_public)),
+            ml_kem: Some(MlKemPublicKey(ml_kem_public)),
+            ed25519: Some(Ed25519PublicKey(ed25519_pub_array)),
             frost: None,
         };
         
         let private_keys = PrivateKeySet {
-            ml_dsa: Some(ml_dsa_private),
-            ml_kem: Some(ml_kem_private),
-            ed25519: Some(ed25519_private.to_vec()),
-            frost_share: None,
+            ml_dsa: Some(MlDsaPrivateKey(ml_dsa_private)),
+            ml_kem: Some(MlKemPrivateKey(ml_kem_private)),
+            ed25519: Some(Ed25519PrivateKey(ed25519_priv_array)),
+            frost: None,
         };
         
         Ok((public_keys, private_keys))

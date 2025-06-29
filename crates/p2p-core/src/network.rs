@@ -688,6 +688,7 @@ impl P2PNode {
         let peer_id = self.peer_id.clone();
         let peers = Arc::clone(&self.peers);
         let transport_manager = Arc::clone(&self.transport_manager);
+        let mcp_server = self.mcp_server.clone();
         
         // Spawn background task to accept incoming connections
         tokio::spawn(async move {
@@ -722,6 +723,7 @@ impl P2PNode {
                         let connection_event_tx = event_tx.clone();
                         let connection_peer_id_clone = connection_peer_id.clone();
                         let connection_peers = Arc::clone(&peers);
+                        let connection_mcp_server = mcp_server.clone();
                         
                         tokio::spawn(async move {
                             loop {
@@ -731,11 +733,12 @@ impl P2PNode {
                                                message_data.len(), connection_peer_id_clone);
                                         
                                         // Handle the received message
-                                        if let Err(e) = self.handle_received_message(
+                                        if let Err(e) = handle_received_message_standalone(
                                             message_data, 
                                             &connection_peer_id_clone,
                                             "unknown", // TODO: Extract protocol from message
-                                            &connection_event_tx
+                                            &connection_event_tx,
+                                            &connection_mcp_server
                                         ).await {
                                             warn!("Failed to handle message from {}: {}", 
                                                   connection_peer_id_clone, e);
@@ -866,6 +869,16 @@ impl P2PNode {
                         crate::mcp::P2PMCPMessageType::ServiceDiscovery => {
                             // Handle service discovery query
                             self.handle_mcp_service_discovery(p2p_mcp_message, peer_id).await?;
+                        }
+                        crate::mcp::P2PMCPMessageType::Heartbeat => {
+                            // Handle heartbeat notification
+                            debug!("Received heartbeat from peer {}", peer_id);
+                            // TODO: Process heartbeat
+                        }
+                        crate::mcp::P2PMCPMessageType::HealthCheck => {
+                            // Handle health check request
+                            debug!("Received health check from peer {}", peer_id);
+                            // TODO: Process health check and respond
                         }
                     }
                 }
@@ -1930,6 +1943,77 @@ impl NodeBuilder {
     pub async fn build(self) -> Result<P2PNode> {
         P2PNode::new(self.config).await
     }
+}
+
+/// Standalone function to handle received messages without borrowing self
+async fn handle_received_message_standalone(
+    message_data: Vec<u8>, 
+    peer_id: &PeerId,
+    protocol: &str,
+    event_tx: &broadcast::Sender<P2PEvent>,
+    mcp_server: &Option<Arc<crate::mcp::MCPServer>>
+) -> Result<()> {
+    // Check if this is an MCP protocol message
+    if protocol == MCP_PROTOCOL {
+        return handle_mcp_message_standalone(message_data, peer_id, mcp_server).await;
+    }
+    
+    // Parse the message format
+    match serde_json::from_slice::<serde_json::Value>(&message_data) {
+        Ok(message) => {
+            if let (Some(protocol), Some(data), Some(from)) = (
+                message.get("protocol").and_then(|v| v.as_str()),
+                message.get("data").and_then(|v| v.as_array()),
+                message.get("from").and_then(|v| v.as_str())
+            ) {
+                // Convert data array back to bytes
+                let data_bytes: Vec<u8> = data.iter()
+                    .filter_map(|v| v.as_u64().map(|n| n as u8))
+                    .collect();
+                
+                // Generate message event
+                let event = P2PEvent::Message {
+                    topic: protocol.to_string(),
+                    source: from.to_string(),
+                    data: data_bytes,
+                };
+                
+                let _ = event_tx.send(event);
+                debug!("Generated message event from peer: {}", peer_id);
+            }
+        }
+        Err(e) => {
+            warn!("Failed to parse received message from {}: {}", peer_id, e);
+        }
+    }
+    
+    Ok(())
+}
+
+/// Standalone function to handle MCP messages
+async fn handle_mcp_message_standalone(
+    message_data: Vec<u8>, 
+    peer_id: &PeerId,
+    mcp_server: &Option<Arc<crate::mcp::MCPServer>>
+) -> Result<()> {
+    if let Some(ref mcp_server) = mcp_server {
+        // Deserialize the MCP message
+        match serde_json::from_slice::<crate::mcp::P2PMCPMessage>(&message_data) {
+            Ok(_p2p_mcp_message) => {
+                // TODO: Handle different MCP message types
+                debug!("Received MCP message from peer {}", peer_id);
+            }
+            Err(e) => {
+                warn!("Failed to deserialize MCP message from peer {}: {}", peer_id, e);
+                return Err(P2PError::MCP(format!("Invalid MCP message: {}", e)));
+            }
+        }
+    } else {
+        warn!("Received MCP message but MCP server is not enabled");
+        return Err(P2PError::MCP("MCP server not enabled".to_string()));
+    }
+    
+    Ok(())
 }
 
 #[cfg(test)]

@@ -137,9 +137,12 @@ pub use projects::{
 
 // Threshold exports
 pub use threshold::{
-    ThresholdGroup, GroupId, ThresholdSignature, ParticipantId,
+    ThresholdGroup, ThresholdSignature,
     ThresholdGroupManager, ParticipantInfo, GroupMetadata,
 };
+
+// Quantum crypto exports for types used by threshold
+pub use quantum_crypto::types::{GroupId, ParticipantId};
 
 // Placeholder types (will be replaced with actual libp2p types)
 /// Peer identifier used throughout the P2P Foundation

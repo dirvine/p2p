@@ -8,22 +8,13 @@
 //! - Approval workflows with multi-signature requirements
 //! - Activity tracking and analytics
 
-// use crate::identity::enhanced::{
-//     EnhancedIdentity, Organization, OrganizationId, Department, DepartmentId, 
-//     Team, TeamId, Permission
-// }; // Temporarily disabled
-
-// Placeholder types
-pub type EnhancedIdentity = String;
-pub type Organization = String;
-pub type OrganizationId = String;
-pub type Department = String;
-pub type DepartmentId = String;
-pub type Team = String;
-pub type TeamId = String;
-pub type Permission = String;
+use crate::identity::enhanced::{
+    EnhancedIdentity, Organization, OrganizationId, Department, DepartmentId, 
+    Team, TeamId, Permission
+};
 use crate::storage::{StorageManager, keys, ttl, FileChunker, FileMetadata};
-use crate::threshold::{ThresholdGroup, GroupId, ThresholdSignature};
+use crate::threshold::{ThresholdGroup, ThresholdSignature};
+use crate::quantum_crypto::types::GroupId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::SystemTime;
@@ -623,7 +614,7 @@ impl ProjectsManager {
             &mut self.storage,
             &file_metadata.file_id,
             &encrypted_content,
-            file_metadata,
+            file_metadata.clone(),
         ).await?;
         
         Ok(new_version)
@@ -647,7 +638,7 @@ impl ProjectsManager {
             workflow.approvals.push(Approval {
                 approver_id: self.identity.base_identity.user_id.clone(),
                 decision: ApprovalDecision::Approve,
-                signature: crate::threshold::FrostSignature(vec![0; 64]), // Placeholder
+                signature: vec![0; 64], // Placeholder
                 comment,
                 approved_at: SystemTime::now(),
             });

@@ -18,16 +18,22 @@ const BASE_WORDS_PER_POSITION: usize = 4096; // 2^12 for massive address space
 const TARGET_WORDS_PER_POSITION: usize = 8192; // 2^13 for ultimate scale
 
 /// Extended addressing with numeric suffixes for massive scale
-const NUMERIC_SUFFIX_BITS: u32 = 32; // Additional 32 bits = 4.3 billion per base address
+const NUMERIC_SUFFIX_BITS: u32 = 16; // Additional 16 bits = 65,536 per base address
 
 /// Total base combinations: 4096^3 = ~68.7 billion three-word addresses  
 const BASE_COMBINATIONS: u64 = (BASE_WORDS_PER_POSITION as u64).pow(3);
 
-/// Total extended combinations: 68.7 billion × 4.3 billion = ~295 quintillion addresses
-const TOTAL_COMBINATIONS: u64 = BASE_COMBINATIONS * (2_u64.pow(NUMERIC_SUFFIX_BITS));
+/// Calculate total combinations safely using checked arithmetic
+const fn calculate_total_combinations() -> Option<u64> {
+    BASE_COMBINATIONS.checked_mul(2_u64.pow(16)) // Use 16 bits instead of 32 to avoid overflow
+}
 
-/// Ultimate target capacity with 8192 words per position
-const ULTIMATE_COMBINATIONS: u64 = (TARGET_WORDS_PER_POSITION as u64).pow(3) * (2_u64.pow(NUMERIC_SUFFIX_BITS));
+/// Total extended combinations: ~68.7 billion × 65K = ~4.5 quadrillion addresses
+/// Note: Using 16-bit suffix to avoid overflow while still providing massive scale
+const TOTAL_COMBINATIONS: u64 = match calculate_total_combinations() {
+    Some(total) => total,
+    None => BASE_COMBINATIONS, // Fallback to base combinations if overflow
+};
 
 /// Three-word address representation with optional numeric suffix for massive scale
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -228,7 +234,7 @@ impl WordDictionary {
     
     /// Default context words (position 1) - geographic and network context
     fn default_context_words() -> Vec<String> {
-        vec![
+        let mut words = vec![
             // Geographic contexts
             "global", "europe", "america", "asia", "africa", "oceania", "arctic", "pacific",
             "atlantic", "indian", "mountain", "desert", "forest", "urban", "rural", "coastal",
@@ -333,7 +339,7 @@ impl WordDictionary {
             "academic", "university", "college", "school", "research", "laboratory", "institute",
             "medical", "hospital", "clinic", "health", "care", "emergency", "trauma",
             "financial", "bank", "credit", "investment", "insurance", "retail", "commerce",
-        ].iter().map(|s| s.to_string()).collect();
+        ].iter().map(|s| s.to_string()).collect::<Vec<String>>();
         
         // Extend to reach BASE_WORDS_PER_POSITION (4096) words
         while words.len() < BASE_WORDS_PER_POSITION {
@@ -350,7 +356,7 @@ impl WordDictionary {
     
     /// Default quality words (position 2) - performance, purpose, status
     fn default_quality_words() -> Vec<String> {
-        vec![
+        let mut words = vec![
             // Performance qualities
             "fast", "quick", "rapid", "swift", "speedy", "turbo", "hyper", "ultra", "super",
             "stable", "solid", "steady", "reliable", "robust", "strong", "secure", "safe",
@@ -450,7 +456,7 @@ impl WordDictionary {
             "steel", "iron", "aluminum", "copper", "brass", "carbon", "silicon", "plastic",
             "glass", "wood", "stone", "rock", "marble", "granite", "concrete", "brick",
             "fabric", "cotton", "silk", "wool", "leather", "paper", "digital", "virtual",
-        ].iter().map(|s| s.to_string()).collect();
+        ].iter().map(|s| s.to_string()).collect::<Vec<String>>();
         
         // Extend to reach BASE_WORDS_PER_POSITION (4096) words
         while words.len() < BASE_WORDS_PER_POSITION {
@@ -466,7 +472,7 @@ impl WordDictionary {
     
     /// Default identity words (position 3) - nature, objects, abstract concepts
     fn default_identity_words() -> Vec<String> {
-        vec![
+        let mut words = vec![
             // Nature - Animals
             "eagle", "falcon", "hawk", "owl", "raven", "swan", "crane", "heron", "robin",
             "lion", "tiger", "bear", "wolf", "fox", "deer", "elk", "moose", "bison",
@@ -608,7 +614,7 @@ impl WordDictionary {
             "justice", "fairness", "equality", "brotherhood", "unity", "solidarity",
             "courage", "bravery", "valor", "heroism", "honor", "dignity", "pride",
             "humility", "modesty", "simplicity", "elegance", "grace", "beauty", "splendor",
-        ].iter().map(|s| s.to_string()).collect();
+        ].iter().map(|s| s.to_string()).collect::<Vec<String>>();
         
         // Extend to reach BASE_WORDS_PER_POSITION (4096) words
         while words.len() < BASE_WORDS_PER_POSITION {

@@ -28,6 +28,12 @@ impl fmt::Display for GroupId {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ParticipantId(pub u16);
 
+impl std::fmt::Display for ParticipantId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Session identifier
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SessionId(pub [u8; 32]);
@@ -118,8 +124,8 @@ pub struct FrostCommitment(pub Vec<u8>);
 pub struct Ed25519PublicKey(pub [u8; 32]);
 
 /// Ed25519 private key
-#[derive(Clone)]
-pub struct Ed25519PrivateKey(pub [u8; 64]);
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Ed25519PrivateKey(#[serde(with = "serde_big_array::BigArray")] pub [u8; 64]);
 
 impl fmt::Debug for Ed25519PrivateKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -137,7 +143,7 @@ pub struct FrostSignature(pub Vec<u8>);
 
 /// Ed25519 signature
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Ed25519Signature(pub [u8; 64]);
+pub struct Ed25519Signature(#[serde(with = "serde_big_array::BigArray")] pub [u8; 64]);
 
 /// Combined signature for hybrid mode
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,7 +158,7 @@ pub struct MlKemCiphertext(pub Vec<u8>);
 
 /// Shared secret derived from KEM
 #[derive(Clone)]
-pub struct SharedSecret([u8; 32]);
+pub struct SharedSecret(pub [u8; 32]);
 
 impl fmt::Debug for SharedSecret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -226,6 +232,42 @@ pub enum KeyPurpose {
     Encryption,
     Authentication,
     KeyWrapping,
+}
+
+/// Set of public keys for hybrid cryptography
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublicKeySet {
+    /// Ed25519 public key for classical signatures
+    pub ed25519: Option<Ed25519PublicKey>,
+    /// ML-DSA public key for post-quantum signatures
+    pub ml_dsa: Option<MlDsaPublicKey>,
+    /// ML-KEM public key for quantum-safe key exchange
+    pub ml_kem: Option<MlKemPublicKey>,
+    /// FROST public key for threshold operations
+    pub frost: Option<FrostPublicKey>,
+}
+
+/// Set of private keys for hybrid cryptography
+pub struct PrivateKeySet {
+    /// Ed25519 private key for classical signatures
+    pub ed25519: Option<Ed25519PrivateKey>,
+    /// ML-DSA private key for post-quantum signatures
+    pub ml_dsa: Option<MlDsaPrivateKey>,
+    /// ML-KEM private key for quantum-safe key exchange
+    pub ml_kem: Option<MlKemPrivateKey>,
+    /// FROST key share for threshold operations
+    pub frost: Option<FrostKeyShare>,
+}
+
+impl fmt::Debug for PrivateKeySet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PrivateKeySet")
+            .field("ed25519", &self.ed25519.as_ref().map(|_| "***"))
+            .field("ml_dsa", &self.ml_dsa.as_ref().map(|_| "***"))
+            .field("ml_kem", &self.ml_kem.as_ref().map(|_| "***"))
+            .field("frost", &self.frost.as_ref().map(|_| "***"))
+            .finish()
+    }
 }
 
 #[cfg(test)]

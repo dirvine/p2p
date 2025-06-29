@@ -8,13 +8,10 @@
 //! - Moderation with threshold-based decisions
 //! - Badges and reputation system
 
-// use crate::identity::enhanced::{EnhancedIdentity, OrganizationId}; // Temporarily disabled
-
-// Placeholder types
-pub type EnhancedIdentity = String;
-pub type OrganizationId = String;
+use crate::identity::enhanced::{EnhancedIdentity, OrganizationId};
 use crate::storage::{StorageManager, keys, ttl};
-use crate::threshold::{ThresholdGroup, GroupId};
+use crate::threshold::ThresholdGroup;
+use crate::quantum_crypto::types::GroupId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::SystemTime;
@@ -148,6 +145,12 @@ pub enum TrustLevel {
     Member = 2,
     Regular = 3,
     Leader = 4,
+}
+
+impl Default for TrustLevel {
+    fn default() -> Self {
+        TrustLevel::New
+    }
 }
 
 /// Discussion topic
@@ -439,7 +442,7 @@ impl DiscussManager {
         
         let topic = Topic {
             id: TopicId::new(),
-            category_id,
+            category_id: category_id.clone(),
             title: title.clone(),
             slug: self.slugify(&title),
             content: TopicContent {
