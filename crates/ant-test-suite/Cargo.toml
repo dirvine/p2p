@@ -1,0 +1,65 @@
+[package]
+name = "ant-test-suite"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "Comprehensive test suite for Ant Network Core P2P library with data integrity verification"
+keywords = ["p2p", "testing", "verification", "integrity", "ant-core"]
+categories = ["development-tools::testing", "network-programming"]
+
+[[bin]]
+name = "ant-test-suite"
+path = "src/main.rs"
+
+[dependencies]
+# Core P2P library
+ant-core = { path = "../p2p-core", features = ["quantum-resistant"] }
+
+# Workspace dependencies
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid = { workspace = true, features = ["serde"] }
+
+# CLI and configuration
+clap = { version = "4.4", features = ["derive"] }
+dirs = "5.0"
+toml = "0.8"
+
+# Testing and verification
+sha2.workspace = true
+hex.workspace = true
+rand.workspace = true
+ed25519-dalek = "2.1"
+signature = "2.2"
+
+# Logging and reporting
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+colored = "2.0"
+indicatif = "0.17"
+
+# Remote management
+ssh2 = "0.9"
+tempfile = "3.10"
+
+# Data generation and validation
+fake = { version = "2.9", features = ["derive"] }
+proptest = "1.4"
+async-trait = "0.1"
+
+# Performance monitoring
+sysinfo = "0.30"
+
+# Additional dependencies
+shellexpand = "3.1"
+
+[features]
+default = ["data-verification", "remote-testing"]
+data-verification = []
+remote-testing = []
+stress-testing = []

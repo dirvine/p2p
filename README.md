@@ -340,6 +340,275 @@ cd apps/desktop-tauri
 cargo tauri dev
 ```
 
+## 🧪 Comprehensive Testing Suite
+
+The P2P Foundation includes a comprehensive test suite with over 1400+ lines of test coverage across all subsystems. The test suite validates real P2P operations, data integrity, cross-node communication, and stress testing scenarios.
+
+### 🚀 Quick Test Commands
+
+```bash
+# Run all tests (basic functionality)
+cd crates/ant-test-suite
+cargo test
+
+# Run tests with detailed output
+cargo test -- --nocapture
+
+# Run specific subsystem tests
+cargo test network_tests
+cargo test identity_tests  
+cargo test crypto_tests
+cargo test storage_tests
+cargo test chat_tests
+cargo test projects_tests
+cargo test discuss_tests
+cargo test threshold_tests
+
+# Run integration tests only
+cargo test integration_tests
+
+# Run stress tests
+cargo test stress_tests
+```
+
+### 🔧 Test Suite Architecture
+
+The test suite is located in `crates/ant-test-suite/` and includes:
+
+```
+ant-test-suite/
+├── src/
+│   ├── tests/
+│   │   ├── network.rs       # DHT operations, peer discovery, routing
+│   │   ├── identity.rs      # Profile management, encryption, contacts
+│   │   ├── crypto.rs        # Quantum-resistant crypto, Ed25519, FROST
+│   │   ├── storage.rs       # Git-like DHT storage, version control
+│   │   ├── chat.rs          # Messaging, channels, attachments
+│   │   ├── projects.rs      # File management, collaboration workflows  
+│   │   ├── discuss.rs       # Forums, voting, moderation, polls
+│   │   ├── threshold.rs     # FROST protocol, DKG ceremonies, groups
+│   │   └── integration.rs   # Cross-subsystem integration tests
+│   ├── utils/               # Test utilities and data verification
+│   └── config.rs           # Test configuration
+```
+
+### 📊 Test Categories
+
+#### 🌐 **Network & DHT Tests** (`network.rs`)
+Tests the core P2P networking layer with real data verification:
+
+```bash
+# Run network tests specifically
+cargo test network_tests
+
+# Test components:
+# - Peer discovery and routing with Kademlia DHT
+# - Store/retrieve operations with data integrity checks  
+# - Multi-node coordination (2, 5, 10, 25, 50 nodes)
+# - Cross-node data synchronization
+# - Network partition recovery
+# - Bootstrap system validation
+# - Connection pooling and load balancing
+```
+
+#### 🎭 **Identity Management Tests** (`identity.rs`)
+Validates privacy-first identity system with profile integrity:
+
+```bash
+cargo test identity_tests
+
+# Test components:
+# - Profile creation and encryption
+# - Contact management and friend networks
+# - Three-word address generation and resolution
+# - Profile sharing with granular permissions
+# - Cross-node profile synchronization
+# - Privacy controls and access management
+```
+
+#### 🔐 **Cryptographic Tests** (`crypto.rs`)
+Comprehensive testing of all cryptographic operations:
+
+```bash
+cargo test crypto_tests
+
+# Test components:
+# - Ed25519 signature generation and verification
+# - Quantum-resistant algorithm integration (ML-KEM, ML-DSA)
+# - Key generation, encryption, and decryption workflows
+# - Threshold signature schemes with FROST protocol
+# - Hierarchical key management and rotation
+# - Cross-node cryptographic coordination
+# - Performance benchmarking for crypto operations
+```
+
+#### 🗄️ **Storage System Tests** (`storage.rs`)
+Tests the Git-like DHT storage with comprehensive version control:
+
+```bash
+cargo test storage_tests
+
+# Test components:
+# - Content-addressed storage with BLAKE3 hashing
+# - Version control operations (commit, branch, merge, tag)
+# - Merge conflict detection and resolution algorithms
+# - Cross-node storage synchronization and replication
+# - Storage optimization and deduplication
+# - History tracking and rollback capabilities
+# - Performance testing with large datasets
+```
+
+#### 💬 **Chat System Tests** (`chat.rs`)
+Validates real-time messaging with version control integration:
+
+```bash
+cargo test chat_tests
+
+# Test components:
+# - Channel creation and management
+# - Message encryption and delivery verification
+# - File attachment handling and integrity
+# - Permission-based access control
+# - Cross-node message synchronization
+# - Message history and version tracking
+# - Stress testing with high-volume messaging
+```
+
+#### 📋 **Project Management Tests** (`projects.rs`)
+Tests collaborative project workflows with access control:
+
+```bash
+cargo test projects_tests
+
+# Test components:
+# - Project creation and file storage
+# - Team member management (add/remove/promote)
+# - Document access control and permissions
+# - Collaboration workflows and approval processes
+# - Version control integration for project files
+# - Cross-node project synchronization
+# - Performance testing with large projects
+```
+
+#### 🏛️ **Discussion Forum Tests** (`discuss.rs`)
+Validates forum functionality with comprehensive moderation:
+
+```bash
+cargo test discuss_tests
+
+# Test components:
+# - Category and topic management
+# - Reply threading and voting systems
+# - Moderation tools and user trust levels
+# - Poll creation and voting mechanisms
+# - Badge systems and user achievements
+# - Wiki editing with version control
+# - Cross-node forum synchronization
+# - Stress testing with high-activity forums
+```
+
+#### 🔐 **Threshold Cryptography Tests** (`threshold.rs`)
+Tests advanced FROST protocol and hierarchical permissions:
+
+```bash
+cargo test threshold_tests
+
+# Test components:
+# - Distributed Key Generation (DKG) ceremonies (2-of-3 to 7-of-10)
+# - FROST signing protocol with multi-phase coordination
+# - Group management (add/remove members, update threshold)
+# - Key rotation and proactive security refresh
+# - Hierarchical group creation with 5-level permissions
+# - Byzantine fault tolerance (invalid shares, double signing, etc.)
+# - Cross-node distributed threshold operations
+# - Stress testing (50 DKG ceremonies + 100 signing sessions)
+```
+
+### 🎯 **Integration Tests** (`integration.rs`)
+Cross-subsystem testing with real-world scenarios:
+
+```bash
+cargo test integration_tests
+
+# Test components:
+# - End-to-end workflows across all subsystems
+# - Data consistency across network operations
+# - Performance benchmarking of complete operations
+# - Error handling and recovery mechanisms
+# - Multi-user collaborative scenarios
+```
+
+### 📈 **Performance & Stress Testing**
+
+Run comprehensive stress tests to validate scalability:
+
+```bash
+# High-volume operations
+cargo test stress_tests
+
+# Specific stress scenarios:
+cargo test test_high_volume_dht_operations
+cargo test test_massive_message_throughput  
+cargo test test_concurrent_project_collaboration
+cargo test test_threshold_ceremony_stress
+cargo test test_cross_node_scaling
+
+# Performance benchmarks
+cargo bench --all-features
+```
+
+### 🔍 **Data Verification Features**
+
+All tests include comprehensive data verification:
+
+- **Round-trip integrity**: Store/retrieve operations verify data integrity
+- **Cross-node consistency**: Multi-node tests ensure data synchronization
+- **Cryptographic verification**: All signatures and encryption validated
+- **Version control integrity**: Git-like operations maintain history consistency
+- **Performance metrics**: Latency, throughput, and resource usage tracking
+
+### 🛠️ **Test Configuration**
+
+Configure test behavior via environment variables:
+
+```bash
+# Test with different node counts
+NODES=50 cargo test network_tests
+
+# Enable verbose logging
+RUST_LOG=debug cargo test -- --nocapture
+
+# Test with different network conditions
+NETWORK_DELAY=100ms cargo test cross_node_tests
+
+# Run specific test scenarios
+TEST_SCENARIO=enterprise cargo test
+```
+
+### 📋 **Test Coverage**
+
+The test suite provides:
+
+- **1400+ lines** of comprehensive test coverage
+- **Real P2P operations** with actual network communication
+- **Data integrity verification** for all storage and retrieval
+- **Multi-node coordination** testing (2-50 nodes)
+- **Stress testing** with high-volume operations
+- **Error scenario validation** with Byzantine fault tolerance
+- **Performance benchmarking** across all subsystems
+- **Cross-platform compatibility** testing
+
+### 🚀 **Continuous Integration**
+
+Tests run automatically on:
+
+- **Pull requests** - All functionality validated
+- **Commits to main** - Regression prevention
+- **Nightly builds** - Extended stress testing
+- **Release candidates** - Comprehensive validation
+
+The test suite ensures the P2P Foundation maintains production-ready quality across all features and platforms.
+
 ## 📊 Performance
 
 - **Connection establishment**: < 100ms (LAN), < 1s (Internet) with automatic protocol fallback

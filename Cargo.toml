@@ -7,6 +7,7 @@ members = [
     "crates/p2p-core",           # Core P2P library (publishable to crates.io)
     "crates/p2p-ffi",            # FFI bindings for Flutter
     "crates/p2p-cli",            # CLI tools and utilities
+    "crates/ant-test-suite",     # Comprehensive test suite with data integrity verification
     "apps/saorsa/src-tauri", # Tauri desktop application
     "test-app",                  # Test application
     # "examples/*",                # Example applications - temporarily disabled for Tauri testing
@@ -58,6 +59,8 @@ bytes = "1.0"
 hex = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.22"
+toml = "0.8"
+shellexpand = "3.1"
 
 # Workspace-level profiles
 [profile.release]
