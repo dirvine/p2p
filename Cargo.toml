@@ -15,7 +15,7 @@ members = [
 [workspace.package]
 version = "0.2.6"
 edition = "2021"
-authors = ["David Irvine <david@maidsafe.net>"]
+authors = ["David Irvine <saorsalabs@gmail.com>"]
 license = "AGPL-3.0-or-later OR Commercial"
 homepage = "https://github.com/dirvine/p2p"
 repository = "https://github.com/dirvine/p2p"

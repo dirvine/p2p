@@ -50,6 +50,9 @@ pub mod network;
 /// Distributed Hash Table implementation
 pub mod dht;
 
+/// DHT Network Integration Manager
+pub mod dht_network_manager;
+
 /// Transport layer (QUIC, TCP)
 pub mod transport;
 
@@ -77,6 +80,12 @@ pub mod discuss;
 /// Projects system with hierarchical organization
 pub mod projects;
 
+/// Threshold cryptography for group operations
+pub mod threshold;
+
+/// Quantum-resistant cryptography
+pub mod quantum_crypto;
+
 /// Utility functions and types
 pub mod utils;
 
@@ -92,6 +101,7 @@ pub mod error;
 // Re-export main types
 pub use network::{P2PNode, NodeConfig, NodeBuilder, P2PEvent};
 pub use dht::{Key, Record};
+pub use dht_network_manager::{DhtNetworkManager, DhtNetworkConfig, DhtNetworkOperation, DhtNetworkResult, DhtNetworkEvent, DhtPeerInfo, BootstrapNode};
 pub use mcp::{MCPServer, Tool, MCPService};
 pub use production::{ProductionConfig, ResourceManager, ResourceMetrics};
 pub use bootstrap::{BootstrapManager, BootstrapCache, ContactEntry, CacheConfig};
@@ -105,7 +115,7 @@ pub use identity::enhanced::{
 };
 
 // Storage exports
-pub use storage::{StorageManager, SyncManager, FileChunker};
+pub use storage::{StorageManager, FileChunker}; // SyncManager temporarily disabled
 
 // Chat exports
 pub use chat::{
@@ -123,6 +133,12 @@ pub use discuss::{
 pub use projects::{
     Project, ProjectId, Document, DocumentId, Folder,
     ProjectsManager, WorkflowState, ProjectAnalytics,
+};
+
+// Threshold exports
+pub use threshold::{
+    ThresholdGroup, GroupId, ThresholdSignature, ParticipantId,
+    ThresholdGroupManager, ParticipantInfo, GroupMetadata,
 };
 
 // Placeholder types (will be replaced with actual libp2p types)

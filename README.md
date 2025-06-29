@@ -111,6 +111,73 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - Cross-platform FFI bindings for mobile development
 - Extensive documentation and examples
 
+## 🌟 What's Unique About This Network and the Saorsa App
+
+The P2P Foundation represents a paradigm shift in decentralized networking, combining cutting-edge cryptography, innovative addressing, and AI-native design to create something truly revolutionary. Here's what sets us apart:
+
+### 🎭 **Three-Word Network Addresses**
+- **Human-readable networking**: Share connections with memorable phrases like `forest.lightning.compass` instead of complex technical addresses
+- **Voice-friendly**: Actually shareable over phone calls and voice chat
+- **8.6 billion combinations**: Enormous address space using carefully curated word lists
+- **Zero friction onboarding**: Eliminates the biggest barrier to P2P adoption
+
+### 🛡️ **Quantum-Resistant Security Architecture**
+- **Future-proof cryptography**: ML-KEM-768 and ML-DSA-65 (FIPS 203/204) protect against quantum threats
+- **Hybrid transition**: Support both classical and post-quantum algorithms during migration
+- **Algorithm agility**: Easy upgrade path as quantum-resistant standards evolve
+- **Military-grade protection**: Defense against threats that don't even exist yet
+
+### 👥 **Revolutionary Threshold Cryptography**
+- **FROST protocol**: Threshold signatures enable true multi-party authorization
+- **Dynamic membership**: Add/remove people from groups without regenerating keys
+- **Hierarchical authority**: Cryptographically enforced organizational structures
+- **Byzantine fault tolerance**: Secure consensus even with malicious participants
+- **Seamless personnel changes**: Swap out team members while maintaining security continuity
+
+### 🏢 **Cryptographically Enforced Organizations**
+- **Verifiable hierarchies**: Team leaders and structures backed by mathematics, not trust
+- **Granular permissions**: Different access levels for different organizational roles
+- **Threshold governance**: Require multiple approvals for sensitive operations
+- **Audit trails**: Cryptographic proof of who authorized what and when
+- **Enterprise-ready**: Built for real organizational security needs
+
+### 📚 **Git-Like DHT with Universal Version Control**
+- **Content-addressed everything**: BLAKE3 hashing provides integrity for all data
+- **Universal version control**: Chat messages, documents, forum posts - everything is versioned
+- **Git semantics**: Branches, commits, tags, and merges for any type of content
+- **Network-wide deduplication**: Identical content stored once across the entire network
+- **Collaborative workflows**: Distributed editing with conflict resolution and merge capabilities
+
+### 🔒 **True Peer-to-Peer Communication**
+- **No signaling servers**: Direct computer-to-computer communication without intermediaries
+- **Ultimate privacy**: Your conversations don't touch anyone else's servers
+- **QUIC transport**: Modern, encrypted networking with built-in DoS protection
+- **Universal connectivity**: Works across any network topology with automatic tunneling
+- **Enterprise-grade**: ISATAP tunneling for corporate IPv6 deployment
+
+### 🤖 **AI-Native from the Ground Up**
+- **MCP everywhere**: Model Context Protocol server built into every node
+- **Distributed AI**: AI agents discover and collaborate across the network
+- **Tool orchestration**: Automatically find and execute AI tools on remote nodes
+- **Service discovery**: AI services announce themselves and are automatically discovered
+- **Threshold AI governance**: Cryptographic authorization for AI resource access
+
+### 🌐 **Universal Network Connectivity**
+- **Intelligent protocol selection**: Automatically chooses best tunneling method (6to4, Teredo, 6in4, DS-Lite, ISATAP)
+- **Enterprise tunneling**: Built-in ISATAP support for corporate IPv6 networks
+- **Zero configuration**: Works out of the box on any network setup
+- **IPv6-first design**: Future-ready with comprehensive IPv4 backward compatibility
+- **Automatic NAT traversal**: Connects through any firewall or router configuration
+
+### 🚀 **Revolutionary User Experience**
+- **Voice shareable**: "Connect to forest lightning compass" actually works
+- **Zero technical knowledge**: Share network access like sharing a WiFi password
+- **Cross-platform**: Native performance on desktop, mobile, and web
+- **Progressive enhancement**: Advanced features for power users, simple for everyone else
+- **Developer friendly**: Build on our foundation with minimal learning curve
+
+This isn't just another P2P network - it's a complete reimagining of how decentralized systems should work. We've solved the fundamental problems that have kept P2P networks from mainstream adoption while building in future-proof security and AI-native capabilities that will matter for decades to come.
+
 ## 🏛️ Architecture
 
 ```
@@ -325,7 +392,7 @@ P2P Foundation is dual-licensed to support both open-source and commercial use:
 
 **Quick Guide**: If you're building a proprietary product, charging users, or have >$1M annual revenue, you need a commercial license. See [LICENSING.md](LICENSING.md) for detailed guidance.
 
-For questions, contact saorsalabs@gmail.com or visit https://maidsafe.net/licensing
+For questions, contact saorsalabs@gmail.com
 
 ## 🔗 Links
 

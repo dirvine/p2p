@@ -8,10 +8,20 @@
 //! - Approval workflows with multi-signature requirements
 //! - Activity tracking and analytics
 
-use crate::identity::enhanced::{
-    EnhancedIdentity, Organization, OrganizationId, Department, DepartmentId, 
-    Team, TeamId, Permission
-};
+// use crate::identity::enhanced::{
+//     EnhancedIdentity, Organization, OrganizationId, Department, DepartmentId, 
+//     Team, TeamId, Permission
+// }; // Temporarily disabled
+
+// Placeholder types
+pub type EnhancedIdentity = String;
+pub type Organization = String;
+pub type OrganizationId = String;
+pub type Department = String;
+pub type DepartmentId = String;
+pub type Team = String;
+pub type TeamId = String;
+pub type Permission = String;
 use crate::storage::{StorageManager, keys, ttl, FileChunker, FileMetadata};
 use crate::threshold::{ThresholdGroup, GroupId, ThresholdSignature};
 use serde::{Deserialize, Serialize};

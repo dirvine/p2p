@@ -162,7 +162,7 @@ With a commercial license, you must:
 
 ### Commercial Licensing
 - **Email**: saorsalabs@gmail.com
-- **Website**: https://maidsafe.net/licensing
+- **Contact**: saorsalabs@gmail.com
 - **Response Time**: 1-2 business days
 
 ### Legal Questions

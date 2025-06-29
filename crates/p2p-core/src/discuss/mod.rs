@@ -8,7 +8,11 @@
 //! - Moderation with threshold-based decisions
 //! - Badges and reputation system
 
-use crate::identity::enhanced::{EnhancedIdentity, OrganizationId};
+// use crate::identity::enhanced::{EnhancedIdentity, OrganizationId}; // Temporarily disabled
+
+// Placeholder types
+pub type EnhancedIdentity = String;
+pub type OrganizationId = String;
 use crate::storage::{StorageManager, keys, ttl};
 use crate::threshold::{ThresholdGroup, GroupId};
 use serde::{Deserialize, Serialize};

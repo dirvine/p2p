@@ -7,7 +7,12 @@
 //! - Voice/video calls via WebRTC
 //! - Rich media support
 
-use crate::identity::enhanced::{EnhancedIdentity, OrganizationId, Permission};
+// use crate::identity::enhanced::{EnhancedIdentity, OrganizationId, Permission}; // Temporarily disabled
+
+// Placeholder types
+pub type EnhancedIdentity = String;
+pub type OrganizationId = String;
+pub type Permission = String;
 use crate::storage::{StorageManager, keys, ttl};
 use crate::threshold::{ThresholdGroup, GroupId};
 use serde::{Deserialize, Serialize};

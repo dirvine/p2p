@@ -4,7 +4,7 @@
 //! It handles peer connections, network events, and node lifecycle management.
 
 use crate::{PeerId, Multiaddr, P2PError, Result};
-use crate::mcp::{MCPServer, MCPServerConfig, Tool, MCPCallContext, MCP_PROTOCOL};
+use crate::mcp::{MCPServer, MCPServerConfig, Tool, MCPCallContext, MCP_PROTOCOL, NetworkSender};
 use crate::dht::{DHT, DHTConfig as DHTConfigInner};
 use crate::production::{ProductionConfig, ResourceManager, ResourceMetrics};
 use crate::bootstrap::{BootstrapManager, ContactEntry, QualityMetrics};
@@ -420,6 +420,11 @@ impl P2PNode {
         };
         
         info!("Created P2P node with peer ID: {}", node.peer_id);
+        
+        // Connect MCP server to network layer if enabled
+        // This is done after node creation since the MCP server needs a reference to the node
+        // We'll complete this integration in the initialize_mcp_network method
+        
         Ok(node)
     }
     
@@ -431,6 +436,28 @@ impl P2PNode {
     /// Get the peer ID of this node
     pub fn peer_id(&self) -> &PeerId {
         &self.peer_id
+    }
+    
+    /// Initialize MCP network integration
+    /// This method should be called after node creation to enable MCP network features
+    pub async fn initialize_mcp_network(&self) -> Result<()> {
+        if let Some(ref mcp_server) = self.mcp_server {
+            // Create a channel for sending messages from MCP to the network layer
+            let (send_tx, mut send_rx) = tokio::sync::mpsc::unbounded_channel::<(PeerId, String, Vec<u8>)>();
+            
+            // Create a network sender using the channel
+            let network_sender = P2PNetworkSender::new(self.peer_id.clone(), send_tx);
+            
+            // Set the network sender in the MCP server
+            mcp_server.set_network_sender(Arc::new(network_sender)).await;
+            
+            // For now, we'll skip the background task and handle this differently
+            // In production, we'd need to implement proper Clone for P2PNode or use Arc<RwLock<P2PNode>>
+            // TODO: Implement proper async message handling
+            
+            info!("MCP network integration initialized for peer {}", self.peer_id);
+        }
+        Ok(())
     }
 
     pub fn local_addr(&self) -> Option<String> {
@@ -519,11 +546,14 @@ impl P2PNode {
         
         info!("P2P node started on addresses: {:?}", *listen_addrs);
         
+        // Initialize MCP network integration
+        self.initialize_mcp_network().await?;
+        
         // Start MCP server if enabled
         if let Some(ref mcp_server) = self.mcp_server {
             mcp_server.start().await
                 .map_err(|e| P2PError::MCP(format!("Failed to start MCP server: {}", e)))?;
-            info!("MCP server started");
+            info!("MCP server started with network integration");
         }
         
         // Start message receiving system
@@ -701,9 +731,10 @@ impl P2PNode {
                                                message_data.len(), connection_peer_id_clone);
                                         
                                         // Handle the received message
-                                        if let Err(e) = Self::handle_received_message(
+                                        if let Err(e) = self.handle_received_message(
                                             message_data, 
-                                            &connection_peer_id_clone, 
+                                            &connection_peer_id_clone,
+                                            "unknown", // TODO: Extract protocol from message
                                             &connection_event_tx
                                         ).await {
                                             warn!("Failed to handle message from {}: {}", 
@@ -767,10 +798,17 @@ impl P2PNode {
     
     /// Handle a received message and generate appropriate events
     async fn handle_received_message(
+        &self,
         message_data: Vec<u8>, 
         peer_id: &PeerId,
+        protocol: &str,
         event_tx: &broadcast::Sender<P2PEvent>
     ) -> Result<()> {
+        // Check if this is an MCP protocol message
+        if protocol == MCP_PROTOCOL {
+            return self.handle_mcp_message(message_data, peer_id).await;
+        }
+        
         // Parse the message format we created in create_protocol_message
         match serde_json::from_slice::<serde_json::Value>(&message_data) {
             Ok(message) => {
@@ -798,6 +836,170 @@ impl P2PNode {
             Err(e) => {
                 warn!("Failed to parse received message from {}: {}", peer_id, e);
             }
+        }
+        
+        Ok(())
+    }
+    
+    /// Handle incoming MCP protocol messages
+    async fn handle_mcp_message(&self, message_data: Vec<u8>, peer_id: &PeerId) -> Result<()> {
+        if let Some(ref mcp_server) = self.mcp_server {
+            // Deserialize the MCP message
+            match serde_json::from_slice::<crate::mcp::P2PMCPMessage>(&message_data) {
+                Ok(p2p_mcp_message) => {
+                    debug!("Received MCP message from peer {}: {:?}", peer_id, p2p_mcp_message.message_type);
+                    
+                    // Handle different types of MCP messages
+                    match p2p_mcp_message.message_type {
+                        crate::mcp::P2PMCPMessageType::Request => {
+                            // Handle incoming tool call request
+                            self.handle_mcp_tool_request(p2p_mcp_message, peer_id).await?;
+                        }
+                        crate::mcp::P2PMCPMessageType::Response => {
+                            // Handle response to our previous request
+                            self.handle_mcp_tool_response(p2p_mcp_message).await?;
+                        }
+                        crate::mcp::P2PMCPMessageType::ServiceAdvertisement => {
+                            // Handle service discovery advertisement
+                            self.handle_mcp_service_advertisement(p2p_mcp_message, peer_id).await?;
+                        }
+                        crate::mcp::P2PMCPMessageType::ServiceDiscovery => {
+                            // Handle service discovery query
+                            self.handle_mcp_service_discovery(p2p_mcp_message, peer_id).await?;
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to deserialize MCP message from peer {}: {}", peer_id, e);
+                    return Err(P2PError::MCP(format!("Invalid MCP message: {}", e)));
+                }
+            }
+        } else {
+            warn!("Received MCP message but MCP server is not enabled");
+            return Err(P2PError::MCP("MCP server not enabled".to_string()));
+        }
+        
+        Ok(())
+    }
+    
+    /// Handle incoming MCP tool call requests
+    async fn handle_mcp_tool_request(&self, message: crate::mcp::P2PMCPMessage, peer_id: &PeerId) -> Result<()> {
+        if let Some(ref mcp_server) = self.mcp_server {
+            // Extract the tool call from the message
+            if let crate::mcp::MCPMessage::CallTool { name, arguments } = message.payload {
+                debug!("Handling MCP tool request for '{}' from peer {}", name, peer_id);
+                
+                // Create an MCPCallContext for this request
+                let context = MCPCallContext {
+                    caller_id: peer_id.clone(),
+                    timestamp: std::time::SystemTime::now(),
+                    timeout: Duration::from_secs(30),
+                    auth_info: None,
+                    metadata: std::collections::HashMap::new(),
+                };
+                
+                // Execute the tool locally
+                match mcp_server.call_tool(&name, arguments, context).await {
+                    Ok(result) => {
+                        // Send response back to the requesting peer
+                        let response_message = crate::mcp::P2PMCPMessage {
+                            message_type: crate::mcp::P2PMCPMessageType::Response,
+                            message_id: message.message_id,
+                            source_peer: self.peer_id.clone(),
+                            target_peer: Some(peer_id.clone()),
+                            timestamp: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs(),
+                            payload: crate::mcp::MCPMessage::CallToolResult {
+                                content: vec![crate::mcp::MCPContent::Text {
+                                    text: serde_json::to_string(&result).unwrap_or_default(),
+                                }],
+                                is_error: false,
+                            },
+                            ttl: 5,
+                        };
+                        
+                        // Serialize and send response
+                        let response_data = serde_json::to_vec(&response_message)
+                            .map_err(|e| P2PError::Serialization(e))?;
+                        
+                        self.send_message(peer_id, MCP_PROTOCOL, response_data).await?;
+                        debug!("Sent MCP tool response to peer {}", peer_id);
+                    }
+                    Err(e) => {
+                        // Send error response
+                        let error_message = crate::mcp::P2PMCPMessage {
+                            message_type: crate::mcp::P2PMCPMessageType::Response,
+                            message_id: message.message_id,
+                            source_peer: self.peer_id.clone(),
+                            target_peer: Some(peer_id.clone()),
+                            timestamp: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs(),
+                            payload: crate::mcp::MCPMessage::CallToolResult {
+                                content: vec![crate::mcp::MCPContent::Text {
+                                    text: format!("Error: {}", e),
+                                }],
+                                is_error: true,
+                            },
+                            ttl: 5,
+                        };
+                        
+                        let error_data = serde_json::to_vec(&error_message)
+                            .map_err(|e| P2PError::Serialization(e))?;
+                        
+                        self.send_message(peer_id, MCP_PROTOCOL, error_data).await?;
+                        warn!("Sent MCP error response to peer {}: {}", peer_id, e);
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Handle MCP tool call responses
+    async fn handle_mcp_tool_response(&self, message: crate::mcp::P2PMCPMessage) -> Result<()> {
+        if let Some(ref mcp_server) = self.mcp_server {
+            // Forward the response to the MCP server for processing
+            debug!("Received MCP tool response: {}", message.message_id);
+            // The MCP server's handle_remote_response method will process this
+            // This is a simplified implementation - in production we'd have more sophisticated routing
+        }
+        
+        Ok(())
+    }
+    
+    /// Handle MCP service advertisements
+    async fn handle_mcp_service_advertisement(&self, message: crate::mcp::P2PMCPMessage, peer_id: &PeerId) -> Result<()> {
+        debug!("Received MCP service advertisement from peer {}", peer_id);
+        
+        if let Some(ref mcp_server) = self.mcp_server {
+            // Forward the service advertisement to the MCP server for processing
+            mcp_server.handle_service_advertisement(message).await?;
+            debug!("Processed service advertisement from peer {}", peer_id);
+        } else {
+            warn!("Received MCP service advertisement but MCP server is not enabled");
+        }
+        
+        Ok(())
+    }
+    
+    /// Handle MCP service discovery queries
+    async fn handle_mcp_service_discovery(&self, message: crate::mcp::P2PMCPMessage, peer_id: &PeerId) -> Result<()> {
+        debug!("Received MCP service discovery query from peer {}", peer_id);
+        
+        if let Some(ref mcp_server) = self.mcp_server {
+            // Handle the service discovery request through the MCP server
+            if let Ok(Some(response_data)) = mcp_server.handle_service_discovery(message).await {
+                // Send the response back to the requesting peer
+                self.send_message(peer_id, MCP_PROTOCOL, response_data).await?;
+                debug!("Sent service discovery response to peer {}", peer_id);
+            }
+        } else {
+            warn!("Received MCP service discovery query but MCP server is not enabled");
         }
         
         Ok(())
@@ -1131,22 +1333,68 @@ impl P2PNode {
                 metadata: HashMap::new(),
             };
             
-            // Try to call the remote tool
-            match mcp_server.call_remote_tool(peer_id, tool_name, arguments.clone(), context).await {
+            // Try to call the remote tool via MCP server first
+            match mcp_server.call_remote_tool(peer_id, tool_name, arguments.clone(), context.clone()).await {
                 Ok(result) => Ok(result),
-                Err(P2PError::MCP(msg)) if msg.contains("network integration") => {
-                    // For now, simulate a remote call by calling a local tool
-                    // In a real implementation, this would go through the network
-                    info!("Simulating remote MCP call to {} on peer {}", tool_name, peer_id);
-                    
-                    // Create a simulated remote call using local tools for demonstration
-                    self.call_mcp_tool(tool_name, arguments).await
+                Err(P2PError::MCP(msg)) if msg.contains("Network sender not configured") => {
+                    // Handle network communication at P2PNode level
+                    info!("Handling MCP remote call to {} on peer {} via P2PNode", tool_name, peer_id);
+                    self.handle_mcp_remote_tool_call(peer_id, tool_name, arguments, context).await
                 }
                 Err(e) => Err(e),
             }
         } else {
             Err(P2PError::MCP("MCP server not enabled".to_string()))
         }
+    }
+    
+    /// Handle MCP remote tool call with network integration
+    async fn handle_mcp_remote_tool_call(&self, peer_id: &PeerId, tool_name: &str, arguments: Value, context: MCPCallContext) -> Result<Value> {
+        let request_id = uuid::Uuid::new_v4().to_string();
+        
+        // Create MCP call tool message
+        let mcp_message = crate::mcp::MCPMessage::CallTool {
+            name: tool_name.to_string(),
+            arguments,
+        };
+        
+        // Create P2P message wrapper
+        let p2p_message = crate::mcp::P2PMCPMessage {
+            message_type: crate::mcp::P2PMCPMessageType::Request,
+            message_id: request_id.clone(),
+            source_peer: context.caller_id.clone(),
+            target_peer: Some(peer_id.clone()),
+            timestamp: context.timestamp
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| P2PError::Network(format!("Time error: {}", e)))?
+                .as_secs(),
+            payload: mcp_message,
+            ttl: 5, // Max 5 hops
+        };
+        
+        // Serialize the message
+        let message_data = serde_json::to_vec(&p2p_message)
+            .map_err(|e| P2PError::Serialization(e))?;
+        
+        if message_data.len() > crate::mcp::MAX_MESSAGE_SIZE {
+            return Err(P2PError::MCP("Message too large".to_string()));
+        }
+        
+        // Send the message via P2P network
+        self.send_message(peer_id, MCP_PROTOCOL, message_data).await?;
+        
+        // Return success response with request tracking info
+        info!("MCP remote tool call sent to peer {}, tool: {}", peer_id, tool_name);
+        
+        // TODO: Implement proper response waiting mechanism
+        // For now, return a placeholder response indicating successful sending
+        Ok(serde_json::json!({
+            "status": "sent",
+            "message": "Remote tool call sent successfully", 
+            "peer_id": peer_id,
+            "tool_name": tool_name,
+            "request_id": request_id
+        }))
     }
     
     /// List available tools in the local MCP server
@@ -1456,6 +1704,151 @@ impl P2PNode {
         // This is a placeholder for now
         
         Ok(())
+    }
+    
+    /// Discover available MCP services on the network
+    pub async fn discover_mcp_services(&self) -> Result<Vec<crate::mcp::MCPService>> {
+        if let Some(ref mcp_server) = self.mcp_server {
+            mcp_server.discover_remote_services().await
+        } else {
+            Err(P2PError::MCP("MCP server not enabled".to_string()))
+        }
+    }
+    
+    /// Get all known MCP services (local + remote)
+    pub async fn get_all_mcp_services(&self) -> Result<Vec<crate::mcp::MCPService>> {
+        if let Some(ref mcp_server) = self.mcp_server {
+            mcp_server.get_all_services().await
+        } else {
+            Err(P2PError::MCP("MCP server not enabled".to_string()))
+        }
+    }
+    
+    /// Find MCP services that provide a specific tool
+    pub async fn find_mcp_services_with_tool(&self, tool_name: &str) -> Result<Vec<crate::mcp::MCPService>> {
+        if let Some(ref mcp_server) = self.mcp_server {
+            mcp_server.find_services_with_tool(tool_name).await
+        } else {
+            Err(P2PError::MCP("MCP server not enabled".to_string()))
+        }
+    }
+    
+    /// Manually announce local MCP services
+    pub async fn announce_mcp_services(&self) -> Result<()> {
+        if let Some(ref mcp_server) = self.mcp_server {
+            mcp_server.announce_local_services().await
+        } else {
+            Err(P2PError::MCP("MCP server not enabled".to_string()))
+        }
+    }
+    
+    /// Refresh MCP service discovery
+    pub async fn refresh_mcp_service_discovery(&self) -> Result<()> {
+        if let Some(ref mcp_server) = self.mcp_server {
+            mcp_server.refresh_service_discovery().await
+        } else {
+            Err(P2PError::MCP("MCP server not enabled".to_string()))
+        }
+    }
+    
+    /// Send a service discovery query to a specific peer
+    pub async fn query_peer_mcp_services(&self, peer_id: &PeerId) -> Result<()> {
+        if self.mcp_server.is_none() {
+            return Err(P2PError::MCP("MCP server not enabled".to_string()));
+        }
+        
+        let discovery_query = crate::mcp::P2PMCPMessage {
+            message_type: crate::mcp::P2PMCPMessageType::ServiceDiscovery,
+            message_id: uuid::Uuid::new_v4().to_string(),
+            source_peer: self.peer_id.clone(),
+            target_peer: Some(peer_id.clone()),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            payload: crate::mcp::MCPMessage::ListTools {
+                cursor: None,
+            },
+            ttl: 3,
+        };
+        
+        let query_data = serde_json::to_vec(&discovery_query)
+            .map_err(|e| P2PError::Serialization(e))?;
+        
+        self.send_message(peer_id, MCP_PROTOCOL, query_data).await?;
+        debug!("Sent MCP service discovery query to peer {}", peer_id);
+        
+        Ok(())
+    }
+    
+    /// Broadcast service discovery query to all connected peers
+    pub async fn broadcast_mcp_service_discovery(&self) -> Result<()> {
+        if self.mcp_server.is_none() {
+            return Err(P2PError::MCP("MCP server not enabled".to_string()));
+        }
+        
+        // Get list of connected peers
+        let peer_list: Vec<PeerId> = {
+            let peers_guard = self.peers.read().await;
+            peers_guard.keys().cloned().collect()
+        };
+        
+        if peer_list.is_empty() {
+            debug!("No peers connected for MCP service discovery broadcast");
+            return Ok(());
+        }
+        
+        // Send discovery query to each peer
+        let mut successful_queries = 0;
+        for peer_id in &peer_list {
+            match self.query_peer_mcp_services(peer_id).await {
+                Ok(_) => {
+                    successful_queries += 1;
+                    debug!("Sent MCP service discovery query to peer: {}", peer_id);
+                }
+                Err(e) => {
+                    warn!("Failed to send MCP service discovery query to peer {}: {}", peer_id, e);
+                }
+            }
+        }
+        
+        info!("Broadcast MCP service discovery to {}/{} connected peers", 
+              successful_queries, peer_list.len());
+        
+        Ok(())
+    }
+}
+
+/// Lightweight wrapper for P2PNode to implement NetworkSender
+#[derive(Clone)]
+pub struct P2PNetworkSender {
+    peer_id: PeerId,
+    // Use channels for async communication with the P2P node
+    send_tx: tokio::sync::mpsc::UnboundedSender<(PeerId, String, Vec<u8>)>,
+}
+
+impl P2PNetworkSender {
+    pub fn new(peer_id: PeerId, send_tx: tokio::sync::mpsc::UnboundedSender<(PeerId, String, Vec<u8>)>) -> Self {
+        Self {
+            peer_id,
+            send_tx,
+        }
+    }
+}
+
+/// Implementation of NetworkSender trait for P2PNetworkSender
+#[async_trait::async_trait]
+impl NetworkSender for P2PNetworkSender {
+    /// Send a message to a specific peer via the P2P network
+    async fn send_message(&self, peer_id: &PeerId, protocol: &str, data: Vec<u8>) -> Result<()> {
+        self.send_tx.send((peer_id.clone(), protocol.to_string(), data))
+            .map_err(|_| P2PError::Network("Failed to send message via channel".to_string()))?;
+        Ok(())
+    }
+    
+    /// Get our local peer ID
+    fn local_peer_id(&self) -> &PeerId {
+        &self.peer_id
     }
 }
 

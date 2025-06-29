@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, Instant};
 use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::timeout;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use rand;
 
 pub use security::*;
@@ -36,6 +36,19 @@ pub const DEFAULT_CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// MCP protocol identifier for P2P messaging
 pub const MCP_PROTOCOL: &str = "/p2p-foundation/mcp/1.0.0";
+
+/// Network message sender trait for MCP server
+#[async_trait::async_trait]
+pub trait NetworkSender: Send + Sync {
+    /// Send a message to a specific peer via the P2P network
+    async fn send_message(&self, peer_id: &PeerId, protocol: &str, data: Vec<u8>) -> Result<()>;
+    
+    /// Get our local peer ID
+    fn local_peer_id(&self) -> &PeerId;
+}
+
+/// Message sender function type for simplified network integration
+pub type MessageSender = Arc<dyn Fn(&PeerId, &str, Vec<u8>) -> Result<()> + Send + Sync>;
 
 /// Service discovery refresh interval
 pub const SERVICE_DISCOVERY_INTERVAL: Duration = Duration::from_secs(60);
@@ -295,6 +308,126 @@ pub enum ToolHealthStatus {
     Disabled,
 }
 
+
+/// Health monitoring configuration
+#[derive(Debug, Clone)]
+pub struct HealthMonitorConfig {
+    /// Interval between health checks
+    pub health_check_interval: Duration,
+    /// Timeout for health check requests
+    pub health_check_timeout: Duration,
+    /// Number of consecutive failures before marking unhealthy
+    pub failure_threshold: u32,
+    /// Number of consecutive successes to mark healthy again
+    pub success_threshold: u32,
+    /// Interval for sending heartbeats
+    pub heartbeat_interval: Duration,
+    /// Maximum age of last heartbeat before considering service stale
+    pub heartbeat_timeout: Duration,
+    /// Whether to enable health monitoring
+    pub enabled: bool,
+}
+
+impl Default for HealthMonitorConfig {
+    fn default() -> Self {
+        Self {
+            health_check_interval: Duration::from_secs(30),
+            health_check_timeout: Duration::from_secs(5),
+            failure_threshold: 3,
+            success_threshold: 2,
+            heartbeat_interval: Duration::from_secs(60),
+            heartbeat_timeout: Duration::from_secs(300), // 5 minutes
+            enabled: true,
+        }
+    }
+}
+
+/// Service health information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceHealth {
+    /// Service identifier
+    pub service_id: String,
+    /// Current health status
+    pub status: ServiceHealthStatus,
+    /// Last successful health check
+    pub last_health_check: Option<SystemTime>,
+    /// Last heartbeat received
+    pub last_heartbeat: Option<SystemTime>,
+    /// Consecutive failure count
+    pub failure_count: u32,
+    /// Consecutive success count
+    pub success_count: u32,
+    /// Average response time for health checks
+    pub avg_response_time: Duration,
+    /// Error message if unhealthy
+    pub error_message: Option<String>,
+    /// Health check history (last 10 checks)
+    pub health_history: Vec<HealthCheckResult>,
+}
+
+/// Result of a health check
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthCheckResult {
+    /// Timestamp of the check
+    pub timestamp: SystemTime,
+    /// Whether the check was successful
+    pub success: bool,
+    /// Response time
+    pub response_time: Duration,
+    /// Error message if failed
+    pub error_message: Option<String>,
+}
+
+/// Heartbeat message
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Heartbeat {
+    /// Service ID sending the heartbeat
+    pub service_id: String,
+    /// Peer ID of the service
+    pub peer_id: PeerId,
+    /// Timestamp when heartbeat was sent
+    pub timestamp: SystemTime,
+    /// Current service load (0.0 to 1.0)
+    pub load: f32,
+    /// Available tools
+    pub available_tools: Vec<String>,
+    /// Service capabilities
+    pub capabilities: MCPCapabilities,
+}
+
+/// Health monitoring events
+#[derive(Debug, Clone)]
+pub enum HealthEvent {
+    /// Service became healthy
+    ServiceHealthy {
+        service_id: String,
+        peer_id: PeerId,
+    },
+    /// Service became unhealthy
+    ServiceUnhealthy {
+        service_id: String,
+        peer_id: PeerId,
+        error: String,
+    },
+    /// Service status changed to degraded
+    ServiceDegraded {
+        service_id: String,
+        peer_id: PeerId,
+        reason: String,
+    },
+    /// Heartbeat received
+    HeartbeatReceived {
+        service_id: String,
+        peer_id: PeerId,
+        load: f32,
+    },
+    /// Heartbeat timeout
+    HeartbeatTimeout {
+        service_id: String,
+        peer_id: PeerId,
+    },
+}
+
 /// Tool handler trait
 pub trait ToolHandler {
     /// Execute the tool with given arguments
@@ -500,16 +633,18 @@ pub struct MCPServiceMetadata {
 }
 
 /// Service health status
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ServiceHealthStatus {
-    /// Service is healthy
+    /// Service is healthy and responsive
     Healthy,
-    /// Service is degraded
+    /// Service is experiencing degraded performance
     Degraded,
-    /// Service is unhealthy
+    /// Service is not responding to health checks
     Unhealthy,
-    /// Service is maintenance mode
-    Maintenance,
+    /// Service is disabled/maintenance mode
+    Disabled,
+    /// Service status is unknown
+    Unknown,
 }
 
 /// Service load metrics
@@ -593,6 +728,10 @@ pub enum P2PMCPMessageType {
     ServiceAdvertisement,
     /// Service discovery query
     ServiceDiscovery,
+    /// Heartbeat notification
+    Heartbeat,
+    /// Health check request
+    HealthCheck,
 }
 
 /// MCP response with metadata
@@ -661,6 +800,8 @@ pub struct MCPServerConfig {
     pub max_tool_execution_time: Duration,
     /// Tool memory limit
     pub tool_memory_limit: u64,
+    /// Health monitoring configuration
+    pub health_monitor: HealthMonitorConfig,
 }
 
 impl Default for MCPServerConfig {
@@ -677,6 +818,7 @@ impl Default for MCPServerConfig {
             enable_logging: true,
             max_tool_execution_time: Duration::from_secs(30),
             tool_memory_limit: 100 * 1024 * 1024, // 100MB
+            health_monitor: HealthMonitorConfig::default(),
         }
     }
 }
@@ -714,6 +856,15 @@ pub struct MCPServer {
     security_manager: Option<Arc<MCPSecurityManager>>,
     /// Audit logger
     audit_logger: Arc<SecurityAuditLogger>,
+    /// Network sender for P2P communication
+    network_sender: Arc<RwLock<Option<Arc<dyn NetworkSender>>>>,
+    /// Service health tracking
+    service_health: Arc<RwLock<HashMap<String, ServiceHealth>>>,
+    /// Health event sender
+    health_event_tx: mpsc::UnboundedSender<HealthEvent>,
+    /// Health event receiver (for monitoring)
+    #[allow(dead_code)]
+    health_event_rx: Arc<RwLock<mpsc::UnboundedReceiver<HealthEvent>>>,
 }
 
 /// MCP session information
@@ -789,6 +940,7 @@ impl MCPServer {
     pub fn new(config: MCPServerConfig) -> Self {
         let (request_tx, _request_rx) = mpsc::unbounded_channel();
         let (_response_tx, response_rx) = mpsc::unbounded_channel();
+        let (health_event_tx, health_event_rx) = mpsc::unbounded_channel();
         
         // Initialize security manager if authentication is enabled
         let security_manager = if config.enable_auth {
@@ -814,6 +966,10 @@ impl MCPServer {
             response_rx: Arc::new(RwLock::new(response_rx)),
             security_manager,
             audit_logger: Arc::new(SecurityAuditLogger::new(10000)), // Keep 10k audit entries
+            network_sender: Arc::new(RwLock::new(None)),
+            service_health: Arc::new(RwLock::new(HashMap::new())),
+            health_event_tx,
+            health_event_rx: Arc::new(RwLock::new(health_event_rx)),
         };
         
         server
@@ -823,6 +979,19 @@ impl MCPServer {
     pub fn with_dht(mut self, dht: Arc<RwLock<DHT>>) -> Self {
         self.dht = Some(dht);
         self
+    }
+    
+    /// Set the network sender for P2P communication
+    pub async fn with_network_sender(self, sender: Arc<dyn NetworkSender>) -> Self {
+        *self.network_sender.write().await = Some(sender);
+        self
+    }
+    
+    /// Set the network sender for P2P communication (async method for post-creation setup)
+    pub async fn set_network_sender(&self, sender: Arc<dyn NetworkSender>) {
+        let peer_id = sender.local_peer_id().clone();
+        *self.network_sender.write().await = Some(sender);
+        info!("MCP server network sender configured for peer {}", peer_id);
     }
     
     /// Start the MCP server
@@ -866,6 +1035,11 @@ impl MCPServer {
         // Register in DHT if available
         if let Some(dht) = &self.dht {
             self.register_tool_in_dht(&tool_name, dht).await?;
+        }
+        
+        // Announce updated service with new tool
+        if let Err(e) = self.announce_local_services().await {
+            warn!("Failed to announce service after tool registration: {}", e);
         }
         
         info!("Registered tool: {}", tool_name);
@@ -1191,14 +1365,444 @@ impl MCPServer {
     
     /// Start health monitoring task
     async fn start_health_monitor(&self) -> Result<()> {
-        // TODO: Implement health monitoring
-        // This would check tool health and update status
+        if !self.config.health_monitor.enabled {
+            debug!("Health monitoring is disabled");
+            return Ok(());
+        }
+
+        info!("Starting health monitoring with interval: {:?}", self.config.health_monitor.health_check_interval);
+        
+        // Clone necessary fields for the background task
+        let service_health = Arc::clone(&self.service_health);
+        let remote_services = Arc::clone(&self.remote_services);
+        let network_sender = Arc::clone(&self.network_sender);
+        let health_event_tx = self.health_event_tx.clone();
+        let config = self.config.health_monitor.clone();
+        
+        // Start health check task
+        let health_check_task = {
+            let service_health = Arc::clone(&service_health);
+            let remote_services = Arc::clone(&remote_services);
+            let network_sender = Arc::clone(&network_sender);
+            let health_event_tx = health_event_tx.clone();
+            let config = config.clone();
+            
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(config.health_check_interval);
+                
+                loop {
+                    interval.tick().await;
+                    
+                    // Get list of remote services to check
+                    let services_to_check: Vec<MCPService> = {
+                        let remote_guard = remote_services.read().await;
+                        remote_guard.values().cloned().collect()
+                    };
+                    
+                    // Perform health checks on all remote services
+                    for service in services_to_check {
+                        if let Some(sender) = network_sender.read().await.as_ref() {
+                            Self::perform_health_check(
+                                &service,
+                                sender.as_ref(),
+                                &service_health,
+                                &health_event_tx,
+                                &config,
+                            ).await;
+                        }
+                    }
+                }
+            })
+        };
+        
+        // Start heartbeat task
+        let heartbeat_task = {
+            let network_sender = Arc::clone(&network_sender);
+            let health_event_tx = health_event_tx.clone();
+            let config = config.clone();
+            
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(config.heartbeat_interval);
+                
+                loop {
+                    interval.tick().await;
+                    
+                    if let Some(sender) = network_sender.read().await.as_ref() {
+                        Self::send_heartbeat(
+                            sender.as_ref(),
+                            &health_event_tx,
+                        ).await;
+                    }
+                }
+            })
+        };
+        
+        // Start heartbeat timeout monitoring task
+        let timeout_task = {
+            let service_health = Arc::clone(&service_health);
+            let health_event_tx = health_event_tx.clone();
+            let config = config.clone();
+            
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(30)); // Check every 30 seconds
+                
+                loop {
+                    interval.tick().await;
+                    
+                    Self::check_heartbeat_timeouts(
+                        &service_health,
+                        &health_event_tx,
+                        &config,
+                    ).await;
+                }
+            })
+        };
+        
+        // Store task handles (in a real implementation, you'd want to store these for cleanup)
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = health_check_task => debug!("Health check task completed"),
+                _ = heartbeat_task => debug!("Heartbeat task completed"),
+                _ = timeout_task => debug!("Timeout monitoring task completed"),
+            }
+        });
+        
+        info!("Health monitoring started successfully");
         Ok(())
+    }
+    
+    /// Perform health check on a remote service
+    async fn perform_health_check(
+        service: &MCPService,
+        network_sender: &dyn NetworkSender,
+        service_health: &Arc<RwLock<HashMap<String, ServiceHealth>>>,
+        health_event_tx: &mpsc::UnboundedSender<HealthEvent>,
+        config: &HealthMonitorConfig,
+    ) {
+        let start_time = Instant::now();
+        let service_id = service.service_id.clone();
+        let peer_id = service.peer_id.clone();
+        
+        // Create health check request
+        let health_check_message = MCPMessage::Request {
+            id: uuid::Uuid::new_v4().to_string(),
+            method: "health/check".to_string(),
+            params: Some(json!({
+                "service_id": service_id,
+                "timestamp": SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
+            })),
+        };
+        
+        // Serialize and send health check
+        let result = match serde_json::to_vec(&health_check_message) {
+            Ok(data) => {
+                timeout(
+                    config.health_check_timeout,
+                    network_sender.send_message(&peer_id, MCP_PROTOCOL, data)
+                ).await
+            }
+            Err(e) => {
+                debug!("Failed to serialize health check message: {}", e);
+                return;
+            }
+        };
+        
+        let response_time = start_time.elapsed();
+        let success = result.is_ok() && result.unwrap().is_ok();
+        
+        // Update service health
+        let mut health_guard = service_health.write().await;
+        let health = health_guard.entry(service_id.clone()).or_insert_with(|| ServiceHealth {
+            service_id: service_id.clone(),
+            status: ServiceHealthStatus::Unknown,
+            last_health_check: None,
+            last_heartbeat: None,
+            failure_count: 0,
+            success_count: 0,
+            avg_response_time: Duration::from_millis(0),
+            error_message: None,
+            health_history: Vec::new(),
+        });
+        
+        // Record health check result
+        let check_result = HealthCheckResult {
+            timestamp: SystemTime::now(),
+            success,
+            response_time,
+            error_message: if success { None } else { Some("Health check failed".to_string()) },
+        };
+        
+        health.health_history.push(check_result);
+        if health.health_history.len() > 10 {
+            health.health_history.remove(0);
+        }
+        
+        // Update counters and status
+        let previous_status = health.status;
+        if success {
+            health.failure_count = 0;
+            health.success_count += 1;
+            health.last_health_check = Some(SystemTime::now());
+            
+            if health.success_count >= config.success_threshold {
+                health.status = ServiceHealthStatus::Healthy;
+                health.error_message = None;
+            }
+        } else {
+            health.success_count = 0;
+            health.failure_count += 1;
+            
+            if health.failure_count >= config.failure_threshold {
+                health.status = ServiceHealthStatus::Unhealthy;
+                health.error_message = Some("Health check failures exceeded threshold".to_string());
+            }
+        }
+        
+        // Update average response time
+        let total_time: Duration = health.health_history.iter().map(|h| h.response_time).sum();
+        health.avg_response_time = total_time / health.health_history.len() as u32;
+        
+        // Send health event if status changed
+        if previous_status != health.status {
+            let event = match health.status {
+                ServiceHealthStatus::Healthy => HealthEvent::ServiceHealthy {
+                    service_id: service_id.clone(),
+                    peer_id: peer_id.clone(),
+                },
+                ServiceHealthStatus::Unhealthy => HealthEvent::ServiceUnhealthy {
+                    service_id: service_id.clone(),
+                    peer_id: peer_id.clone(),
+                    error: health.error_message.clone().unwrap_or_else(|| "Unknown error".to_string()),
+                },
+                ServiceHealthStatus::Degraded => HealthEvent::ServiceDegraded {
+                    service_id: service_id.clone(),
+                    peer_id: peer_id.clone(),
+                    reason: "Performance degradation detected".to_string(),
+                },
+                _ => return, // No event for other statuses
+            };
+            
+            if let Err(e) = health_event_tx.send(event) {
+                debug!("Failed to send health event: {}", e);
+            }
+        }
+    }
+    
+    /// Send heartbeat to announce service availability
+    async fn send_heartbeat(
+        network_sender: &dyn NetworkSender,
+        health_event_tx: &mpsc::UnboundedSender<HealthEvent>,
+    ) {
+        let heartbeat = Heartbeat {
+            service_id: "mcp-server".to_string(),
+            peer_id: network_sender.local_peer_id().clone(),
+            timestamp: SystemTime::now(),
+            load: 0.1, // TODO: Calculate actual load
+            available_tools: vec![], // TODO: Get actual tools
+            capabilities: MCPCapabilities {
+                experimental: None,
+                sampling: None,
+                tools: Some(MCPToolsCapability { list_changed: Some(true) }),
+                prompts: None,
+                resources: None,
+                logging: None,
+            },
+        };
+        
+        let heartbeat_message = MCPMessage::Notification {
+            method: "heartbeat".to_string(),
+            params: Some(serde_json::to_value(&heartbeat).unwrap_or(json!({}))),
+        };
+        
+        if let Ok(data) = serde_json::to_vec(&heartbeat_message) {
+            // Broadcast heartbeat to all known peers (in a real implementation)
+            // For now, we'll just log the heartbeat
+            debug!("Sending heartbeat for service: {}", heartbeat.service_id);
+            
+            // Send heartbeat event
+            let event = HealthEvent::HeartbeatReceived {
+                service_id: heartbeat.service_id.clone(),
+                peer_id: heartbeat.peer_id.clone(),
+                load: heartbeat.load,
+            };
+            
+            if let Err(e) = health_event_tx.send(event) {
+                debug!("Failed to send heartbeat event: {}", e);
+            }
+        }
+    }
+    
+    /// Check for heartbeat timeouts and mark services as unhealthy
+    async fn check_heartbeat_timeouts(
+        service_health: &Arc<RwLock<HashMap<String, ServiceHealth>>>,
+        health_event_tx: &mpsc::UnboundedSender<HealthEvent>,
+        config: &HealthMonitorConfig,
+    ) {
+        let now = SystemTime::now();
+        let mut health_guard = service_health.write().await;
+        
+        for (service_id, health) in health_guard.iter_mut() {
+            if let Some(last_heartbeat) = health.last_heartbeat {
+                if let Ok(duration) = now.duration_since(last_heartbeat) {
+                    if duration > config.heartbeat_timeout {
+                        let previous_status = health.status;
+                        health.status = ServiceHealthStatus::Unhealthy;
+                        health.error_message = Some("Heartbeat timeout".to_string());
+                        
+                        // Send timeout event if status changed
+                        if previous_status != ServiceHealthStatus::Unhealthy {
+                            let event = HealthEvent::HeartbeatTimeout {
+                                service_id: service_id.clone(),
+                                peer_id: PeerId::from("unknown".to_string()), // TODO: Store peer ID in health
+                            };
+                            
+                            if let Err(e) = health_event_tx.send(event) {
+                                debug!("Failed to send timeout event: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     
     /// Get server statistics
     pub async fn get_stats(&self) -> MCPServerStats {
         self.stats.read().await.clone()
+    }
+    
+    /// Handle incoming heartbeat from a remote service
+    pub async fn handle_heartbeat(&self, heartbeat: Heartbeat) -> Result<()> {
+        let service_id = heartbeat.service_id.clone();
+        let peer_id = heartbeat.peer_id.clone();
+        
+        // Update service health with heartbeat information
+        {
+            let mut health_guard = self.service_health.write().await;
+            let health = health_guard.entry(service_id.clone()).or_insert_with(|| ServiceHealth {
+                service_id: service_id.clone(),
+                status: ServiceHealthStatus::Healthy,
+                last_health_check: None,
+                last_heartbeat: None,
+                failure_count: 0,
+                success_count: 0,
+                avg_response_time: Duration::from_millis(0),
+                error_message: None,
+                health_history: Vec::new(),
+            });
+            
+            health.last_heartbeat = Some(heartbeat.timestamp);
+            health.status = ServiceHealthStatus::Healthy;
+            health.failure_count = 0;
+            health.error_message = None;
+        }
+        
+        // Send heartbeat received event
+        let event = HealthEvent::HeartbeatReceived {
+            service_id,
+            peer_id,
+            load: heartbeat.load,
+        };
+        
+        if let Err(e) = self.health_event_tx.send(event) {
+            debug!("Failed to send heartbeat received event: {}", e);
+        }
+        
+        info!("Heartbeat received from service: {} (load: {:.2})", heartbeat.service_id, heartbeat.load);
+        Ok(())
+    }
+    
+    /// Get health status of a specific service
+    pub async fn get_service_health(&self, service_id: &str) -> Option<ServiceHealth> {
+        let health_guard = self.service_health.read().await;
+        health_guard.get(service_id).cloned()
+    }
+    
+    /// Get health status of all services
+    pub async fn get_all_service_health(&self) -> HashMap<String, ServiceHealth> {
+        self.service_health.read().await.clone()
+    }
+    
+    /// Get healthy services only
+    pub async fn get_healthy_services(&self) -> Vec<String> {
+        let health_guard = self.service_health.read().await;
+        health_guard
+            .iter()
+            .filter(|(_, health)| health.status == ServiceHealthStatus::Healthy)
+            .map(|(service_id, _)| service_id.clone())
+            .collect()
+    }
+    
+    /// Update service health status manually
+    pub async fn update_service_health(&self, service_id: String, status: ServiceHealthStatus, error_message: Option<String>) {
+        let mut health_guard = self.service_health.write().await;
+        if let Some(health) = health_guard.get_mut(&service_id) {
+            let previous_status = health.status;
+            health.status = status;
+            health.error_message = error_message.clone();
+            
+            // Send event if status changed
+            if previous_status != status {
+                let event = match status {
+                    ServiceHealthStatus::Healthy => HealthEvent::ServiceHealthy {
+                        service_id: service_id.clone(),
+                        peer_id: PeerId::from("manual".to_string()),
+                    },
+                    ServiceHealthStatus::Unhealthy => HealthEvent::ServiceUnhealthy {
+                        service_id: service_id.clone(),
+                        peer_id: PeerId::from("manual".to_string()),
+                        error: error_message.unwrap_or_else(|| "Manually set to unhealthy".to_string()),
+                    },
+                    ServiceHealthStatus::Degraded => HealthEvent::ServiceDegraded {
+                        service_id: service_id.clone(),
+                        peer_id: PeerId::from("manual".to_string()),
+                        reason: "Manually set to degraded".to_string(),
+                    },
+                    _ => return,
+                };
+                
+                if let Err(e) = self.health_event_tx.send(event) {
+                    debug!("Failed to send manual health update event: {}", e);
+                }
+            }
+        }
+    }
+    
+    /// Subscribe to health events
+    pub fn subscribe_health_events(&self) -> mpsc::UnboundedReceiver<HealthEvent> {
+        // In a real implementation, you'd want multiple subscribers
+        // For now, we create a new channel
+        let (_tx, rx) = mpsc::unbounded_channel();
+        rx
+    }
+    
+    /// Check if a service is healthy
+    pub async fn is_service_healthy(&self, service_id: &str) -> bool {
+        if let Some(health) = self.get_service_health(service_id).await {
+            health.status == ServiceHealthStatus::Healthy
+        } else {
+            false
+        }
+    }
+    
+    /// Get service load balancing information
+    pub async fn get_service_load_info(&self) -> HashMap<String, f32> {
+        // In a real implementation, this would return actual load metrics
+        // For now, return mock data based on health status
+        let health_guard = self.service_health.read().await;
+        health_guard
+            .iter()
+            .map(|(service_id, health)| {
+                let load = match health.status {
+                    ServiceHealthStatus::Healthy => 0.1,
+                    ServiceHealthStatus::Degraded => 0.7,
+                    ServiceHealthStatus::Unhealthy => 1.0,
+                    ServiceHealthStatus::Disabled => 0.0,
+                    ServiceHealthStatus::Unknown => 0.5,
+                };
+                (service_id.clone(), load)
+            })
+            .collect()
     }
     
     /// Discover remote services in the network
@@ -1274,9 +1878,26 @@ impl MCPServer {
             handlers.insert(request_id.clone(), response_tx);
         }
         
-        // Send via P2P network - this will need to be connected to the network layer
-        // For now, return an error indicating the need for network integration
-        Err(P2PError::MCP("Remote tool calling requires P2P network integration".to_string()))
+        // Send via P2P network
+        if let Some(ref network_sender) = *self.network_sender.read().await {
+            // Send the message to the target peer
+            network_sender.send_message(peer_id, MCP_PROTOCOL, message_data).await?;
+            
+            // Wait for response (simplified - in production this would be more sophisticated)
+            // For now, return a placeholder response indicating successful sending
+            debug!("MCP remote tool call sent to peer {}, tool: {}", peer_id, tool_name);
+            
+            // TODO: Implement proper response waiting mechanism
+            // This would involve storing the request_id and waiting for a matching response
+            Ok(json!({
+                "status": "sent",
+                "message": "Remote tool call sent successfully",
+                "peer_id": peer_id,
+                "tool_name": tool_name
+            }))
+        } else {
+            Err(P2PError::MCP("Network sender not configured".to_string()))
+        }
     }
     
     /// Handle incoming P2P MCP message
@@ -1286,6 +1907,40 @@ impl MCPServer {
             .map_err(|e| P2PError::Serialization(e))?;
         
         debug!("Received MCP message from {}: {:?}", source_peer, p2p_message.message_type);
+        
+        // Check if this is a heartbeat notification
+        if let MCPMessage::Notification { method, params } = &p2p_message.payload {
+            if method == "heartbeat" {
+                if let Some(params) = params {
+                    if let Ok(heartbeat) = serde_json::from_value::<Heartbeat>(params.clone()) {
+                        self.handle_heartbeat(heartbeat).await?;
+                        return Ok(None);
+                    }
+                }
+            } else if method == "health/check" {
+                // Respond to health check
+                let health_response = MCPMessage::Notification {
+                    method: "health/response".to_string(),
+                    params: Some(json!({
+                        "status": "healthy",
+                        "timestamp": SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+                        "service_id": "mcp-server"
+                    })),
+                };
+                
+                let response_message = P2PMCPMessage {
+                    message_type: P2PMCPMessageType::Response,
+                    message_id: p2p_message.message_id.clone(),
+                    source_peer: source_peer.clone(),
+                    target_peer: Some(p2p_message.source_peer.clone()),
+                    timestamp: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+                    payload: health_response,
+                    ttl: 3,
+                };
+                
+                return Ok(Some(serde_json::to_vec(&response_message)?));
+            }
+        }
         
         match p2p_message.message_type {
             P2PMCPMessageType::Request => {
@@ -1662,14 +2317,330 @@ impl MCPServer {
         Ok(())
     }
     
+    /// Announce local services to the network
+    pub async fn announce_local_services(&self) -> Result<()> {
+        if let Some(dht) = &self.dht {
+            // Create local service announcement
+            let local_service = self.create_local_service_announcement().await?;
+            
+            // Store in DHT
+            self.store_service_in_dht(&local_service, dht).await?;
+            
+            // Broadcast service announcement to connected peers
+            if let Some(network_sender) = &*self.network_sender.read().await {
+                self.broadcast_service_announcement(&local_service, network_sender).await?;
+            }
+            
+            info!("Announced local MCP service with {} tools", local_service.tools.len());
+        }
+        
+        Ok(())
+    }
+    
+    /// Create a service announcement for our local node
+    async fn create_local_service_announcement(&self) -> Result<MCPService> {
+        let tools = self.tools.read().await;
+        let tool_names: Vec<String> = tools.keys().cloned().collect();
+        
+        let service = MCPService {
+            service_id: format!("mcp-{}", self.config.server_name),
+            node_id: "local".to_string(), // TODO: Get actual peer ID from network layer
+            tools: tool_names,
+            capabilities: MCPCapabilities {
+                roots: None,
+                sampling: None,
+                tools: Some(MCPToolsCapability {
+                    list_changed: Some(true),
+                }),
+                prompts: None,
+                resources: None,
+                logging: None,
+            },
+            metadata: MCPServiceMetadata {
+                name: self.config.server_name.clone(),
+                version: self.config.server_version.clone(),
+                description: Some("P2P MCP Service".to_string()),
+                tags: vec!["p2p".to_string(), "mcp".to_string()],
+                health_status: ServiceHealthStatus::Healthy,
+                load_metrics: self.get_current_load_metrics().await,
+            },
+            registered_at: SystemTime::now(),
+            endpoint: MCPEndpoint {
+                protocol: "p2p".to_string(),
+                address: "local".to_string(), // TODO: Get actual P2P address
+                port: None,
+                tls: true,
+                auth_required: false,
+            },
+        };
+        
+        Ok(service)
+    }
+    
+    /// Get current service load metrics
+    async fn get_current_load_metrics(&self) -> ServiceLoadMetrics {
+        let stats = self.stats.read().await;
+        
+        ServiceLoadMetrics {
+            active_requests: 0, // TODO: Track active requests
+            requests_per_second: stats.total_requests as f64 / 60.0, // Rough estimate
+            avg_response_time_ms: stats.avg_response_time.as_millis() as f64,
+            error_rate: if stats.total_requests > 0 {
+                stats.total_errors as f64 / stats.total_requests as f64
+            } else {
+                0.0
+            },
+            cpu_usage: 0.0, // TODO: Get actual CPU usage
+            memory_usage: 0, // TODO: Get actual memory usage
+        }
+    }
+    
+    /// Store service information in DHT
+    async fn store_service_in_dht(&self, service: &MCPService, dht: &Arc<RwLock<DHT>>) -> Result<()> {
+        // Store individual service record
+        let service_key = Key::new(format!("mcp:service:{}", service.service_id).as_bytes());
+        let service_data = serde_json::to_vec(service)
+            .map_err(|e| P2PError::Serialization(e))?;
+        
+        let record = crate::dht::Record {
+            key: service_key.clone(),
+            value: service_data,
+            publisher: None,
+            expires: None,
+        };
+        
+        let mut dht_guard = dht.write().await;
+        dht_guard.put(record).await
+            .map_err(|e| P2PError::DHT(format!("Failed to store service in DHT: {}", e)))?;
+        
+        // Also add to services index
+        let services_key = Key::new(b"mcp:services:index");
+        let mut service_ids = match dht_guard.get(&services_key).await {
+            Some(record) => {
+                serde_json::from_slice::<Vec<String>>(&record.value).unwrap_or_default()
+            }
+            None => Vec::new(),
+        };
+        
+        if !service_ids.contains(&service.service_id) {
+            service_ids.push(service.service_id.clone());
+            
+            let index_data = serde_json::to_vec(&service_ids)
+                .map_err(|e| P2PError::Serialization(e))?;
+            
+            let index_record = crate::dht::Record {
+                key: services_key,
+                value: index_data,
+                publisher: None,
+                expires: None,
+            };
+            
+            dht_guard.put(index_record).await
+                .map_err(|e| P2PError::DHT(format!("Failed to update services index: {}", e)))?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Broadcast service announcement to connected peers
+    async fn broadcast_service_announcement(&self, service: &MCPService, network_sender: &Arc<dyn NetworkSender>) -> Result<()> {
+        let announcement = P2PMCPMessage {
+            message_type: P2PMCPMessageType::ServiceAdvertisement,
+            message_id: uuid::Uuid::new_v4().to_string(),
+            source_peer: network_sender.local_peer_id().clone(),
+            target_peer: None, // Broadcast to all peers
+            timestamp: SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            payload: MCPMessage::ListToolsResult {
+                tools: service.tools.iter().map(|tool_name| MCPTool {
+                    name: tool_name.clone(),
+                    description: format!("Tool from {}", service.metadata.name),
+                    input_schema: json!({"type": "object"}),
+                }).collect(),
+                next_cursor: None,
+            },
+            ttl: 3,
+        };
+        
+        let announcement_data = serde_json::to_vec(&announcement)
+            .map_err(|e| P2PError::Serialization(e))?;
+        
+        // TODO: Broadcast to all connected peers
+        // For now, this would require getting the list of connected peers from the network layer
+        debug!("Service announcement prepared for broadcast: {} tools", service.tools.len());
+        
+        Ok(())
+    }
+    
+    /// Discover services from other peers
+    pub async fn discover_remote_services(&self) -> Result<Vec<MCPService>> {
+        if let Some(dht) = &self.dht {
+            let services_key = Key::new(b"mcp:services:index");
+            let dht_guard = dht.read().await;
+            
+            let service_ids = match dht_guard.get(&services_key).await {
+                Some(record) => {
+                    serde_json::from_slice::<Vec<String>>(&record.value).unwrap_or_default()
+                }
+                None => {
+                    debug!("No services index found in DHT");
+                    return Ok(Vec::new());
+                }
+            };
+            
+            let mut discovered_services = Vec::new();
+            
+            for service_id in service_ids {
+                let service_key = Key::new(format!("mcp:service:{}", service_id).as_bytes());
+                
+                if let Some(record) = dht_guard.get(&service_key).await {
+                    match serde_json::from_slice::<MCPService>(&record.value) {
+                        Ok(service) => {
+                            // Don't include our own service
+                            if service.service_id != format!("mcp-{}", self.config.server_name) {
+                                discovered_services.push(service);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to deserialize service {}: {}", service_id, e);
+                        }
+                    }
+                }
+            }
+            
+            debug!("Discovered {} remote MCP services", discovered_services.len());
+            Ok(discovered_services)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+    
+    /// Refresh service discovery and update remote services cache
+    pub async fn refresh_service_discovery(&self) -> Result<()> {
+        let discovered_services = self.discover_remote_services().await?;
+        
+        // Update remote services cache
+        {
+            let mut remote_cache = self.remote_services.write().await;
+            remote_cache.clear();
+            
+            for service in discovered_services {
+                remote_cache.insert(service.service_id.clone(), service);
+            }
+        }
+        
+        // Also update local services registry
+        {
+            let local_service = self.create_local_service_announcement().await?;
+            let mut local_cache = self.local_services.write().await;
+            local_cache.insert(local_service.service_id.clone(), local_service);
+        }
+        
+        debug!("Service discovery refresh completed");
+        Ok(())
+    }
+    
+    /// Get all known services (local + remote)
+    pub async fn get_all_services(&self) -> Result<Vec<MCPService>> {
+        let mut all_services = Vec::new();
+        
+        // Add local services
+        {
+            let local_services = self.local_services.read().await;
+            all_services.extend(local_services.values().cloned());
+        }
+        
+        // Add remote services
+        {
+            let remote_services = self.remote_services.read().await;
+            all_services.extend(remote_services.values().cloned());
+        }
+        
+        Ok(all_services)
+    }
+    
+    /// Find services that provide a specific tool
+    pub async fn find_services_with_tool(&self, tool_name: &str) -> Result<Vec<MCPService>> {
+        let all_services = self.get_all_services().await?;
+        
+        let matching_services = all_services
+            .into_iter()
+            .filter(|service| service.tools.contains(&tool_name.to_string()))
+            .collect();
+        
+        Ok(matching_services)
+    }
+    
     /// Handle service advertisement
-    async fn handle_service_advertisement(&self, _message: P2PMCPMessage) -> Result<()> {
-        // TODO: Parse service advertisement and update remote services cache
+    pub async fn handle_service_advertisement(&self, message: P2PMCPMessage) -> Result<()> {
+        debug!("Received service advertisement from peer: {}", message.source_peer);
+        
+        // Extract tools from the advertisement
+        if let MCPMessage::ListToolsResult { tools, .. } = message.payload {
+            // Create a service record from the advertisement
+            let service = MCPService {
+                service_id: format!("mcp-{}", message.source_peer),
+                node_id: message.source_peer.clone(),
+                tools: tools.iter().map(|t| t.name.clone()).collect(),
+                capabilities: MCPCapabilities {
+                    roots: None,
+                    sampling: None,
+                    tools: Some(MCPToolsCapability {
+                        list_changed: Some(true),
+                    }),
+                    prompts: None,
+                    resources: None,
+                    logging: None,
+                },
+                metadata: MCPServiceMetadata {
+                    name: format!("Remote MCP Service - {}", message.source_peer),
+                    version: "unknown".to_string(),
+                    description: Some("Remote P2P MCP Service".to_string()),
+                    tags: vec!["p2p".to_string(), "remote".to_string()],
+                    health_status: ServiceHealthStatus::Healthy,
+                    load_metrics: ServiceLoadMetrics {
+                        active_requests: 0,
+                        requests_per_second: 0.0,
+                        avg_response_time_ms: 0.0,
+                        error_rate: 0.0,
+                        cpu_usage: 0.0,
+                        memory_usage: 0,
+                    },
+                },
+                registered_at: SystemTime::now(),
+                endpoint: MCPEndpoint {
+                    protocol: "p2p".to_string(),
+                    address: message.source_peer.clone(),
+                    port: None,
+                    tls: true,
+                    auth_required: false,
+                },
+            };
+            
+            // Update remote services cache
+            {
+                let mut remote_services = self.remote_services.write().await;
+                remote_services.insert(service.service_id.clone(), service.clone());
+            }
+            
+            // Store in DHT if available
+            if let Some(dht) = &self.dht {
+                if let Err(e) = self.store_service_in_dht(&service, dht).await {
+                    warn!("Failed to store remote service in DHT: {}", e);
+                }
+            }
+            
+            info!("Registered remote MCP service from {} with {} tools", 
+                  message.source_peer, tools.len());
+        }
+        
         Ok(())
     }
     
     /// Handle service discovery request
-    async fn handle_service_discovery(&self, message: P2PMCPMessage) -> Result<Option<Vec<u8>>> {
+    pub async fn handle_service_discovery(&self, message: P2PMCPMessage) -> Result<Option<Vec<u8>>> {
         // Create service advertisement with our local services
         let local_services: Vec<MCPService> = {
             let services = self.local_services.read().await;

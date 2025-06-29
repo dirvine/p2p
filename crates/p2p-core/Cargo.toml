@@ -45,6 +45,10 @@ aes-gcm.workspace = true
 blake3 = "1.5"
 hkdf.workspace = true
 
+# Git content addressing dependencies
+bincode = "1.3"
+lru = "0.12"
+
 # Post-quantum cryptography (temporarily disabled)
 # ml-kem.workspace = true
 # ml-dsa.workspace = true
