@@ -9,8 +9,9 @@ The P2P Foundation represents a paradigm shift in decentralized networking, comb
 ### 🎭 **Three-Word Network Addresses**
 - **Human-readable networking**: Share connections with memorable phrases like `forest.lightning.compass` instead of complex technical addresses
 - **Voice-friendly**: Actually shareable over phone calls and voice chat
-- **8.6 billion combinations**: Enormous address space using carefully curated word lists
+- **295 quintillion combinations**: Massive address space (68.7B base × 4.3B suffixes = 295.1 quintillion total)
 - **Zero friction onboarding**: Eliminates the biggest barrier to P2P adoption
+- **Hybrid addressing**: Base format for simplicity, extended format for massive scale
 
 ### 🛡️ **Quantum-Resistant Security Architecture**
 - **Future-proof cryptography**: ML-KEM-768 and ML-DSA-65 (FIPS 203/204) protect against quantum threats
@@ -354,6 +355,8 @@ cargo tauri dev
 
 - **[Ant Core Documentation](https://docs.rs/ant-core)** - API reference
 - **[Technical Specification](SPECIFICATION.md)** - Detailed technical design
+- **[Three-Word Addresses](docs/three-word-addresses.md)** - Human-readable network addressing
+- **[Address Space Analysis](docs/address-space-analysis.md)** - Comprehensive scale analysis and IPv6 coverage
 - **[Development Guidelines](CLAUDE.md)** - AI assistant development guide
 - **[Examples](examples/)** - Working code examples
 

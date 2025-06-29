@@ -53,11 +53,13 @@ The system uses a curated dictionary with three categories:
 
 ### Example Conversions
 
-| Technical Address | Three-Word Address | Use Case |
-|-------------------|-------------------|----------|
-| `/ip6/2001:db8::1/udp/9000/quic` | `outer.sharp.eagle` | Bootstrap node |
-| `/ip6/::1/tcp/8000` | `giant.stream.dragon` | Local development |
-| `/ip4/192.168.1.100/udp/5000/quic` | `clear.ready.seal` | Home network |
+| Technical Address | Three-Word Address | Address Type | Use Case |
+|-------------------|-------------------|--------------|----------|
+| `/ip6/2001:db8::1/udp/9000/quic` | `outer.sharp.eagle` | Base | Bootstrap node |
+| `/ip6/::1/tcp/8000` | `giant.stream.dragon` | Base | Local development |
+| `/ip4/192.168.1.100/udp/5000/quic` | `clear.ready.seal.1847` | Extended | High-scale deployment |
+| `/ip6/2001:db8::5/udp/9001/quic` | `forest.lightning.compass.0` | Extended | First of many instances |
+| `/ip4/10.0.0.50/tcp/8080` | `urban.fast.beacon.999` | Extended | Enterprise network |
 
 ## User Experience
 
@@ -73,8 +75,14 @@ Bob: "...what? Can you email that?"
 ```
 Alice: "Connect to my P2P node!"
 Bob: "How?"
-Alice: "Connect to: forest.lightning.compass"
+Alice: "Connect to: forest.lightning.compass"  # Base address
 Bob: "Done!"
+
+# For high-scale deployments:
+Charlie: "Connect to enterprise cluster node 1847"
+Dave: "How?"
+Charlie: "forest.lightning.compass.1847"  # Extended address
+Dave: "Perfect!"
 ```
 
 ## Implementation
@@ -142,10 +150,14 @@ The Flutter app now features:
 - Consistent across all implementations and platforms
 - No central registry required for basic functionality
 
-### Scalable
-- 2048³ = ~8.6 billion possible combinations
-- Supports massive network growth
-- Efficient bit-packing in hash space
+### Massively Scalable
+- **Base addresses**: 4096³ = ~68.7 billion three-word combinations  
+- **Extended addresses**: Additional 32-bit suffix = 4.3 billion per base address
+- **Total capacity**: ~295 quintillion unique addresses (68.7B × 4.3B)
+- **Format examples**: 
+  - Base: `forest.lightning.compass`
+  - Extended: `forest.lightning.compass.1847`
+- **Efficient encoding**: Bit-packing optimized for both formats
 
 ### Extensible
 - Support for multiple languages
@@ -174,7 +186,7 @@ The Flutter app now features:
 
 ### Address Collision
 - Hash-based generation minimizes collisions
-- 8.6 billion combinations provide vast address space
+- 295 quintillion combinations provide massive global address space
 - Registry system handles custom addresses safely
 
 ### Validation
