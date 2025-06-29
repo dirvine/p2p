@@ -15,12 +15,16 @@ use tokio::sync::Mutex;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-/// TCP transport implementation (minimal fallback)
+/// TCP transport implementation (enhanced fallback)
 pub struct TcpTransport {
     /// Whether to require TLS encryption (simplified - always false for fallback)
     require_tls: bool,
     /// TCP listener for accepting incoming connections
     listener: Arc<Mutex<Option<Arc<TcpListener>>>>,
+    /// Connection pool for reusing connections
+    connection_pool: Arc<Mutex<HashMap<String, Vec<TcpStream>>>>,
+    /// Maximum connections per endpoint
+    max_connections_per_endpoint: usize,
 }
 
 /// TCP connection implementation
@@ -38,12 +42,64 @@ pub struct TcpConnection {
 }
 
 impl TcpTransport {
-    /// Create a new TCP transport (fallback only - TLS disabled for simplicity)
+    /// Create a new TCP transport (enhanced fallback with connection pooling)
     pub fn new(_require_tls: bool) -> Self {
         warn!("TCP transport created as fallback. QUIC is preferred for P2P networking.");
         Self { 
             require_tls: false, // Always disable TLS in fallback mode
             listener: Arc::new(Mutex::new(None)),
+            connection_pool: Arc::new(Mutex::new(HashMap::new())),
+            max_connections_per_endpoint: 3,
+        }
+    }
+    
+    /// Get or create a pooled connection to an endpoint
+    async fn get_pooled_connection(&self, endpoint: &str) -> Option<TcpStream> {
+        let mut pool = self.connection_pool.lock().await;
+        if let Some(connections) = pool.get_mut(endpoint) {
+            // Try to get a healthy connection from the pool
+            while let Some(stream) = connections.pop() {
+                // Simple health check - in production this would be more sophisticated
+                if let Ok(_) = stream.peer_addr() {
+                    debug!("Reusing pooled TCP connection to {}", endpoint);
+                    return Some(stream);
+                }
+            }
+        }
+        None
+    }
+    
+    /// Add a connection to the pool
+    async fn add_to_pool(&self, endpoint: String, stream: TcpStream) {
+        let mut pool = self.connection_pool.lock().await;
+        let connections = pool.entry(endpoint).or_insert_with(Vec::new);
+        
+        // Limit connections per endpoint
+        if connections.len() < self.max_connections_per_endpoint {
+            connections.push(stream);
+            debug!("Added connection to TCP pool");
+        }
+    }
+    
+    /// Clean up closed connections from the pool
+    pub async fn cleanup_pool(&self) {
+        let mut pool = self.connection_pool.lock().await;
+        let mut to_remove = Vec::new();
+        
+        for (endpoint, connections) in pool.iter_mut() {
+            connections.retain(|stream| {
+                // Check if connection is still alive
+                stream.peer_addr().is_ok()
+            });
+            
+            if connections.is_empty() {
+                to_remove.push(endpoint.clone());
+            }
+        }
+        
+        for endpoint in to_remove {
+            pool.remove(&endpoint);
+            debug!("Cleaned up empty TCP pool for {}", endpoint);
         }
     }
 }

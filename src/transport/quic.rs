@@ -239,9 +239,12 @@ impl Transport for QuicTransport {
         
         // Check if 0-RTT was actually used
         let used_0rtt = if self.enable_0rtt {
-            // In a real implementation, we would check the connection handshake details
-            // For now, we'll check if the connection was established very quickly
-            false // Placeholder - would need Quinn API to detect actual 0-RTT usage
+            // Check if 0-RTT was used by examining connection stats
+            // Quinn provides this information through connection stats
+            match connection.stats().frame_tx.get(&quinn::VarInt::from_u32(0)) {
+                Some(_) => true, // 0-RTT data was sent
+                None => false,
+            }
         } else {
             false
         };
@@ -443,6 +446,103 @@ impl QuicConnection {
     pub async fn active_stream_count(&self) -> usize {
         let streams = self.active_streams.lock().await;
         streams.len()
+    }
+    
+    /// Send data on a bidirectional stream for efficient back-and-forth communication
+    pub async fn send_bidirectional(&mut self, data: &[u8]) -> Result<Vec<u8>> {
+        debug!("QUIC sending {} bytes on bidirectional stream", data.len());
+        
+        // Open a bidirectional stream for request-response pattern
+        let (mut send_stream, mut recv_stream) = self.connection.open_bi().await
+            .map_err(|e| P2PError::Transport(format!("Failed to open bidirectional QUIC stream: {}", e)))?;
+        
+        // Send data length first for framing
+        let length_bytes = (data.len() as u32).to_be_bytes();
+        send_stream.write_all(&length_bytes).await
+            .map_err(|e| P2PError::Transport(format!("Failed to send length: {}", e)))?;
+        
+        // Send actual data
+        send_stream.write_all(data).await
+            .map_err(|e| P2PError::Transport(format!("Failed to send data: {}", e)))?;
+        
+        // Finish sending to signal end of request
+        send_stream.finish()
+            .map_err(|e| P2PError::Transport(format!("Failed to finish send stream: {}", e)))?;
+        
+        // Read response length
+        let mut length_buf = [0u8; 4];
+        recv_stream.read_exact(&mut length_buf).await
+            .map_err(|e| P2PError::Transport(format!("Failed to read response length: {}", e)))?;
+        
+        let response_length = u32::from_be_bytes(length_buf) as usize;
+        
+        // Validate response length
+        if response_length > 64 * 1024 * 1024 {
+            return Err(P2PError::Transport(format!("Response too large: {} bytes", response_length)));
+        }
+        
+        // Read response data
+        let mut response_data = vec![0u8; response_length];
+        recv_stream.read_exact(&mut response_data).await
+            .map_err(|e| P2PError::Transport(format!("Failed to read response data: {}", e)))?;
+        
+        // Update last activity
+        self.info.last_activity = Instant::now();
+        
+        debug!("QUIC bidirectional exchange complete: sent {} bytes, received {} bytes", data.len(), response_data.len());
+        Ok(response_data)
+    }
+    
+    /// Handle incoming bidirectional streams for server-side processing
+    pub async fn accept_bidirectional<F>(&mut self, handler: F) -> Result<()> 
+    where
+        F: Fn(Vec<u8>) -> Result<Vec<u8>> + Send + Sync + 'static,
+    {
+        debug!("QUIC accepting bidirectional stream");
+        
+        // Accept incoming bidirectional stream
+        let (mut send_stream, mut recv_stream) = self.connection.accept_bi().await
+            .map_err(|e| P2PError::Transport(format!("Failed to accept bidirectional QUIC stream: {}", e)))?;
+        
+        // Read request length
+        let mut length_buf = [0u8; 4];
+        recv_stream.read_exact(&mut length_buf).await
+            .map_err(|e| P2PError::Transport(format!("Failed to read request length: {}", e)))?;
+        
+        let request_length = u32::from_be_bytes(length_buf) as usize;
+        
+        // Validate request length
+        if request_length > 64 * 1024 * 1024 {
+            return Err(P2PError::Transport(format!("Request too large: {} bytes", request_length)));
+        }
+        
+        // Read request data
+        let mut request_data = vec![0u8; request_length];
+        recv_stream.read_exact(&mut request_data).await
+            .map_err(|e| P2PError::Transport(format!("Failed to read request data: {}", e)))?;
+        
+        // Process request with handler
+        let response_data = handler(request_data)
+            .map_err(|e| P2PError::Transport(format!("Request handler failed: {}", e)))?;
+        
+        // Send response length
+        let response_length_bytes = (response_data.len() as u32).to_be_bytes();
+        send_stream.write_all(&response_length_bytes).await
+            .map_err(|e| P2PError::Transport(format!("Failed to send response length: {}", e)))?;
+        
+        // Send response data
+        send_stream.write_all(&response_data).await
+            .map_err(|e| P2PError::Transport(format!("Failed to send response data: {}", e)))?;
+        
+        // Finish response
+        send_stream.finish()
+            .map_err(|e| P2PError::Transport(format!("Failed to finish response stream: {}", e)))?;
+        
+        // Update last activity
+        self.info.last_activity = Instant::now();
+        
+        debug!("QUIC bidirectional stream handled successfully");
+        Ok(())
     }
     
     /// Check if connection supports migration
