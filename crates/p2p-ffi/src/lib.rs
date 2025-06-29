@@ -36,7 +36,7 @@ static NETWORK: Lazy<RwLock<Option<Arc<P2PNode>>>> = Lazy::new(|| RwLock::new(No
 
 /// Error codes for FFI operations
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum P2PErrorCode {
     Success = 0,
     InvalidInput = 1,

@@ -4,7 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::SystemTime;
 
-/// Peer identifier (derived from public key)
+/// Peer identifier derived from quantum-resistant public key
+/// 
+/// Unique identifier for peers in the quantum-resistant P2P network.
+/// Generated from a cryptographic hash of the peer's ML-DSA public key
+/// to ensure uniqueness and prevent spoofing.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PeerId(pub Vec<u8>);
 
@@ -14,7 +18,10 @@ impl fmt::Display for PeerId {
     }
 }
 
-/// Group identifier
+/// Unique identifier for threshold cryptography groups
+/// 
+/// 256-bit identifier for groups participating in threshold signature
+/// schemes, distributed key generation, and quantum-resistant consensus.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct GroupId(pub [u8; 32]);
 
@@ -24,7 +31,10 @@ impl fmt::Display for GroupId {
     }
 }
 
-/// Participant identifier within a group
+/// Participant identifier within threshold cryptography groups
+/// 
+/// Numeric identifier for individual participants in threshold schemes.
+/// Limited to u16 range to support groups up to 65,535 participants.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ParticipantId(pub u16);
 
@@ -34,20 +44,26 @@ impl std::fmt::Display for ParticipantId {
     }
 }
 
-/// Session identifier
+/// Session identifier for cryptographic operations
+/// 
+/// 256-bit identifier for temporary cryptographic sessions including
+/// key exchange, signature ceremonies, and secure communications.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SessionId(pub [u8; 32]);
 
-/// Quantum-resistant peer identity
+/// Complete quantum-resistant peer identity
+/// 
+/// Contains all cryptographic material needed for secure quantum-resistant
+/// communication including post-quantum signatures and key exchange.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuantumPeerIdentity {
     /// Unique identifier for the peer
     pub peer_id: PeerId,
     
-    /// ML-DSA public key for post-quantum signatures
+    /// ML-DSA (FIPS 204) public key for post-quantum digital signatures
     pub ml_dsa_public_key: MlDsaPublicKey,
     
-    /// ML-KEM public key for quantum-safe key exchange
+    /// ML-KEM (FIPS 203) public key for quantum-safe key exchange
     pub ml_kem_public_key: MlKemPublicKey,
     
     /// Optional FROST public key for threshold operations

@@ -5,16 +5,15 @@
 
 use crate::{
     PeerId, Multiaddr, P2PError, Result,
-    dht::{DHT, DHTConfig, Key, Record, DHTQuery, DHTResponse, DHTNode, SerializableDHTNode},
+    dht::{DHT, DHTConfig, Key, DHTNode, SerializableDHTNode},
     network::{P2PNode, NodeConfig},
-    transport::{TransportManager, TransportType, TransportOptions},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
-use tokio::sync::{RwLock, Mutex, broadcast};
-use tracing::{debug, info, warn, error};
+use tokio::sync::{RwLock, broadcast};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 /// DHT Network Manager Configuration

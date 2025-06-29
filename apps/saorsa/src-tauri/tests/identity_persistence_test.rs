@@ -1,104 +1,99 @@
-//! Test identity persistence functionality
+//! Test identity creation and serialization
 
-use saorsa_lib::identity_storage::{IdentityStorage, IdentityStorageConfig};
-use ant_core::identity::{UserIdentity, UserProfile, PrivacySettings, DiscoverabilitySettings, UserPreferences, ProfilePermissions};
+use ant_core::identity::manager::{UserIdentity, UserProfile, PrivacySettings, DiscoverabilitySettings, UserPreferences, VerificationLevel};
 use ed25519_dalek::Keypair;
-use tempfile::TempDir;
-use std::path::PathBuf;
+use std::time::SystemTime;
 use tokio;
 
-// Mock AppHandle for testing
-struct TestAppHandle {
-    data_dir: PathBuf,
-}
-
-impl TestAppHandle {
-    fn new(data_dir: PathBuf) -> Self {
-        Self { data_dir }
-    }
-}
-
-// Implement minimal Manager trait for testing
-impl tauri::Manager<tauri::Wry> for TestAppHandle {
-    fn path(&self) -> &tauri::path::PathResolver<tauri::Wry> {
-        unimplemented!("Test only")
-    }
-}
-
 #[tokio::test]
-async fn test_identity_persistence() -> anyhow::Result<()> {
-    // Create temp directory
-    let temp_dir = TempDir::new()?;
-    
+async fn test_identity_creation() -> anyhow::Result<()> {
     // Create test identity
     let keypair = Keypair::generate(&mut rand::rngs::OsRng);
     let identity = UserIdentity {
-        public_key: keypair.public.to_bytes(),
+        user_id: "test_user_123".to_string(),
+        public_key: keypair.public.to_bytes().to_vec(),
+        display_name_hint: "Test User".to_string(),
         three_word_address: "apple-banana-cherry".to_string(),
-        ipv6_address: None,
-        created_at: chrono::Utc::now(),
-        last_seen: chrono::Utc::now(),
-        trust_score: 0.5,
-        verification_status: ant_core::identity::VerificationLevel::Basic,
+        created_at: SystemTime::now(),
+        version: 1,
+        verification_level: VerificationLevel::SelfSigned,
     };
     
+    // Verify identity fields
+    assert!(!identity.user_id.is_empty());
+    assert!(!identity.public_key.is_empty());
+    assert_eq!(identity.display_name_hint, "Test User");
+    assert_eq!(identity.three_word_address, "apple-banana-cherry");
+    assert_eq!(identity.version, 1);
+    
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_user_profile_creation() -> anyhow::Result<()> {
+    let keypair = Keypair::generate(&mut rand::rngs::OsRng);
+    
     let profile = UserProfile {
+        user_id: "test_user_123".to_string(),
         display_name: "Test User".to_string(),
-        status_message: Some("Testing persistence".to_string()),
-        avatar_hash: None,
         bio: Some("A test user profile".to_string()),
+        avatar_url: None,
+        avatar_hash: None,
+        status_message: Some("Testing persistence".to_string()),
+        public_key: keypair.public.to_bytes().to_vec(),
         preferences: UserPreferences {
-            privacy: PrivacySettings {
-                profile_visibility: ProfilePermissions::PublicFields,
-                online_status_visibility: ProfilePermissions::ContactsOnly,
-                last_seen_visibility: ProfilePermissions::Nobody,
-            },
+            theme: "dark".to_string(),
+            language: "en".to_string(),
+            notifications_enabled: true,
+            auto_accept_friends: false,
             discovery: DiscoverabilitySettings {
                 discoverable_by_name: true,
                 discoverable_by_friends: true,
                 allow_contact_requests: true,
                 require_mutual_friends: false,
+                listed_in_directory: false,
             },
+            privacy: PrivacySettings::default(),
+            default_permissions: ant_core::identity::manager::DefaultPermissions::default(),
         },
-        verified_fields: vec![],
         custom_fields: Default::default(),
-        last_updated: chrono::Utc::now(),
+        created_at: SystemTime::now(),
+        updated_at: SystemTime::now(),
     };
     
-    // Test password
-    let password = "test_password_123";
-    
-    // Create storage config
-    let config = IdentityStorageConfig {
-        file_name: "test_identity.enc".to_string(),
-        auto_save: true,
-        password: None,
-    };
-    
-    // Note: For actual testing, we'd need a proper Tauri AppHandle
-    // This is a conceptual test showing how identity persistence would work
-    
-    println!("✅ Identity persistence test framework created");
-    println!("✅ Test identity and profile created");
-    println!("✅ Ready for integration with Tauri app");
+    // Verify profile fields
+    assert_eq!(profile.user_id, "test_user_123");
+    assert_eq!(profile.display_name, "Test User");
+    assert_eq!(profile.bio, Some("A test user profile".to_string()));
+    assert_eq!(profile.status_message, Some("Testing persistence".to_string()));
+    assert!(!profile.public_key.is_empty());
     
     Ok(())
 }
 
-#[test]
-fn test_key_derivation() {
-    // Test that our simplified key derivation works
-    use sha2::{Sha256, Digest};
+#[tokio::test]
+async fn test_identity_serialization() -> anyhow::Result<()> {
+    let keypair = Keypair::generate(&mut rand::rngs::OsRng);
+    let identity = UserIdentity {
+        user_id: "test_user_456".to_string(),
+        public_key: keypair.public.to_bytes().to_vec(),
+        display_name_hint: "Serialization Test".to_string(),
+        three_word_address: "dog-cat-mouse".to_string(),
+        created_at: SystemTime::now(),
+        version: 1,
+        verification_level: VerificationLevel::SelfSigned,
+    };
     
-    let password = "test_password";
-    let salt = b"test_salt_32_bytes_long_enough!!";
+    // Test serialization to JSON
+    let serialized = serde_json::to_string(&identity)?;
+    assert!(!serialized.is_empty());
     
-    let mut hasher = Sha256::new();
-    hasher.update(password.as_bytes());
-    hasher.update(salt);
+    // Test deserialization from JSON
+    let deserialized: UserIdentity = serde_json::from_str(&serialized)?;
+    assert_eq!(identity.user_id, deserialized.user_id);
+    assert_eq!(identity.public_key, deserialized.public_key);
+    assert_eq!(identity.display_name_hint, deserialized.display_name_hint);
+    assert_eq!(identity.three_word_address, deserialized.three_word_address);
     
-    let result = hasher.finalize();
-    assert_eq!(result.len(), 32);
-    
-    println!("✅ Key derivation test passed");
+    Ok(())
 }

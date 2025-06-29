@@ -417,7 +417,7 @@ mod tests {
         assert_eq!(session.state, SessionState::ReadyToAggregate);
         
         // Aggregate
-        let signature = session.aggregate().unwrap();
+        let _signature = session.aggregate().unwrap();
         assert!(session.is_complete());
     }
     

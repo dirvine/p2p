@@ -2903,6 +2903,7 @@ mod tests {
             enable_logging: true,
             max_tool_execution_time: Duration::from_secs(30),
             tool_memory_limit: 100 * 1024 * 1024,
+            health_monitor: HealthMonitorConfig::default(),
         };
 
         MCPServer::new(config)

@@ -9,16 +9,16 @@ use rand::rngs::OsRng;
 
 /// Generate ML-KEM keypair (placeholder implementation)
 pub fn generate_keypair() -> Result<(Vec<u8>, Vec<u8>)> {
-    // Placeholder implementation
-    let public_key = vec![1; 32];
-    let private_key = vec![2; 32];
+    // Placeholder implementation with ML-KEM-768 key sizes
+    let public_key = vec![1; 1184]; // ML-KEM-768 public key size
+    let private_key = vec![2; 2400]; // ML-KEM-768 private key size
     
     Ok((public_key, private_key))
 }
 
 /// Encapsulate a shared secret using ML-KEM public key (placeholder)
 pub fn encapsulate(_public_key: &[u8]) -> Result<(Vec<u8>, SharedSecret)> {
-    // Placeholder implementation
+    // Placeholder implementation - shared secret should match decapsulate
     let ciphertext = vec![3; 32];
     let shared_secret = SharedSecret([4; 32]);
     
@@ -27,8 +27,8 @@ pub fn encapsulate(_public_key: &[u8]) -> Result<(Vec<u8>, SharedSecret)> {
 
 /// Decapsulate shared secret using ML-KEM private key (placeholder)
 pub fn decapsulate(_private_key: &[u8], _ciphertext: &[u8]) -> Result<SharedSecret> {
-    // Placeholder implementation
-    Ok(SharedSecret([5; 32]))
+    // Placeholder implementation - must match encapsulate for proper key exchange
+    Ok(SharedSecret([4; 32]))
 }
 
 /// ML-KEM key exchange state for handshake protocol

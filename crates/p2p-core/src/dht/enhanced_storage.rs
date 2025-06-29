@@ -4,11 +4,10 @@
 //! peer selection, and repair mechanisms for multi-user P2P applications.
 
 use std::time::{Duration, SystemTime};
-use std::collections::{HashMap, HashSet, VecDeque, BinaryHeap};
-use std::sync::Arc;
-use tokio::sync::{RwLock, Mutex};
+use std::collections::HashMap;
+use tokio::sync::RwLock;
 use serde::{Serialize, Deserialize};
-use crate::dht::{Key, Record};
+use crate::dht::Key;
 use crate::PeerId;
 
 /// Configuration for the K=8 replication system
@@ -180,7 +179,7 @@ mod tests {
     #[test]
     fn test_replication_result_health_check() {
         let result = ReplicationResult {
-            key: Key::from(vec![1, 2, 3]),
+            key: Key::new(&[1, 2, 3]),
             successful_replicas: 6,
             failed_replicas: 2,
             target_replicas: 8,
@@ -197,7 +196,7 @@ mod tests {
     #[test]
     fn test_replication_result_success_rate() {
         let result = ReplicationResult {
-            key: Key::from(vec![1, 2, 3]),
+            key: Key::new(&[1, 2, 3]),
             successful_replicas: 6,
             failed_replicas: 2,
             target_replicas: 8,

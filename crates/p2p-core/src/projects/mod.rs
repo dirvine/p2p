@@ -22,81 +22,135 @@ use thiserror::Error;
 use uuid::Uuid;
 use blake3::Hasher;
 
-/// Projects errors
+/// Comprehensive error types for project operations
+/// 
+/// Covers all possible failure modes in project management including
+/// storage failures, permission denials, and workflow violations.
 #[derive(Debug, Error)]
 pub enum ProjectsError {
+    /// Underlying storage system error
     #[error("Storage error: {0}")]
     StorageError(#[from] crate::storage::StorageError),
     
+    /// Project with specified ID does not exist
     #[error("Project not found: {0}")]
     ProjectNotFound(String),
     
+    /// Document with specified ID does not exist
     #[error("Document not found: {0}")]
     DocumentNotFound(String),
     
+    /// User lacks required permissions for operation
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
     
+    /// Operation is not valid in current context
     #[error("Invalid operation: {0}")]
     InvalidOperation(String),
     
+    /// Workflow validation or execution error
     #[error("Workflow error: {0}")]
     WorkflowError(String),
 }
 
+/// Result type for project operations
 type Result<T> = std::result::Result<T, ProjectsError>;
 
-/// Project identifier
+/// Unique identifier for projects in the system
+/// 
+/// Uses UUID v4 to ensure global uniqueness across all organizations
+/// and prevent ID collision in distributed environments.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ProjectId(pub String);
 
 impl ProjectId {
+    /// Generate a new unique project identifier
+    /// 
+    /// # Returns
+    /// A new ProjectId with a randomly generated UUID
     pub fn new() -> Self {
         Self(Uuid::new_v4().to_string())
     }
 }
 
-/// Document identifier
+/// Unique identifier for documents within projects
+/// 
+/// Documents are the primary content units in projects and can represent
+/// text files, code, specifications, or any other structured content.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DocumentId(pub String);
 
 impl DocumentId {
+    /// Generate a new unique document identifier
+    /// 
+    /// # Returns
+    /// A new DocumentId with a randomly generated UUID
     pub fn new() -> Self {
         Self(Uuid::new_v4().to_string())
     }
 }
 
-/// Folder identifier
+/// Unique identifier for folders in project hierarchies
+/// 
+/// Folders organize documents and other folders in a hierarchical
+/// structure, supporting nested organization of project content.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FolderId(pub String);
 
 impl FolderId {
+    /// Generate a new unique folder identifier
+    /// 
+    /// # Returns
+    /// A new FolderId with a randomly generated UUID
     pub fn new() -> Self {
         Self(Uuid::new_v4().to_string())
     }
 }
 
-/// User ID type
+/// User identifier type for project member references
+/// 
+/// References users who participate in projects with various roles
+/// and permission levels.
 pub type UserId = String;
 
-/// Blake3 hash type
+/// Blake3 cryptographic hash for content integrity verification
+/// 
+/// Used for document versioning, deduplication, and integrity checks.
+/// Blake3 provides fast, secure hashing with excellent performance.
 pub type Blake3Hash = [u8; 32];
 
-/// Project structure
+/// Complete project structure with hierarchical organization
+/// 
+/// Projects are the primary organizational unit for collaborative work.
+/// They belong to organizations and can be assigned to departments and teams.
+/// Access control is managed through threshold groups and permissions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
+    /// Unique identifier for this project
     pub id: ProjectId,
+    /// Human-readable project name
     pub name: String,
+    /// Detailed description of project purpose and scope
     pub description: String,
+    /// Organization this project belongs to
     pub organization_id: OrganizationId,
+    /// Optional department assignment within organization
     pub department_id: Option<DepartmentId>,
+    /// Optional team assignment within department
     pub team_id: Option<TeamId>,
+    /// Threshold group that owns this project
     pub owner_group: GroupId,
+    /// Additional access groups with specific permissions
     pub access_groups: Vec<AccessGroup>,
+    /// Root folder containing all project content
     pub root_folder: FolderId,
+    /// Project configuration and behavior settings
     pub settings: ProjectSettings,
+    /// Metadata for analytics and tracking
     pub metadata: ProjectMetadata,
+    /// Timestamp when project was created
     pub created_at: SystemTime,
+    /// User ID of project creator
     pub created_by: UserId,
 }
 

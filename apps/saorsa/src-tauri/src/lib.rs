@@ -12,7 +12,7 @@
 //! - DHT-based messaging and contacts
 //! - Cross-platform desktop support (macOS, Windows, Linux)
 
-mod identity_storage;
+pub mod identity_storage;
 pub mod frontend_bundle;
 
 use identity_storage::{IdentityStorage, IdentityStorageConfig};
