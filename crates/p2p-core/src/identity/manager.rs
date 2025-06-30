@@ -958,15 +958,6 @@ impl ChallengeProof {
             Err(_) => Ok(false),
         }
     }
-} "dark".to_string(),
-            language: "en".to_string(),
-            notifications_enabled: true,
-            auto_accept_friends: false,
-            discovery: DiscoverabilitySettings::default(),
-            privacy: PrivacySettings::default(),
-            default_permissions: DefaultPermissions::default(),
-        }
-    }
 }
 
 /// Identity verification level indicating trust and authenticity
