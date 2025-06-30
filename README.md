@@ -86,6 +86,7 @@ The foundational P2P networking library (`crates/p2p-core`) providing:
 - **MCP Integration**: Full Model Context Protocol with health monitoring and service discovery
 - **Quantum-Resistant Security**: Foundation for ML-KEM/ML-DSA with threshold cryptography
 - **Three-Word Addresses**: Human-readable network addressing system
+- **DHT-Based Identity Management**: Network-wide identity persistence with three-word address resolution
 - **Privacy-First Identity**: Encrypted profiles with organizational support
 
 ### 🕊️ Desktop Application: Saorsa

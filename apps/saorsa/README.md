@@ -21,6 +21,7 @@ Saorsa (pronounced "SEER-sha", Irish for "freedom") is a revolutionary desktop m
 ### 🌐 True Peer-to-Peer Communication
 - **No Central Servers**: Direct encrypted communication between devices
 - **Three-Word Addresses**: Share `alice.secure.network` instead of complex addresses
+- **DHT-Based Identity**: Distributed identity management with network-wide verification
 - **Universal Connectivity**: Works on any network through intelligent tunneling
 - **Cross-Device Sync**: Access your data from any device worldwide
 
@@ -55,7 +56,9 @@ Saorsa (pronounced "SEER-sha", Irish for "freedom") is a revolutionary desktop m
 │          Tauri Application Layer       │  ← Rust backend
 │  ┌─────────────────────────────────────┐ │
 │  │ • P2P Node Management              │ │
-│  │ • Identity & Profile Management    │ │
+│  │ • DHT-Based Identity Management    │ │
+│  │ • Network Identity Discovery       │ │
+│  │ • Three-Word Address Resolution    │ │
 │  │ • Message Encryption/Decryption    │ │
 │  │ • DHT Storage Operations           │ │
 │  └─────────────────────────────────────┘ │
@@ -455,8 +458,11 @@ mod windows_integration {
 
 ### Multi-Node Testing
 ```bash
-# Run multiple instances for testing
-npm run test:multi-node
+# Run identity DHT integration tests
+cargo test identity_dht_integration
+
+# Run Saorsa-specific identity tests  
+cargo test identity_integration --lib
 
 # Test with different network conditions
 npm run test:nat-traversal
@@ -464,6 +470,14 @@ npm run test:nat-traversal
 # Performance testing
 npm run test:load
 ```
+
+### DHT Identity Testing
+The application includes comprehensive multi-node tests for DHT-based identity management:
+- **Cross-Node Identity Lookup**: Tests identity retrieval across different nodes
+- **Three-Word Address Resolution**: Validates three-word address -> user ID mapping
+- **Network Identity Discovery**: Tests finding users across the distributed network
+- **Concurrent Operations**: Tests multiple identity operations simultaneously
+- **Identity Persistence**: Validates identities persist across network changes
 
 ### AI Wallet Testing
 ```rust

@@ -27,7 +27,7 @@ name = "saorsa_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "saorsa"
+name = "saorsa-app"
 path = "src/bin/saorsa.rs"
 
 # No features needed - frontend is always bundled
@@ -73,4 +73,9 @@ bincode = "1.3"
 aes-gcm = "0.10"
 sha2 = "0.10"
 rand.workspace = true
+
+[dev-dependencies]
+# Test dependencies
+tracing-subscriber = "0.3"
+tokio-test = "0.4"
 
