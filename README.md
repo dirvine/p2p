@@ -75,9 +75,9 @@ This isn't just another P2P network - it's a complete reimagining of how decentr
 
 This is a Cargo workspace containing multiple interconnected components:
 
-### 📦 Core Library: [Ant Core](https://crates.io/crates/ant-core)
-[![Crates.io](https://img.shields.io/crates/v/ant-core)](https://crates.io/crates/ant-core)
-[![Documentation](https://docs.rs/ant-core/badge.svg)](https://docs.rs/ant-core)
+### 📦 Core Library: [Saorsa Core](https://crates.io/crates/saorsa-core)
+[![Crates.io](https://img.shields.io/crates/v/saorsa-core)](https://crates.io/crates/saorsa-core)
+[![Documentation](https://docs.rs/saorsa-core/badge.svg)](https://docs.rs/saorsa-core)
 
 The foundational P2P networking library (`crates/p2p-core`) providing:
 - **QUIC/TCP Transport**: Modern, efficient networking with built-in encryption and automatic fallback
@@ -103,17 +103,17 @@ Built with Tauri (`apps/saorsa`) - the flagship P2P application featuring:
 
 ## 🚀 Quick Start
 
-### Using Ant Core Library
+### Using Saorsa Core Library
 
 Add to your `Cargo.toml`:
 ```toml
 [dependencies]
-ant-core = "0.2.6"
+saorsa-core = "0.2.6"
 tokio = { version = "1", features = ["full"] }
 ```
 
 ```rust
-use ant_core::{
+use saorsa_core::{
     network::{P2PNode, NodeConfig},
     dht::{DHT, DHTConfig},
     mcp::{MCPServer, MCPServerConfig},
@@ -330,10 +330,10 @@ cargo bench
 
 ```bash
 # Terminal 1: Start first node
-cargo run --bin ant-connect -- --port 9001 --bootstrap-file bootstrap.json
+cargo run --bin saorsa -- --port 9001 --bootstrap-file bootstrap.json
 
 # Terminal 2: Start second node
-cargo run --bin ant-connect -- --port 9002 --bootstrap /ip6/::1/tcp/9001
+cargo run --bin saorsa -- --port 9002 --bootstrap /ip6/::1/tcp/9001
 
 # Terminal 3: Build and run desktop app
 cd apps/desktop-tauri
@@ -348,7 +348,7 @@ The P2P Foundation includes a comprehensive test suite with over 1400+ lines of 
 
 ```bash
 # Run all tests (basic functionality)
-cd crates/ant-test-suite
+cd crates/saorsa-test-suite
 cargo test
 
 # Run tests with detailed output
@@ -373,10 +373,10 @@ cargo test stress_tests
 
 ### 🔧 Test Suite Architecture
 
-The test suite is located in `crates/ant-test-suite/` and includes:
+The test suite is located in `crates/saorsa-test-suite/` and includes:
 
 ```
-ant-test-suite/
+saorsa-test-suite/
 ├── src/
 │   ├── tests/
 │   │   ├── network.rs       # DHT operations, peer discovery, routing
@@ -622,7 +622,7 @@ The test suite ensures the P2P Foundation maintains production-ready quality acr
 
 ## 📚 Documentation
 
-- **[Ant Core Documentation](https://docs.rs/ant-core)** - API reference
+- **[Saorsa Core Documentation](https://docs.rs/saorsa-core)** - API reference
 - **[Technical Specification](SPECIFICATION.md)** - Detailed technical design
 - **[Three-Word Addresses](docs/three-word-addresses.md)** - Human-readable network addressing
 - **[Address Space Analysis](docs/address-space-analysis.md)** - Comprehensive scale analysis and IPv6 coverage
@@ -710,8 +710,8 @@ For questions, contact saorsalabs@gmail.com
 
 ## 🔗 Links
 
-- **[Ant Core on crates.io](https://crates.io/crates/ant-core)**
-- **[Documentation](https://docs.rs/ant-core)**
+- **[Saorsa Core on crates.io](https://crates.io/crates/saorsa-core)**
+- **[Documentation](https://docs.rs/saorsa-core)**
 - **[Repository](https://github.com/dirvine/p2p)**
 - **[Issues](https://github.com/dirvine/p2p/issues)**
 
