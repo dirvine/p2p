@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Setup event listeners
     setupNavigationTabs();
     setupUserMenu();
+    setupMobileLifecycle();
     
     // Load initial data
     loadInitialData();
@@ -149,6 +150,64 @@ function setupUserMenu() {
         document.addEventListener('click', function() {
             dropdown.classList.add('hidden');
         });
+    }
+}
+
+// Mobile Lifecycle Management
+function setupMobileLifecycle() {
+    // Check if running on mobile
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+        console.log('Mobile device detected - setting up lifecycle handlers');
+        
+        // Handle page visibility changes (background/foreground)
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                handleAppBackground();
+            } else {
+                handleAppForeground();
+            }
+        });
+        
+        // Handle app lifecycle events
+        window.addEventListener('pagehide', handleAppBackground);
+        window.addEventListener('pageshow', handleAppForeground);
+        
+        // Handle focus/blur events
+        window.addEventListener('blur', handleAppBackground);
+        window.addEventListener('focus', handleAppForeground);
+    }
+}
+
+async function handleAppBackground() {
+    console.log('App going to background');
+    
+    try {
+        if (window.__TAURI__) {
+            const { invoke } = window.__TAURI__.core;
+            const result = await invoke('handle_app_background');
+            console.log('Background optimization:', result);
+        }
+    } catch (error) {
+        console.error('Error handling background:', error);
+    }
+}
+
+async function handleAppForeground() {
+    console.log('App coming to foreground');
+    
+    try {
+        if (window.__TAURI__) {
+            const { invoke } = window.__TAURI__.core;
+            const result = await invoke('handle_app_foreground');
+            console.log('Foreground restoration:', result);
+        }
+        
+        // Refresh data when coming back to foreground
+        loadInitialData();
+    } catch (error) {
+        console.error('Error handling foreground:', error);
     }
 }
 

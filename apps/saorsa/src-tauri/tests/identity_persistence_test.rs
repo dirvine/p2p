@@ -1,6 +1,6 @@
 //! Test identity creation and serialization
 
-use saorsa_core::identity::manager::{UserIdentity, UserProfile, PrivacySettings, DiscoverabilitySettings, UserPreferences, VerificationLevel};
+use saorsa_core::identity::manager::{UserIdentity, UserProfile, PrivacySettings, DiscoverabilitySettings, UserPreferences, VerificationLevel, DefaultPermissions};
 use ed25519_dalek::Keypair;
 use std::time::SystemTime;
 use tokio;
@@ -54,7 +54,7 @@ async fn test_user_profile_creation() -> anyhow::Result<()> {
                 listed_in_directory: false,
             },
             privacy: PrivacySettings::default(),
-            default_permissions: ant_core::identity::manager::DefaultPermissions::default(),
+            default_permissions: DefaultPermissions::default(),
         },
         custom_fields: Default::default(),
         created_at: SystemTime::now(),
