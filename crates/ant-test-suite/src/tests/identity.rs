@@ -5,7 +5,7 @@
 //! data round-trip verification.
 
 use anyhow::Result;
-use ant_core::identity::manager::{UserProfile, UserIdentity, EncryptedUserProfile};
+use saorsa_core::identity::manager::{UserProfile, UserIdentity, EncryptedUserProfile};
 use crate::tests::SubsystemTest;
 use crate::utils::{TestContext, VerificationResult, DataVerifier, TestDataGenerator};
 use std::time::{Duration, SystemTime};

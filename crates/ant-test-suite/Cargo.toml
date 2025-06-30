@@ -6,17 +6,17 @@ authors.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
-description = "Comprehensive test suite for Ant Network Core P2P library with data integrity verification"
-keywords = ["p2p", "testing", "verification", "integrity", "ant-core"]
+description = "Comprehensive test suite for Saorsa Core P2P library with data integrity verification"
+keywords = ["p2p", "testing", "verification", "integrity", "saorsa-core"]
 categories = ["development-tools::testing", "network-programming"]
 
 [[bin]]
-name = "ant-test-suite"
+name = "saorsa-test-suite"
 path = "src/main.rs"
 
 [dependencies]
 # Core P2P library
-ant-core = { path = "../p2p-core", features = ["quantum-resistant"] }
+saorsa-core = { path = "../p2p-core", features = ["quantum-resistant"] }
 
 # Workspace dependencies
 tokio.workspace = true

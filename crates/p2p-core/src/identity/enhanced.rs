@@ -1,7 +1,7 @@
 //! Enhanced identity system with quantum threshold cryptography integration
 
 use crate::quantum_crypto::{QuantumPeerIdentity, CryptoCapabilities, generate_keypair};
-use crate::threshold::{ThresholdGroup, ThresholdGroupManager, ParticipantInfo, ParticipantRole};
+use crate::threshold::{ThresholdGroupManager, ParticipantInfo, ParticipantRole};
 use crate::identity::manager::{UserIdentity, IdentityManager};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

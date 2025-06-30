@@ -3,7 +3,7 @@
 //! 
 //! Run this with: `cargo run --bin test_p2p_app`
 
-use ant_core::{
+use saorsa_core::{
     network::{P2PNode, NodeConfig, DHTConfig as NetworkDHTConfig, SecurityConfig, TrustLevel},
     identity::manager::{IdentityManager, IdentityManagerConfig},
     production::ProductionConfig,

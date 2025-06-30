@@ -3,13 +3,13 @@
 //! All user data is stored in the DHT with proper encryption for privacy
 //! and multi-device access.
 
-use crate::dht::{DHT, Record, Key};
+use crate::dht::{DHT, Key};
 use crate::identity::enhanced::{EnhancedIdentity, DeviceId};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, Duration};
 use thiserror::Error;
 use aes_gcm::{
-    aead::{Aead, KeyInit, OsRng},
+    aead::{Aead, KeyInit},
     Aes256Gcm, Nonce, Key as AesKey,
 };
 use sha2::{Sha256, Digest};

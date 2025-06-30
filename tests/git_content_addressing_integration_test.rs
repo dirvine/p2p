@@ -9,7 +9,7 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
 // Mock imports for testing - in real implementation these would come from the main crate
-use ant_core::{
+use saorsa_core::{
     ContentHash, ObjectType, GitObject, GitResult,
     BlobObject, TreeObject, CommitObject, TagObject, Reference, ReferenceType,
     CommitAuthor, CommitType, TreeEntry, EntryMode,

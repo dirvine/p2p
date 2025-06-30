@@ -1,6 +1,6 @@
 //! Test identity creation and serialization
 
-use ant_core::identity::manager::{UserIdentity, UserProfile, PrivacySettings, DiscoverabilitySettings, UserPreferences, VerificationLevel};
+use saorsa_core::identity::manager::{UserIdentity, UserProfile, PrivacySettings, DiscoverabilitySettings, UserPreferences, VerificationLevel};
 use ed25519_dalek::Keypair;
 use std::time::SystemTime;
 use tokio;

@@ -1,7 +1,8 @@
-# P2P Foundation (ant-core) - API Documentation
+# Saorsa Core - API Documentation
 
-> 🐜 **Ant Network**: A next-generation P2P foundation library with quantum-resistant cryptography, human-friendly addressing, and AI integration.
+> 🕊️ **Saorsa**: A next-generation P2P foundation library with quantum-resistant cryptography, human-friendly addressing, and AI integration.
 
+[![Crates.io](https://img.shields.io/crates/v/saorsa-core)](https://crates.io/crates/saorsa-core)
 [![Version](https://img.shields.io/badge/version-0.2.7-blue)](https://github.com/dirvine/p2p)
 [![License](https://img.shields.io/badge/license-AGPL--3.0%20OR%20Commercial-green)](./LICENSING.md)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)](https://www.rust-lang.org)
@@ -62,14 +63,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ant-core = "0.2.7"
+saorsa-core = "0.2.7"
 tokio = { version = "1.0", features = ["full"] }
 ```
 
 ### Basic P2P Node
 
 ```rust
-use ant_core::prelude::*;
+use saorsa_core::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -89,7 +90,7 @@ async fn main() -> Result<()> {
     let addresses = node.listen_addrs().await?;
     let words = encoder.encode_multiaddr(&addresses[0])?;
     
-    println!("🐜 Node running at: {}", words);
+    println!("🕊️ Node running at: {}", words);
     println!("📡 Peer ID: {}", node.peer_id());
     
     // Keep running
@@ -524,7 +525,7 @@ impl BootstrapManager {
 ### Usage Examples
 
 ```rust
-use ant_core::bootstrap::*;
+use saorsa_core::bootstrap::*;
 
 // Basic encoding
 let encoder = WordEncoder::new();
@@ -3264,7 +3265,7 @@ pub enum ErrorCategory {
 ### Example 1: Basic P2P Node
 
 ```rust
-use ant_core::prelude::*;
+use saorsa_core::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -3328,7 +3329,7 @@ async fn main() -> Result<()> {
 ### Example 2: Chat Application
 
 ```rust
-use ant_core::prelude::*;
+use saorsa_core::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -3387,7 +3388,7 @@ async fn main() -> Result<()> {
 ### Example 3: Threshold Signatures
 
 ```rust
-use ant_core::prelude::*;
+use saorsa_core::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -3447,7 +3448,7 @@ async fn main() -> Result<()> {
 ### Example 4: IPv6 Tunneling
 
 ```rust
-use ant_core::tunneling::*;
+use saorsa_core::tunneling::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -3514,7 +3515,7 @@ async fn main() -> Result<()> {
 ### Example 5: Project Management
 
 ```rust
-use ant_core::prelude::*;
+use saorsa_core::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -3587,7 +3588,7 @@ async fn main() -> Result<()> {
 ### Example 6: MCP Tool Integration
 
 ```rust
-use ant_core::mcp::*;
+use saorsa_core::mcp::*;
 use serde_json::json;
 
 // Custom MCP tool for network operations
@@ -3755,4 +3756,4 @@ We welcome contributions! Please see our [Contributing Guide](./CONTRIBUTING.md)
 
 ---
 
-*🐜 Built with the P2P Foundation - Connecting the world, one peer at a time.*
+*🕊️ Built with Saorsa - Connecting the world, one peer at a time.*

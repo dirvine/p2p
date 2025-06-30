@@ -6,7 +6,7 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-ant-core = { path = "../crates/p2p-core" }
+saorsa-core = { path = "../crates/p2p-core" }
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber = "0.3"

@@ -26,7 +26,7 @@ use tokio::sync::{Mutex, RwLock};
 use tracing::{error, info, warn};
 use base64;
 
-use ant_core::{
+use saorsa_core::{
     network::{P2PNode, NodeConfig, DHTConfig as NetworkDHTConfig, SecurityConfig, TrustLevel},
     dht::{DHT, DHTConfig, Key, Record},
     production::ProductionConfig,

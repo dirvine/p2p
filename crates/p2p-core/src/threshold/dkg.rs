@@ -4,7 +4,7 @@ use super::{ThresholdError, Result};
 use crate::quantum_crypto::types::*;
 use crate::threshold::frost::KeyGenerationResult;
 // use frost_ed25519 as frost; // Temporarily disabled
-use rand::rngs::OsRng;
+// Removed unused OsRng import
 use std::collections::HashMap;
 
 /// DKG ceremony result

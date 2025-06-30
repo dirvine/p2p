@@ -16,7 +16,7 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 # Core P2P library
-ant-core = { path = "../p2p-core" }
+saorsa-core = { path = "../p2p-core" }
 
 # Workspace dependencies
 tokio.workspace = true

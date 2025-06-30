@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 // Import from the crate
-use ant_core::{
+use saorsa_core::{
     DhtNetworkManager, DhtNetworkConfig, DhtNetworkOperation, DhtNetworkResult, DhtNetworkEvent,
     BootstrapNode, DhtPeerInfo, P2PNode, NodeConfig, Key, Record, P2PError, Result,
 };

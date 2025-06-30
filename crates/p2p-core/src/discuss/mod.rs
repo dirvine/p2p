@@ -10,7 +10,7 @@
 
 use crate::identity::enhanced::{EnhancedIdentity, OrganizationId};
 use crate::storage::{StorageManager, keys, ttl};
-use crate::threshold::ThresholdGroup;
+// Removed unused ThresholdGroup import
 use crate::quantum_crypto::types::GroupId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

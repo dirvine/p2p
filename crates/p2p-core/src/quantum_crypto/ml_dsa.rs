@@ -11,7 +11,7 @@ use rand::rngs::OsRng;
 pub fn generate_keypair() -> Result<(Vec<u8>, Vec<u8>)> {
     use ed25519_dalek::Keypair;
     
-    let keypair = Keypair::generate(&mut rand::rngs::OsRng);
+    let keypair = Keypair::generate(&mut OsRng);
     let public_key = keypair.public.to_bytes().to_vec();
     let private_key = keypair.to_bytes().to_vec();
     

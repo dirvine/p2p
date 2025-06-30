@@ -20,7 +20,7 @@ use parking_lot::RwLock;
 use once_cell::sync::Lazy;
 use tokio::runtime::Runtime;
 
-use ant_core::{
+use saorsa_core::{
     PeerId, Multiaddr, Result as P2PResult,
     network::{P2PNode, NodeConfig},
     dht::{DHT, DHTConfig, Key, Record},

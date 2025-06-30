@@ -182,6 +182,9 @@ pub struct PeerInfo {
     
     /// Supported protocols
     pub protocols: Vec<String>,
+    
+    /// Number of heartbeats received
+    pub heartbeat_count: u64,
 }
 
 /// Connection status for a peer
@@ -465,11 +468,30 @@ impl P2PNode {
             mcp_server.set_network_sender(Arc::new(network_sender)).await;
             
             // Start background task to handle network messages
+            let transport_manager = Arc::clone(&self.transport_manager);
+            let _peer_id_for_task = self.peer_id.clone();
             tokio::spawn(async move {
                 while let Some((peer_id, protocol, data)) = send_rx.recv().await {
-                    // For now, just log the message (placeholder implementation)
-                    debug!("Network message to {}: {} bytes on protocol {}", peer_id, data.len(), protocol);
-                    // TODO: Implement actual message sending via transport layer
+                    debug!("Sending network message to {}: {} bytes on protocol {}", peer_id, data.len(), protocol);
+                    
+                    // Create protocol message wrapper
+                    let message_data = match create_protocol_message_static(&protocol, data) {
+                        Ok(msg) => msg,
+                        Err(e) => {
+                            warn!("Failed to create protocol message: {}", e);
+                            continue;
+                        }
+                    };
+                    
+                    // Send message using transport manager
+                    match transport_manager.send_message(&peer_id, message_data).await {
+                        Ok(_) => {
+                            debug!("Message sent to peer {} via transport layer", peer_id);
+                        }
+                        Err(e) => {
+                            warn!("Failed to send message to peer {}: {}", peer_id, e);
+                        }
+                    }
                 }
             });
             
@@ -626,7 +648,7 @@ impl P2PNode {
     
     /// Start a listener on a specific socket address
     async fn start_listener_on_address(&self, addr: std::net::SocketAddr) -> Result<()> {
-        use crate::transport::{TransportType, Transport};
+        use crate::transport::{Transport};
         
         // Try QUIC first (preferred transport)
         match crate::transport::QuicTransport::new(true) {
@@ -731,6 +753,7 @@ impl P2PNode {
                                 last_seen: tokio::time::Instant::now(),
                                 status: ConnectionStatus::Connected,
                                 protocols: vec!["p2p-chat/1.0.0".to_string()],
+                                heartbeat_count: 0,
                             };
                             peers_guard.insert(connection_peer_id.clone(), peer_info);
                         }
@@ -889,12 +912,69 @@ impl P2PNode {
                         crate::mcp::P2PMCPMessageType::Heartbeat => {
                             // Handle heartbeat notification
                             debug!("Received heartbeat from peer {}", peer_id);
-                            // TODO: Process heartbeat
+                            
+                            // Update peer last seen timestamp
+                            {
+                                let mut peers = self.peers.write().await;
+                                if let Some(peer_info) = peers.get_mut(peer_id) {
+                                    peer_info.last_seen = Instant::now();
+                                    peer_info.heartbeat_count += 1;
+                                }
+                            }
+                            
+                            // Send heartbeat acknowledgment
+                            let ack_data = serde_json::to_vec(&serde_json::json!({
+                                "type": "heartbeat_ack",
+                                "timestamp": std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs()
+                            })).unwrap();
+                            
+                            if let Err(e) = self.send_message(&peer_id, MCP_PROTOCOL, ack_data).await {
+                                warn!("Failed to send heartbeat ack to {}: {}", peer_id, e);
+                            }
                         }
                         crate::mcp::P2PMCPMessageType::HealthCheck => {
                             // Handle health check request
                             debug!("Received health check from peer {}", peer_id);
-                            // TODO: Process health check and respond
+                            
+                            // Gather health information
+                            let peers_count = self.peers.read().await.len();
+                            let uptime = self.start_time.elapsed();
+                            
+                            let mut memory_usage = 0u64;
+                            let mut cpu_usage = 0.0f64;
+                            
+                            // Get resource metrics if available
+                            if let Some(ref resource_manager) = self.resource_manager {
+                                let metrics = resource_manager.get_metrics().await;
+                                memory_usage = metrics.memory_used;
+                                cpu_usage = metrics.cpu_usage;
+                            }
+                            
+                            // Create health check response
+                            let health_response = serde_json::json!({
+                                "type": "health_check_response",
+                                "status": "healthy",
+                                "peer_id": self.peer_id,
+                                "peers_count": peers_count,
+                                "uptime_secs": uptime.as_secs(),
+                                "memory_usage_bytes": memory_usage,
+                                "cpu_usage_percent": cpu_usage,
+                                "timestamp": std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs()
+                            });
+                            
+                            let response_data = serde_json::to_vec(&health_response)
+                                .map_err(|e| P2PError::Serialization(e))?;
+                            
+                            // Send health check response
+                            if let Err(e) = self.send_message(&peer_id, MCP_PROTOCOL, response_data).await {
+                                warn!("Failed to send health check response to {}: {}", peer_id, e);
+                            }
                         }
                     }
                 }
@@ -1192,6 +1272,7 @@ impl P2PNode {
             last_seen: Instant::now(),
             status: ConnectionStatus::Connected,
             protocols: vec!["p2p-foundation/1.0".to_string()],
+            heartbeat_count: 0,
         };
         
         // Store peer information
@@ -1241,21 +1322,20 @@ impl P2PNode {
             return Err(P2PError::Network(format!("Peer {} not connected", peer_id)));
         }
         
-        // Handle MCP protocol messages
+        // For MCP protocol messages, validate before sending
         if protocol == MCP_PROTOCOL {
-            if let Some(ref mcp_server) = self.mcp_server {
-                // For demonstration purposes, we'll simulate receiving the message
-                // on the target peer. In a real implementation, this would send 
-                // the message over the network and the target peer would handle it.
-                
-                debug!("Handling MCP message locally for demonstration");
-                if let Ok(response_data) = mcp_server.handle_p2p_message(&data, &self.peer_id).await {
-                    if let Some(response) = response_data {
-                        debug!("Generated MCP response: {} bytes", response.len());
-                        // In real implementation, this response would be sent back over the network
-                    }
-                }
+            // Validate message format before sending
+            if data.len() < 4 {
+                return Err(P2PError::Network("Invalid MCP message: too short".to_string()));
             }
+            
+            // Check message type is valid
+            let message_type = data.get(0).unwrap_or(&0);
+            if *message_type > 10 { // Arbitrary limit for message types
+                return Err(P2PError::Network("Invalid MCP message type".to_string()));
+            }
+            
+            debug!("Validated MCP message for network transmission");
         }
         
         // Record bandwidth usage if resource manager is enabled
@@ -1266,16 +1346,14 @@ impl P2PNode {
         // Create protocol message wrapper
         let message_data = self.create_protocol_message(protocol, data)?;
         
-        // Send message using transport manager
+        // Send message using transport manager with proper error handling
         match self.transport_manager.send_message(peer_id, message_data).await {
             Ok(_) => {
                 debug!("Message sent to peer {} via transport layer", peer_id);
             }
             Err(e) => {
                 warn!("Failed to send message to peer {}: {}", peer_id, e);
-                // For demo purposes, we'll still report success to avoid breaking the chat
-                // In production, this should return the error
-                debug!("Demo mode: treating send failure as success for chat compatibility");
+                return Err(P2PError::Network(format!("Message send failed: {}", e)));
             }
         }
         Ok(())
@@ -1299,7 +1377,27 @@ impl P2PNode {
         serde_json::to_vec(&message)
             .map_err(|e| P2PError::Transport(format!("Failed to serialize message: {}", e)))
     }
+}
+
+/// Create a protocol message wrapper (static version for background tasks)
+fn create_protocol_message_static(protocol: &str, data: Vec<u8>) -> Result<Vec<u8>> {
+    use serde_json::json;
     
+    // Create a simple message format for P2P communication
+    let message = json!({
+        "protocol": protocol,
+        "data": data,
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    });
+    
+    serde_json::to_vec(&message)
+        .map_err(|e| P2PError::Transport(format!("Failed to serialize message: {}", e)))
+}
+
+impl P2PNode {
     /// Subscribe to network events
     pub fn subscribe_events(&self) -> broadcast::Receiver<P2PEvent> {
         self.event_tx.subscribe()
@@ -2655,6 +2753,7 @@ mod tests {
             last_seen: Instant::now(),
             status: ConnectionStatus::Connected,
             protocols: vec!["test-protocol".to_string()],
+            heartbeat_count: 0,
         };
 
         assert_eq!(peer_info.peer_id, "test_peer");

@@ -4,7 +4,7 @@
 //! all storage and communication operations in the P2P network.
 
 use anyhow::{Context, Result};
-use ant_core::{Key, Record, PeerId};
+use saorsa_core::{Key, Record, PeerId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;

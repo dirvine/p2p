@@ -3,13 +3,13 @@
 //! Provides secure local storage for user identities with encryption.
 //! Stores identity data in the app's data directory using password-derived encryption.
 
-use ant_core::identity::{
+use saorsa_core::identity::{
     UserIdentity, UserProfile, EncryptedUserProfile, IdentityChallenge,
     ContactRequest, ProfilePermissions, PrivacySettings, DiscoverabilitySettings,
     UserPreferences, VerificationLevel, IPv6BindingProof,
 };
-use ant_core::identity::manager::{IdentityManager, IdentityManagerConfig};
-use ant_core::{Result, P2PError};
+use saorsa_core::identity::manager::{IdentityManager, IdentityManagerConfig};
+use saorsa_core::{Result, P2PError};
 use ed25519_dalek::Keypair;
 use serde::{Deserialize, Serialize};
 use anyhow;

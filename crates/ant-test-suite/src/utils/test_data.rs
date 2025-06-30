@@ -5,7 +5,7 @@
 //! and complex data structures.
 
 use anyhow::Result;
-use ant_core::{
+use saorsa_core::{
     identity::manager::{UserProfile, UserPreferences, PrivacySettings, DiscoverabilitySettings, DefaultPermissions},
     chat::{ChannelId, MessageId},
     projects::{ProjectId, DocumentId},

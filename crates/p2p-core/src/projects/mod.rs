@@ -9,11 +9,10 @@
 //! - Activity tracking and analytics
 
 use crate::identity::enhanced::{
-    EnhancedIdentity, Organization, OrganizationId, Department, DepartmentId, 
-    Team, TeamId, Permission
+    EnhancedIdentity, OrganizationId, DepartmentId, TeamId
 };
 use crate::storage::{StorageManager, keys, ttl, FileChunker, FileMetadata};
-use crate::threshold::{ThresholdGroup, ThresholdSignature};
+use crate::threshold::ThresholdSignature;
 use crate::quantum_crypto::types::GroupId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -799,15 +798,72 @@ impl ProjectsManager {
         Ok(())
     }
     
-    /// Encrypt content (simplified)
+    /// Encrypt content using AES-GCM
     fn encrypt_content(&self, content: &[u8], key: &[u8]) -> Result<Vec<u8>> {
-        // In practice, use proper encryption
-        Ok(content.to_vec())
+        use aes_gcm::{Aes256Gcm, Key, Nonce, AeadInPlace, KeyInit};
+        use rand::RngCore;
+        
+        // Removed unused P2PError import
+        
+        // Ensure key is exactly 32 bytes for AES-256
+        if key.len() != 32 {
+            return Err(ProjectsError::InvalidOperation("Invalid encryption key length - must be 32 bytes".to_string()));
+        }
+        
+        let cipher_key = aes_gcm::Key::<Aes256Gcm>::from_slice(key);
+        let cipher = Aes256Gcm::new(cipher_key);
+        
+        // Generate random 96-bit nonce
+        let mut nonce_bytes = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        
+        // Encrypt the data
+        let mut ciphertext = content.to_vec();
+        let tag = cipher.encrypt_in_place_detached(nonce, b"", &mut ciphertext)
+            .map_err(|e| ProjectsError::InvalidOperation(format!("Encryption failed: {}", e)))?;
+        
+        // Combine nonce + ciphertext + tag
+        let mut result = Vec::with_capacity(12 + ciphertext.len() + 16);
+        result.extend_from_slice(&nonce_bytes);
+        result.extend_from_slice(&ciphertext);
+        result.extend_from_slice(&tag);
+        
+        Ok(result)
     }
     
-    /// Decrypt content (simplified)
+    /// Decrypt content using AES-GCM
     fn decrypt_content(&self, encrypted: &[u8], key: &[u8]) -> Result<Vec<u8>> {
-        // In practice, use proper decryption
-        Ok(encrypted.to_vec())
+        use aes_gcm::{Aes256Gcm, Key, Nonce, AeadInPlace, KeyInit};
+        // Removed unused P2PError import
+        
+        // Ensure key is exactly 32 bytes for AES-256
+        if key.len() != 32 {
+            return Err(ProjectsError::InvalidOperation("Invalid decryption key length - must be 32 bytes".to_string()));
+        }
+        
+        // Minimum size: 12 (nonce) + 16 (tag) = 28 bytes
+        if encrypted.len() < 28 {
+            return Err(ProjectsError::InvalidOperation("Invalid encrypted data - too short".to_string()));
+        }
+        
+        let cipher_key = aes_gcm::Key::<Aes256Gcm>::from_slice(key);
+        let cipher = Aes256Gcm::new(cipher_key);
+        
+        // Extract nonce (first 12 bytes)
+        let nonce = Nonce::from_slice(&encrypted[0..12]);
+        
+        // Extract tag (last 16 bytes)
+        let tag_start = encrypted.len() - 16;
+        let tag = &encrypted[tag_start..];
+        
+        // Extract ciphertext (middle portion)
+        let mut plaintext = encrypted[12..tag_start].to_vec();
+        
+        // Decrypt the data
+        cipher.decrypt_in_place_detached(nonce, b"", &mut plaintext, tag.into())
+            .map_err(|e| ProjectsError::InvalidOperation(format!("Decryption failed: {}", e)))?;
+        
+        Ok(plaintext)
     }
 }

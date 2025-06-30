@@ -1,15 +1,23 @@
 [package]
-name = "ant-core"
+name = "saorsa-core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
-description = "Ant Network - Core P2P networking library with DHT, QUIC transport, three-word addresses, and MCP integration"
-keywords = ["p2p", "networking", "dht", "quic", "decentralized"]
+description = "Saorsa - Core P2P networking library with DHT, QUIC transport, three-word addresses, and MCP integration"
+keywords = ["p2p", "networking", "dht", "quic", "decentralized", "saorsa"]
 categories = ["network-programming", "asynchronous", "cryptography"]
-readme = "README.md"
+readme = "../../README.md"
+documentation = "https://docs.rs/saorsa-core"
+include = [
+    "src/**/*",
+    "Cargo.toml",
+    "../../README.md",
+    "../../LICENSE-AGPL-3.0",
+    "../../LICENSE-COMMERCIAL",
+]
 
 [dependencies]
 # Workspace dependencies

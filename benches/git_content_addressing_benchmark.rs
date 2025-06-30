@@ -9,7 +9,7 @@ use std::time::Instant;
 use std::sync::Arc;
 
 // Import the git content addressing types (these would be actual imports in real code)
-use ant_core::{
+use saorsa_core::{
     ContentHash, ObjectType, GitObject, 
     BlobObject, TreeObject, CommitObject,
     CommitAuthor, CommitType,

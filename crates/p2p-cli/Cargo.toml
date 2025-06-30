@@ -11,12 +11,12 @@ keywords = ["p2p", "cli", "flutter", "web"]
 categories = ["command-line-utilities", "network-programming"]
 
 [[bin]]
-name = "ant-connect"
+name = "saorsa"
 path = "src/main.rs"
 
 [dependencies]
 # Core P2P library
-ant-core = { path = "../p2p-core" }
+saorsa-core = { path = "../p2p-core" }
 
 # Workspace dependencies
 tokio.workspace = true

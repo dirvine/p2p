@@ -4,8 +4,6 @@
 //! peer selection, and repair mechanisms for multi-user P2P applications.
 
 use std::time::{Duration, SystemTime};
-use std::collections::HashMap;
-use tokio::sync::RwLock;
 use serde::{Serialize, Deserialize};
 use crate::dht::Key;
 use crate::PeerId;

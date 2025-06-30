@@ -4,7 +4,7 @@
 //! and basic network functionality with data round-trip verification.
 
 use anyhow::Result;
-use ant_core::{
+use saorsa_core::{
     network::{P2PNode, NodeConfig}, 
     dht::Key,
     PeerId, Multiaddr,

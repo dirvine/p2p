@@ -37,7 +37,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # Core P2P library (local workspace)
-ant-core = { path = "../../../crates/p2p-core", features = ["quantum-resistant"] }
+saorsa-core = { path = "../../../crates/p2p-core", features = ["quantum-resistant"] }
 
 # Tauri framework  
 tauri = { version = "2", features = [] }

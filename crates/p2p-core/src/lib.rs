@@ -11,7 +11,7 @@
 // distributed under these licenses is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 
-//! # P2P Foundation
+//! # Saorsa Core
 //! 
 //! A next-generation peer-to-peer networking foundation built in Rust.
 //! 
@@ -26,7 +26,7 @@
 //! ## Example
 //! 
 //! ```rust,no_run
-//! use p2p_foundation::{P2PNode, NodeConfig};
+//! use saorsa_core::{P2PNode, NodeConfig};
 //! 
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
@@ -145,7 +145,7 @@ pub use threshold::{
 pub use quantum_crypto::types::{GroupId, ParticipantId};
 
 // Placeholder types (will be replaced with actual libp2p types)
-/// Peer identifier used throughout the P2P Foundation
+/// Peer identifier used throughout Saorsa
 /// 
 /// Currently implemented as a String for simplicity, but will be replaced
 /// with proper libp2p PeerId type in future versions.
@@ -157,7 +157,7 @@ pub type PeerId = String;
 /// with proper libp2p Multiaddr type in future versions.
 pub type Multiaddr = String;
 
-/// P2P Foundation version
+/// Saorsa Core version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg(test)]

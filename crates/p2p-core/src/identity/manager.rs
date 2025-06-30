@@ -336,14 +336,23 @@ impl EncryptedUserProfile {
         let profile_data = serde_json::to_vec(profile)
             .map_err(|e| P2PError::Serialization(e))?;
         
-        // Create signature (placeholder implementation)
-        let signature_data = format!("{}:{}", identity.user_id, profile.display_name);
-        let signature = keypair.sign(signature_data.as_bytes()).to_bytes().to_vec();
+        // Generate encryption key from keypair deterministically
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(&keypair.to_bytes());
+        hasher.update(b"profile-encryption-key");
+        let encryption_key = hasher.finalize();
+        
+        // Encrypt the profile data using AES-GCM
+        let encrypted_data = Self::encrypt_profile_data(&profile_data, &encryption_key)?;
+        
+        // Create signature of the encrypted data
+        let signature = keypair.sign(&encrypted_data).to_bytes().to_vec();
         
         Ok(Self {
             user_id: identity.user_id.clone(),
             public_key: identity.public_key.clone(),
-            encrypted_data: profile_data, // In real implementation, this would be encrypted
+            encrypted_data,
             signature,
             ipv6_binding_proof: ipv6_binding,
             created_at: SystemTime::now(),
@@ -372,9 +381,80 @@ impl EncryptedUserProfile {
     /// # Errors
     /// Returns error if signature verification fails
     pub fn verify_signature(&self) -> Result<bool> {
-        // TODO: Implement proper signature verification
-        // For now, just return true as a placeholder
-        Ok(true)
+        use ed25519_dalek::{PublicKey, Signature, Verifier};
+        
+        // Parse the public key
+        let public_key = PublicKey::from_bytes(&self.public_key)
+            .map_err(|e| P2PError::Identity(format!("Invalid public key: {}", e)))?;
+        
+        // Parse the signature
+        let signature = Signature::from_bytes(&self.signature)
+            .map_err(|e| P2PError::Identity(format!("Invalid signature: {}", e)))?;
+        
+        // Verify signature against encrypted data
+        match public_key.verify(&self.encrypted_data, &signature) {
+            Ok(()) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+    
+    /// Encrypt profile data using AES-GCM
+    fn encrypt_profile_data(data: &[u8], key: &[u8]) -> Result<Vec<u8>> {
+        use aes_gcm::{Aes256Gcm, Key, Nonce, AeadInPlace, KeyInit};
+        use rand::RngCore;
+        
+        if key.len() != 32 {
+            return Err(P2PError::Identity("Invalid encryption key length - must be 32 bytes".to_string()));
+        }
+        
+        let cipher_key = aes_gcm::Key::<Aes256Gcm>::from_slice(key);
+        let cipher = Aes256Gcm::new(cipher_key);
+        
+        // Generate random 96-bit nonce
+        let mut nonce_bytes = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        
+        // Encrypt the data
+        let mut ciphertext = data.to_vec();
+        let tag = cipher.encrypt_in_place_detached(nonce, b"", &mut ciphertext)
+            .map_err(|e| P2PError::Identity(format!("Profile encryption failed: {}", e)))?;
+        
+        // Combine nonce + ciphertext + tag
+        let mut result = Vec::with_capacity(12 + ciphertext.len() + 16);
+        result.extend_from_slice(&nonce_bytes);
+        result.extend_from_slice(&ciphertext);
+        result.extend_from_slice(&tag);
+        
+        Ok(result)
+    }
+    
+    /// Decrypt profile data using AES-GCM
+    fn decrypt_profile_data(encrypted: &[u8], key: &[u8]) -> Result<Vec<u8>> {
+        use aes_gcm::{Aes256Gcm, Key, Nonce, AeadInPlace, KeyInit};
+        
+        if key.len() != 32 {
+            return Err(P2PError::Identity("Invalid decryption key length - must be 32 bytes".to_string()));
+        }
+        
+        if encrypted.len() < 28 {
+            return Err(P2PError::Identity("Invalid encrypted profile data - too short".to_string()));
+        }
+        
+        let cipher_key = aes_gcm::Key::<Aes256Gcm>::from_slice(key);
+        let cipher = Aes256Gcm::new(cipher_key);
+        
+        // Extract components
+        let nonce = Nonce::from_slice(&encrypted[0..12]);
+        let tag_start = encrypted.len() - 16;
+        let tag = &encrypted[tag_start..];
+        let mut plaintext = encrypted[12..tag_start].to_vec();
+        
+        // Decrypt the data
+        cipher.decrypt_in_place_detached(nonce, b"", &mut plaintext, tag.into())
+            .map_err(|e| P2PError::Identity(format!("Profile decryption failed: {}", e)))?;
+        
+        Ok(plaintext)
     }
     
     /// Decrypt the encrypted profile data using provided key
@@ -383,29 +463,22 @@ impl EncryptedUserProfile {
     /// UserProfile structure. Requires the correct decryption key.
     /// 
     /// # Arguments
-    /// * `_key` - AES-256 decryption key (32 bytes)
+    /// * `key` - AES-256 decryption key (32 bytes)
     /// 
     /// # Returns
     /// Decrypted UserProfile structure
     /// 
     /// # Errors
     /// Returns error if decryption fails or data is corrupted
-    pub fn decrypt_profile(&self, _key: &[u8]) -> Result<UserProfile> {
-        // TODO: Implement proper decryption
-        // For now, return a basic profile
-        Ok(UserProfile {
-            user_id: self.user_id.clone(),
-            display_name: "Decrypted Profile".to_string(),
-            bio: None,
-            avatar_url: None,
-            avatar_hash: None,
-            status_message: None,
-            public_key: self.public_key.clone(),
-            preferences: UserPreferences::default(),
-            custom_fields: std::collections::HashMap::new(),
-            created_at: self.created_at,
-            updated_at: self.created_at,
-        })
+    pub fn decrypt_profile(&self, key: &[u8]) -> Result<UserProfile> {
+        // Decrypt the profile data
+        let decrypted_data = Self::decrypt_profile_data(&self.encrypted_data, key)?;
+        
+        // Deserialize the profile
+        let profile: UserProfile = serde_json::from_slice(&decrypted_data)
+            .map_err(|e| P2PError::Serialization(e))?;
+        
+        Ok(profile)
     }
     
     /// Retrieve access grant for a specific user
@@ -551,11 +624,14 @@ impl IdentityChallenge {
     /// 
     /// # Returns
     /// Signed challenge response for verification
-    pub fn create_response(&self, _keypair: &ed25519_dalek::Keypair) -> ChallengeResponse {
-        // TODO: Implement proper challenge response
+    pub fn create_response(&self, keypair: &ed25519_dalek::Keypair) -> ChallengeResponse {
+        let mut signed_data = self.challenge_id.as_bytes().to_vec();
+        signed_data.extend_from_slice(&self.challenge_data);
+        let signature = keypair.sign(&signed_data);
+
         ChallengeResponse {
             challenge_id: self.challenge_id.clone(),
-            signature: vec![0; 64], // Placeholder
+            signature: signature.to_bytes().to_vec(),
             response_data: Vec::new(),
         }
     }
@@ -861,12 +937,130 @@ impl ChallengeProof {
             return Ok(false);
         }
         
-        // TODO: Implement proper signature verification
-        // For now, just return true as a placeholder
-        Ok(true)
+        // Verify the signature of the challenge data
+        use ed25519_dalek::{PublicKey, Signature, Verifier};
+        
+        // Parse the public key
+        let public_key = PublicKey::from_bytes(&self.public_key)
+            .map_err(|e| P2PError::Identity(format!("Invalid public key in proof: {}", e)))?;
+        
+        // Parse the signature
+        let signature = Signature::from_bytes(&self.signature)
+            .map_err(|e| P2PError::Identity(format!("Invalid signature in proof: {}", e)))?;
+        
+        // Create the signed data: challenge_id + proof_data
+        let mut signed_data = challenge.challenge_id.as_bytes().to_vec();
+        signed_data.extend_from_slice(&self.proof_data);
+        
+        // Verify signature
+        match public_key.verify(&signed_data, &signature) {
+            Ok(()) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+} "dark".to_string(),
+            language: "en".to_string(),
+            notifications_enabled: true,
+            auto_accept_friends: false,
+            discovery: DiscoverabilitySettings::default(),
+            privacy: PrivacySettings::default(),
+            default_permissions: DefaultPermissions::default(),
+        }
     }
 }
-use crate::dht::{Key, Record};
+
+/// Identity verification level indicating trust and authenticity
+/// 
+/// Higher levels provide stronger guarantees about identity authenticity
+/// and are used for reputation and trust calculations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum VerificationLevel {
+    /// No verification performed
+    Unverified,
+    /// Self-signed cryptographic identity only
+    SelfSigned,
+    /// Email address has been verified
+    EmailVerified,
+    /// Phone number has been verified
+    PhoneVerified,
+    /// Identity verified through network consensus
+    NetworkVerified,
+    /// Maximum verification through multiple channels
+    FullyVerified,
+}
+
+/// Cryptographic proof of successful challenge response
+/// 
+/// Contains the signed response to an identity challenge, proving
+/// ownership of a private key without revealing it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChallengeProof {
+    /// ID of the challenge this proof responds to
+    pub challenge_id: String,
+    /// Additional proof data specific to challenge type
+    pub proof_data: Vec<u8>,
+    /// Ed25519 signature of the challenge data
+    pub signature: Vec<u8>,
+    /// Public key used for signature verification
+    pub public_key: Vec<u8>,
+    /// Timestamp when proof was created
+    pub timestamp: SystemTime,
+}
+
+impl ChallengeProof {
+    /// Verify this proof against a challenge and public key
+    /// 
+    /// Validates that the proof correctly responds to the challenge
+    /// and was signed by the claimed public key.
+    /// 
+    /// # Arguments
+    /// * `challenge` - Original challenge to verify against
+    /// * `public_key_bytes` - Expected public key for verification
+    /// 
+    /// # Returns
+    /// True if proof is valid, false otherwise
+    /// 
+    /// # Errors
+    /// Returns error if cryptographic verification fails
+    pub fn verify(&self, challenge: &IdentityChallenge, public_key_bytes: &[u8]) -> Result<bool> {
+        // Check if challenge IDs match
+        if self.challenge_id != challenge.challenge_id {
+            return Ok(false);
+        }
+        
+        // Check if public keys match
+        if self.public_key != public_key_bytes {
+            return Ok(false);
+        }
+        
+        // Check if challenge is still valid
+        if SystemTime::now() > challenge.expires_at {
+            return Ok(false);
+        }
+        
+        // Verify the signature of the challenge data
+        use ed25519_dalek::{PublicKey, Signature, Verifier};
+        
+        // Parse the public key
+        let public_key = PublicKey::from_bytes(&self.public_key)
+            .map_err(|e| P2PError::Identity(format!("Invalid public key in proof: {}", e)))?;
+        
+        // Parse the signature
+        let signature = Signature::from_bytes(&self.signature)
+            .map_err(|e| P2PError::Identity(format!("Invalid signature in proof: {}", e)))?;
+        
+        // Create the signed data: challenge_id + proof_data
+        let mut signed_data = challenge.challenge_id.as_bytes().to_vec();
+        signed_data.extend_from_slice(&self.proof_data);
+        
+        // Verify signature
+        match public_key.verify(&signed_data, &signature) {
+            Ok(()) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+}
+use crate::dht::Key;
 use crate::security::IPv6NodeID;
 use crate::network::P2PNode;
 use std::collections::HashMap;

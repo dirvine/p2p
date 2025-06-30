@@ -37,6 +37,14 @@ pub enum P2PError {
     #[error("Cryptography error: {0}")]
     Cryptography(String),
     
+    /// Identity management error (profiles, authentication, verification)
+    #[error("Identity error: {0}")]
+    Identity(String),
+    
+    /// Storage error (encryption, persistence, data integrity)
+    #[error("Storage error: {0}")]
+    Storage(String),
+    
     /// Invalid state error (operations in wrong state)
     #[error("Invalid state: {0}")]
     InvalidState(String),
