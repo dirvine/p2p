@@ -179,7 +179,16 @@ async fn init_network(
             }
             
             let mut net_guard = state.network.write().await;
-            *net_guard = Some(network_arc);
+            *net_guard = Some(network_arc.clone());
+            drop(net_guard); // Release the lock before calling other functions
+            
+            // STARTUP ADDRESS UPDATE: For now, skip automatic address updates
+            // In a production system, we would:
+            // 1. Check local storage for existing identities
+            // 2. Update their network addresses in DHT on startup
+            // 3. Re-sign with stored keypairs
+            // For demo purposes, we'll update addresses when users interact with the system
+            info!("Network startup complete - identity address updates will happen on user interaction");
             
             // Initialize with system contact
             let mut contacts = state.contacts.write().await;
@@ -625,19 +634,32 @@ async fn create_user_identity(
     display_name: String,
     three_word_address: String,
 ) -> Result<serde_json::Value, String> {
-    info!("Creating network identity: {} -> {}", display_name, three_word_address);
+    info!("Creating unique network identity: {} -> {}", display_name, three_word_address);
     
     // Get network for DHT operations
     let network_guard = state.network.read().await;
     let network = network_guard.as_ref()
         .ok_or_else(|| "Network not initialized. Please start P2P network first.".to_string())?;
     
+    // STEP 1: Check if display name is available (enforcing uniqueness)
+    match check_name_availability(network, &display_name).await {
+        Ok(true) => {
+            info!("Display name '{}' is available", display_name);
+        }
+        Ok(false) => {
+            return Err(format!("Display name '{}' is already taken. Please choose a different name.", display_name));
+        }
+        Err(e) => {
+            return Err(format!("Failed to check name availability: {}", e));
+        }
+    }
+    
     // Get identity manager
     let identity_manager_guard = state.identity_manager.read().await;
     let identity_manager = identity_manager_guard.as_ref()
         .ok_or_else(|| "Identity manager not initialized".to_string())?;
     
-    // Create cryptographic identity
+    // STEP 2: Create cryptographic identity
     match identity_manager.create_identity(
         display_name.clone(),
         three_word_address.clone(),
@@ -647,46 +669,38 @@ async fn create_user_identity(
         Ok(identity) => {
             info!("Cryptographic identity created: {}", identity.user_id);
             
-            // Create and publish profile to DHT
-            let mut profile = UserProfile::new(display_name.clone());
-            profile.user_id = identity.user_id.clone();
-            profile.public_key = identity.public_key.clone();
-            profile.created_at = identity.created_at;
-            profile.updated_at = std::time::SystemTime::now();
+            // STEP 3: Create keypair for signing (in production, this should be stored securely)
+            // For now, create a new keypair each time - this is not ideal for production
+            use ed25519_dalek::Keypair;
+            use rand::rngs::OsRng;
+            let keypair = Keypair::generate(&mut OsRng);
             
-            // Configure network discovery settings
-            profile.preferences.discovery.discoverable_by_name = true;
-            profile.preferences.discovery.discoverable_by_friends = true;
-            profile.preferences.discovery.allow_contact_requests = true;
-            profile.preferences.discovery.require_mutual_friends = false;
-            profile.preferences.discovery.listed_in_directory = true;
+            // STEP 4: Create signed identity packet with current network address
+            let signed_packet = match SignedIdentityPacket::create(
+                display_name.clone(),
+                identity.user_id.clone(),
+                identity.public_key.clone(),
+                three_word_address.clone(),
+                network,
+                &keypair,
+            ).await {
+                Ok(packet) => packet,
+                Err(e) => {
+                    return Err(format!("Failed to create signed identity packet: {}", e));
+                }
+            };
             
-            // Configure default permissions for P2P contacts
-            profile.preferences.default_permissions.can_see_display_name = true;
-            profile.preferences.default_permissions.can_see_avatar = true;
-            profile.preferences.default_permissions.can_see_status = true;
-            profile.preferences.default_permissions.can_see_contact_info = true;
-            profile.preferences.default_permissions.can_see_last_seen = true;
-            profile.preferences.default_permissions.can_see_custom_fields = false;
-            
-            // Configure privacy for P2P network
-            profile.preferences.privacy.require_proof_of_humanity = false;
-            profile.preferences.privacy.max_contact_request_age = std::time::Duration::from_secs(7 * 24 * 3600);
-            profile.preferences.privacy.enable_forward_secrecy = true;
-            profile.preferences.privacy.auto_rotate_keys = true;
-            profile.preferences.privacy.key_rotation_interval = std::time::Duration::from_secs(30 * 24 * 3600);
-            
-            // Publish identity to DHT network
-            match publish_identity_to_dht(network, &identity, &profile).await {
+            // STEP 5: Register signed identity in DHT by display name
+            match register_identity_by_name(network, &signed_packet).await {
                 Ok(_) => {
-                    info!("Identity published to DHT network successfully");
+                    info!("Unique identity registered for name: {}", display_name);
                 }
                 Err(e) => {
-                    warn!("Failed to publish identity to DHT: {} (continuing anyway)", e);
+                    return Err(format!("Failed to register identity: {}", e));
                 }
             }
             
-            // Register three-word address in DHT
+            // STEP 6: Also register three-word address mapping (for backwards compatibility)
             match register_three_word_address(network, &three_word_address, &identity.user_id).await {
                 Ok(_) => {
                     info!("Three-word address registered: {}", three_word_address);
@@ -1216,37 +1230,264 @@ fn create_frontend_protocol_handler<R: tauri::Runtime>() -> impl Fn(tauri::UriSc
 
 // ================ DHT Identity Management ================
 
-/// Publish user identity to DHT network
-async fn publish_identity_to_dht(
+/// Signed identity packet stored in DHT
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SignedIdentityPacket {
+    /// User's display name (as they want it shown)
+    display_name: String,
+    /// Unique user identifier
+    user_id: String,
+    /// Ed25519 public key for verification
+    public_key: Vec<u8>,
+    /// Current network address for reaching this user
+    current_network_address: NetworkAddress,
+    /// Three-word address for easy sharing
+    three_word_address: String,
+    /// Timestamp when packet was signed
+    timestamp: u64,
+    /// Ed25519 signature of the packet contents
+    signature: Vec<u8>,
+}
+
+/// Current network address information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct NetworkAddress {
+    /// Peer ID on the P2P network
+    peer_id: String,
+    /// Primary listen address
+    listen_addr: String,
+    /// All available multiaddresses
+    multiaddrs: Vec<String>,
+}
+
+impl SignedIdentityPacket {
+    /// Create a new signed identity packet
+    async fn create(
+        display_name: String,
+        user_id: String,
+        public_key: Vec<u8>,
+        three_word_address: String,
+        network: &Arc<P2PNode>,
+        keypair: &ed25519_dalek::Keypair,
+    ) -> Result<Self, String> {
+        // Get current network address
+        let listen_addrs = network.listen_addrs().await;
+        let primary_addr = listen_addrs.first()
+            .map(|addr| addr.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+            
+        let current_network_address = NetworkAddress {
+            peer_id: network.peer_id().to_string(),
+            listen_addr: primary_addr,
+            multiaddrs: listen_addrs.iter().map(|addr| addr.to_string()).collect(),
+        };
+        
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        // Create packet without signature first
+        let mut packet = Self {
+            display_name,
+            user_id,
+            public_key,
+            current_network_address,
+            three_word_address,
+            timestamp,
+            signature: Vec::new(),
+        };
+        
+        // Sign the packet
+        packet.sign(keypair)?;
+        
+        Ok(packet)
+    }
+    
+    /// Sign the identity packet
+    fn sign(&mut self, keypair: &ed25519_dalek::Keypair) -> Result<(), String> {
+        use ed25519_dalek::Signer;
+        
+        // Create signature data (everything except signature field)
+        let signature_data = serde_json::json!({
+            "display_name": self.display_name,
+            "user_id": self.user_id,
+            "public_key": self.public_key,
+            "current_network_address": self.current_network_address,
+            "three_word_address": self.three_word_address,
+            "timestamp": self.timestamp,
+        });
+        
+        let signature_bytes = serde_json::to_vec(&signature_data)
+            .map_err(|e| format!("Failed to serialize for signing: {}", e))?;
+        
+        let signature = keypair.sign(&signature_bytes);
+        self.signature = signature.to_bytes().to_vec();
+        
+        Ok(())
+    }
+    
+    /// Verify the packet signature
+    fn verify_signature(&self) -> Result<bool, String> {
+        use ed25519_dalek::{PublicKey, Signature, Verifier};
+        
+        // Reconstruct signature data
+        let signature_data = serde_json::json!({
+            "display_name": self.display_name,
+            "user_id": self.user_id,
+            "public_key": self.public_key,
+            "current_network_address": self.current_network_address,
+            "three_word_address": self.three_word_address,
+            "timestamp": self.timestamp,
+        });
+        
+        let signature_bytes = serde_json::to_vec(&signature_data)
+            .map_err(|e| format!("Failed to serialize for verification: {}", e))?;
+        
+        // Create public key from stored bytes
+        let public_key = PublicKey::from_bytes(&self.public_key)
+            .map_err(|e| format!("Invalid public key: {}", e))?;
+        
+        // Create signature from stored bytes
+        let signature = Signature::from_bytes(&self.signature)
+            .map_err(|e| format!("Invalid signature: {}", e))?;
+        
+        // Verify signature
+        match public_key.verify(&signature_bytes, &signature) {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+    
+    /// Check if packet is fresh (not too old)
+    fn is_fresh(&self, max_age_secs: u64) -> bool {
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        current_time.saturating_sub(self.timestamp) <= max_age_secs
+    }
+}
+
+/// Check if display name is available in DHT
+async fn check_name_availability(
     network: &Arc<P2PNode>,
-    identity: &UserIdentity,
-    profile: &UserProfile,
+    display_name: &str,
+) -> Result<bool, String> {
+    use saorsa_core::dht::Key;
+    use sha2::{Digest, Sha256};
+    
+    // Create DHT key from display name (case-insensitive)
+    let name_lower = display_name.to_lowercase();
+    let mut hasher = Sha256::new();
+    hasher.update(name_lower.as_bytes());
+    let key_hash: [u8; 32] = hasher.finalize().into();
+    let dht_key = Key::new(&key_hash);
+    
+    // Check if name exists in DHT
+    match network.dht_get(dht_key).await {
+        Ok(Some(_)) => Ok(false), // Name taken
+        Ok(None) => Ok(true),     // Name available
+        Err(e) => Err(format!("DHT lookup failed: {}", e)),
+    }
+}
+
+/// Register signed identity packet in DHT by display name
+async fn register_identity_by_name(
+    network: &Arc<P2PNode>,
+    packet: &SignedIdentityPacket,
 ) -> Result<(), String> {
     use saorsa_core::dht::Key;
     use sha2::{Digest, Sha256};
     
-    // Create DHT key from user ID
+    // Create DHT key from display name (case-insensitive)
+    let name_lower = packet.display_name.to_lowercase();
     let mut hasher = Sha256::new();
-    hasher.update(identity.user_id.as_bytes());
+    hasher.update(name_lower.as_bytes());
     let key_hash: [u8; 32] = hasher.finalize().into();
     let dht_key = Key::new(&key_hash);
     
-    // Serialize encrypted profile
-    let profile_data = match serde_json::to_vec(profile) {
+    // Serialize signed packet
+    let packet_data = match serde_json::to_vec(packet) {
         Ok(data) => data,
-        Err(e) => return Err(format!("Failed to serialize profile: {}", e)),
+        Err(e) => return Err(format!("Failed to serialize identity packet: {}", e)),
     };
     
     // Store in DHT
-    match network.dht_put(dht_key, profile_data).await {
+    match network.dht_put(dht_key, packet_data).await {
         Ok(_) => {
-            info!("Identity published to DHT successfully");
+            info!("Signed identity registered for name: {}", packet.display_name);
             Ok(())
         }
         Err(e) => {
-            error!("Failed to publish identity to DHT: {}", e);
+            error!("Failed to register identity in DHT: {}", e);
             Err(format!("DHT put failed: {}", e))
         }
+    }
+}
+
+/// Update network address in existing identity packet
+async fn update_network_address(
+    network: &Arc<P2PNode>,
+    display_name: &str,
+    keypair: &ed25519_dalek::Keypair,
+) -> Result<(), String> {
+    use saorsa_core::dht::Key;
+    use sha2::{Digest, Sha256};
+    
+    // Create DHT key from display name
+    let name_lower = display_name.to_lowercase();
+    let mut hasher = Sha256::new();
+    hasher.update(name_lower.as_bytes());
+    let key_hash: [u8; 32] = hasher.finalize().into();
+    let dht_key = Key::new(&key_hash);
+    
+    // Get existing packet
+    let existing_data = match network.dht_get(dht_key.clone()).await {
+        Ok(Some(data)) => data,
+        Ok(None) => return Err("Identity not found for address update".to_string()),
+        Err(e) => return Err(format!("Failed to retrieve identity: {}", e)),
+    };
+    
+    // Parse existing packet
+    let mut packet: SignedIdentityPacket = match serde_json::from_slice(&existing_data) {
+        Ok(p) => p,
+        Err(e) => return Err(format!("Failed to parse existing identity: {}", e)),
+    };
+    
+    // Update network address and timestamp
+    let listen_addrs = network.listen_addrs().await;
+    let primary_addr = listen_addrs.first()
+        .map(|addr| addr.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+        
+    packet.current_network_address = NetworkAddress {
+        peer_id: network.peer_id().to_string(),
+        listen_addr: primary_addr,
+        multiaddrs: listen_addrs.iter().map(|addr| addr.to_string()).collect(),
+    };
+    
+    packet.timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    
+    // Re-sign with updated data
+    packet.sign(keypair)?;
+    
+    // Store updated packet
+    let packet_data = match serde_json::to_vec(&packet) {
+        Ok(data) => data,
+        Err(e) => return Err(format!("Failed to serialize updated packet: {}", e)),
+    };
+    
+    match network.dht_put(dht_key, packet_data).await {
+        Ok(_) => {
+            info!("Network address updated for: {}", display_name);
+            Ok(())
+        }
+        Err(e) => Err(format!("Failed to update network address: {}", e)),
     }
 }
 
@@ -1444,6 +1685,52 @@ async fn lookup_user_by_id(
     }
 }
 
+/// Lookup user by exact display name from DHT
+async fn lookup_user_by_name(
+    network: &Arc<P2PNode>,
+    display_name: &str,
+) -> Result<Option<SignedIdentityPacket>, String> {
+    use saorsa_core::dht::Key;
+    use sha2::{Digest, Sha256};
+    
+    // Create DHT key from display name (case-insensitive)
+    let name_lower = display_name.to_lowercase();
+    let mut hasher = Sha256::new();
+    hasher.update(name_lower.as_bytes());
+    let key_hash: [u8; 32] = hasher.finalize().into();
+    let dht_key = Key::new(&key_hash);
+    
+    // Lookup in DHT
+    match network.dht_get(dht_key).await {
+        Ok(Some(data)) => {
+            // Parse signed identity packet
+            match serde_json::from_slice::<SignedIdentityPacket>(&data) {
+                Ok(packet) => {
+                    // Verify signature and freshness
+                    match packet.verify_signature() {
+                        Ok(true) => {
+                            if packet.is_fresh(24 * 3600) { // 24 hours freshness
+                                Ok(Some(packet))
+                            } else {
+                                warn!("Identity packet for '{}' is stale", display_name);
+                                Ok(Some(packet)) // Return anyway but could warn user
+                            }
+                        }
+                        Ok(false) => {
+                            warn!("Invalid signature for identity: {}", display_name);
+                            Err("Invalid identity signature".to_string())
+                        }
+                        Err(e) => Err(format!("Signature verification failed: {}", e))
+                    }
+                }
+                Err(e) => Err(format!("Failed to parse identity packet: {}", e)),
+            }
+        }
+        Ok(None) => Ok(None), // User not found
+        Err(e) => Err(format!("DHT lookup failed: {}", e)),
+    }
+}
+
 /// Search for users in the network by display name pattern
 #[tauri::command]
 async fn search_network_users(
@@ -1461,27 +1748,126 @@ async fn search_network_users(
     let network = network_guard.as_ref()
         .ok_or_else(|| "Network not initialized".to_string())?;
     
-    // For now, return placeholder results since we need to implement DHT search
-    // TODO: Implement proper DHT-based user search by iterating through known profiles
-    let results = vec![
-        serde_json::json!({
-            "user_id": "network_user_1",
-            "display_name": format!("Network User matching '{}'", query),
-            "three_word_address": "network.user.example",
-            "discoverable": true,
-            "match_score": 0.8
-        }),
-        serde_json::json!({
-            "user_id": "network_user_2", 
-            "display_name": format!("Another User with '{}'", query),
-            "three_word_address": "another.user.demo",
-            "discoverable": true,
-            "match_score": 0.6
-        })
-    ];
+    let mut results = Vec::new();
     
-    info!("Found {} potential matches for query: {}", results.len(), query);
+    // EXACT NAME LOOKUP: Try exact match first (case-insensitive)
+    match lookup_user_by_name(network, &query).await {
+        Ok(Some(packet)) => {
+            let mut match_score = 1.0; // Exact match
+            if packet.display_name.to_lowercase() == query.to_lowercase() {
+                match_score = 1.0;
+            } else {
+                match_score = 0.9; // Close match
+            }
+            
+            results.push(serde_json::json!({
+                "user_id": packet.user_id,
+                "display_name": packet.display_name,
+                "three_word_address": packet.three_word_address,
+                "current_network_address": packet.current_network_address,
+                "timestamp": packet.timestamp,
+                "discoverable": true,
+                "match_score": match_score,
+                "signature_valid": true
+            }));
+            info!("✅ Found exact match for: {}", query);
+        }
+        Ok(None) => {
+            info!("No exact match found for: {}", query);
+        }
+        Err(e) => {
+            warn!("Error during exact name lookup: {}", e);
+        }
+    }
+    
+    // PARTIAL NAME SEARCH: Try common variations if no exact match
+    if results.is_empty() {
+        let variations = vec![
+            query.to_lowercase(),
+            format!("{}s", query.to_lowercase()), // plural
+            query.chars().take(query.len().saturating_sub(1)).collect::<String>(), // remove last char
+        ];
+        
+        for variation in variations {
+            if variation.len() >= 2 {
+                match lookup_user_by_name(network, &variation).await {
+                    Ok(Some(packet)) => {
+                        // Calculate match score based on similarity
+                        let similarity = calculate_name_similarity(&query, &packet.display_name);
+                        if similarity > 0.6 {
+                            results.push(serde_json::json!({
+                                "user_id": packet.user_id,
+                                "display_name": packet.display_name,
+                                "three_word_address": packet.three_word_address,
+                                "current_network_address": packet.current_network_address,
+                                "timestamp": packet.timestamp,
+                                "discoverable": true,
+                                "match_score": similarity,
+                                "signature_valid": true
+                            }));
+                            info!("✅ Found partial match: {} (score: {:.2})", packet.display_name, similarity);
+                        }
+                    }
+                    Ok(None) => {} // No match for this variation
+                    Err(_) => {} // Error, continue trying other variations
+                }
+            }
+        }
+    }
+    
+    // Sort by match score (highest first)
+    results.sort_by(|a, b| {
+        let score_a = a["match_score"].as_f64().unwrap_or(0.0);
+        let score_b = b["match_score"].as_f64().unwrap_or(0.0);
+        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    
+    // Limit results to avoid overwhelming the UI
+    results.truncate(10);
+    
+    info!("Found {} matches for query: {}", results.len(), query);
     Ok(results)
+}
+
+/// Calculate similarity between two names (simple algorithm)
+fn calculate_name_similarity(query: &str, name: &str) -> f64 {
+    let query_lower = query.to_lowercase();
+    let name_lower = name.to_lowercase();
+    
+    // Exact match
+    if query_lower == name_lower {
+        return 1.0;
+    }
+    
+    // Contains query
+    if name_lower.contains(&query_lower) {
+        return 0.8;
+    }
+    
+    // Starts with query
+    if name_lower.starts_with(&query_lower) {
+        return 0.7;
+    }
+    
+    // Basic edit distance (simplified)
+    let max_len = std::cmp::max(query_lower.len(), name_lower.len());
+    if max_len == 0 {
+        return 1.0;
+    }
+    
+    let mut distance = 0;
+    let query_chars: Vec<char> = query_lower.chars().collect();
+    let name_chars: Vec<char> = name_lower.chars().collect();
+    
+    for i in 0..std::cmp::min(query_chars.len(), name_chars.len()) {
+        if query_chars[i] != name_chars[i] {
+            distance += 1;
+        }
+    }
+    distance += (query_chars.len() as i32 - name_chars.len() as i32).abs();
+    
+    let similarity = 1.0 - (distance as f64 / max_len as f64);
+    if similarity > 0.5 { similarity } else { 0.0 }
 }
 
 // ================ Mobile Lifecycle Commands ================
