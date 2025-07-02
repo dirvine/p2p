@@ -266,25 +266,28 @@ mod tests {
     
     #[test]
     fn test_hybrid_key_exchange() {
-        // Alice (initiator)
+        // Alice (initiator) - she will receive the ciphertext
         let mut alice = HybridKeyExchange::new(ml_kem::KeyExchangeRole::Initiator);
         let alice_ml_kem_public = alice.ml_kem_state.generate_keypair().unwrap();
         let alice_x25519_public = alice.generate_x25519_keypair().unwrap();
         
-        // Bob (responder)
+        // Bob (responder) - he will create the ciphertext
         let mut bob = HybridKeyExchange::new(ml_kem::KeyExchangeRole::Responder);
         let bob_x25519_public = bob.generate_x25519_keypair().unwrap();
         
-        // Bob sets Alice's keys
+        // Bob sets Alice's ML-KEM public key (he'll use it to encapsulate)
         bob.ml_kem_state.set_remote_public_key(alice_ml_kem_public);
         bob.set_remote_x25519_public(alice_x25519_public).unwrap();
         
-        // Bob completes ML-KEM
-        let (ciphertext, _) = bob.ml_kem_state.complete_as_responder().unwrap();
+        // Bob completes ML-KEM (encapsulates using Alice's public key)
+        let (ciphertext, bob_ml_kem_secret) = bob.ml_kem_state.complete_as_responder().unwrap();
         
-        // Alice completes exchanges
-        alice.ml_kem_state.complete_as_initiator(&ciphertext).unwrap();
+        // Alice completes exchanges (decapsulates using her private key)
+        let alice_ml_kem_secret = alice.ml_kem_state.complete_as_initiator(&ciphertext).unwrap();
         alice.set_remote_x25519_public(bob_x25519_public).unwrap();
+        
+        // Verify ML-KEM secrets match
+        assert_eq!(alice_ml_kem_secret.as_bytes(), bob_ml_kem_secret.as_bytes());
         
         // Derive hybrid secrets
         let alice_secret = alice.derive_hybrid_secret().unwrap();

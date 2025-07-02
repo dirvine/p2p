@@ -5,7 +5,10 @@
 use crate::{P2PError, Result, dht::Key, security::IPv6NodeID};
 use ed25519_dalek::{PublicKey as Ed25519PublicKey, Keypair, Signer};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::SystemTime;
+use tokio::sync::RwLock;
 use tracing::info;
 
 // Core identity types
@@ -965,6 +968,8 @@ impl ChallengeProof {
 pub struct IdentityManager {
     /// Configuration for the identity manager
     config: IdentityManagerConfig,
+    /// Stored identities
+    identities: Arc<RwLock<HashMap<String, UserIdentity>>>,
 }
 
 /// Identity manager configuration
@@ -988,7 +993,10 @@ impl Default for IdentityManagerConfig {
 impl IdentityManager {
     /// Create a new identity manager
     pub fn new(config: IdentityManagerConfig) -> Self {
-        Self { config }
+        Self { 
+            config,
+            identities: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
     
     /// Create a new user identity
@@ -1000,19 +1008,38 @@ impl IdentityManager {
         _ipv6_keypair: Option<&Keypair>,
     ) -> Result<UserIdentity> {
         let (identity, _keypair) = UserIdentity::new(display_name, three_word_address)?;
+        
+        // Store the identity in the manager
+        let mut identities = self.identities.write().await;
+        identities.insert(identity.user_id.clone(), identity.clone());
+        
         Ok(identity)
     }
     
     /// Export identity for backup
-    pub async fn export_identity(&self, _user_id: &str) -> Result<Vec<u8>> {
-        // TODO: Implement identity export
-        Ok(vec![])
+    pub async fn export_identity(&self, user_id: &str) -> Result<Vec<u8>> {
+        // For now, return a simple serialized format
+        // In production, this would encrypt the identity data
+        let identities = self.identities.read().await;
+        if let Some(identity) = identities.get(user_id) {
+            // Use serde to serialize the identity
+            let serialized = serde_json::to_vec(identity)?;
+            Ok(serialized)
+        } else {
+            Err(P2PError::Identity("Identity not found".to_string()))
+        }
     }
     
     /// Import identity from backup
-    pub async fn import_identity(&self, _data: &[u8], _password: &str) -> Result<UserIdentity> {
-        // TODO: Implement identity import
-        UserIdentity::new("Imported User".to_string(), "imported.user.test".to_string()).map(|(identity, _)| identity)
+    pub async fn import_identity(&self, data: &[u8], _password: &str) -> Result<UserIdentity> {
+        // Parse the serialized identity
+        let identity: UserIdentity = serde_json::from_slice(data)?;
+        
+        // Store the imported identity
+        let mut identities = self.identities.write().await;
+        identities.insert(identity.user_id.clone(), identity.clone());
+        
+        Ok(identity)
     }
     
     /// Create challenge for identity verification

@@ -837,13 +837,13 @@ fn create_test_node_config(peer_id: &str, port: usize) -> Result<NodeConfig> {
         keep_alive_interval: Duration::from_secs(30),
         max_connections: 100,
         max_incoming_connections: 50,
-        dht_config: ant_core::network::DHTConfig {
+        dht_config: saorsa_core::network::DHTConfig {
             k_value: 8, // K=8 replication
             alpha_value: 3,
             record_ttl: Duration::from_secs(3600),
             refresh_interval: Duration::from_secs(600),
         },
-        security_config: ant_core::network::SecurityConfig::default(),
+        security_config: saorsa_core::network::SecurityConfig::default(),
         production_config: None,
         bootstrap_cache_config: None,
         identity_config: None,
@@ -856,7 +856,7 @@ fn create_dht_network_config(peer_id: &str, bootstrap_nodes: &[BootstrapNode]) -
     
     Ok(DhtNetworkConfig {
         local_peer_id: peer_id.to_string(),
-        dht_config: ant_core::dht::DHTConfig {
+        dht_config: saorsa_core::dht::DHTConfig {
             replication_factor: 8, // K=8 replication
             bucket_size: 8,
             alpha: 3,

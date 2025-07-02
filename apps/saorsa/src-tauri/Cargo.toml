@@ -11,6 +11,7 @@ documentation = "https://github.com/dirvine/p2p/tree/main/apps/desktop-tauri"
 readme = "README.md"
 keywords = ["p2p", "messaging", "privacy", "decentralized", "tauri"]
 categories = ["gui", "network-programming", "cryptography"]
+default-run = "saorsa-app"
 include = [
     "src/**/*",
     "Cargo.toml",
@@ -73,9 +74,69 @@ bincode = "1.3"
 aes-gcm = "0.10"
 sha2 = "0.10"
 rand.workspace = true
+zeroize = { version = "1.7", features = ["derive"] }
+argon2 = "0.5"
+
+# Passkey support
+keyring = "2.0"
+
+# Platform-specific dependencies
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2"
+objc-foundation = "0.1"
+objc_id = "0.1"
+block = "0.1"
+dispatch = "0.2"
+core-foundation = "0.9"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.56", features = [
+    "Security_Credentials_UI",
+    "Foundation",
+    "Foundation_Collections",
+] }
+
+# Linux uses system tools, no special deps needed
 
 [dev-dependencies]
 # Test dependencies
 tracing-subscriber = "0.3"
 tokio-test = "0.4"
+tempfile = "3.8"
+serial_test = "3.0"
+criterion = { version = "0.5", features = ["async_tokio"] }
+zeroize = "1.7"
+
+# Test configurations
+[[test]]
+name = "lib_tests"
+path = "tests/lib_tests.rs"
+
+[[test]]
+name = "passkey_auth_tests"
+path = "tests/passkey_auth_tests.rs"
+
+[[test]]
+name = "identity_storage_tests"
+path = "tests/identity_storage_tests.rs"
+
+[[test]]
+name = "integration_tests"
+path = "tests/integration_tests.rs"
+
+[[test]]
+name = "frontend_tests"
+path = "tests/frontend_tests.rs"
+
+[[test]]
+name = "performance_tests"
+path = "tests/performance_tests.rs"
+
+[[test]]
+name = "security_tests"
+path = "tests/security_tests.rs"
+
+[[test]]
+name = "passkey_integration_tests"
+path = "tests/passkey_integration_tests.rs"
 

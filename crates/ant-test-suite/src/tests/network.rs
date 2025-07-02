@@ -55,7 +55,7 @@ impl NetworkTests {
             keep_alive_interval: Duration::from_secs(30),
             max_connections: 100,
             max_incoming_connections: 50,
-            dht_config: ant_core::network::DHTConfig::default(),
+            dht_config: saorsa_core::network::DHTConfig::default(),
             security_config: Default::default(),
             production_config: None,
             bootstrap_cache_config: None,
@@ -350,7 +350,7 @@ impl NetworkTests {
             keep_alive_interval: Duration::from_secs(15),
             max_connections: 100,
             max_incoming_connections: 50,
-            dht_config: ant_core::network::DHTConfig::default(),
+            dht_config: saorsa_core::network::DHTConfig::default(),
             security_config: Default::default(),
             production_config: None,
             bootstrap_cache_config: None,
@@ -380,7 +380,7 @@ impl NetworkTests {
         
         for (key_str, data) in test_data {
             let start_time = std::time::Instant::now();
-            let key = ant_core::dht::Key::new(key_str.as_bytes());
+            let key = saorsa_core::dht::Key::new(key_str.as_bytes());
             
             // Store data on first node
             let storage_node = &nodes[0];
@@ -461,7 +461,7 @@ impl NetworkTests {
         
         let start_time = std::time::Instant::now();
         let consistency_data = format!("consistency_test_{}", nodes.len()).into_bytes();
-        let key = ant_core::dht::Key::new(b"consistency_test_key");
+        let key = saorsa_core::dht::Key::new(b"consistency_test_key");
         
         // Store same data on multiple nodes
         let mut storage_successes = 0;
@@ -543,7 +543,7 @@ impl NetworkTests {
         // For now, just simulate by testing data access patterns
         // In a real test, we would simulate network partitions or node failures
         
-        let resilience_key = ant_core::dht::Key::new(b"resilience_test");
+        let resilience_key = saorsa_core::dht::Key::new(b"resilience_test");
         let resilience_data = b"Network resilience test data".to_vec();
         
         // Store data on multiple nodes

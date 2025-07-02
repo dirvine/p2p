@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saorsa Passkey Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .demo-container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            max-width: 600px;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .demo-header {
+            background: linear-gradient(135deg, #3B82F6, #1D4ED8);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+
+        .demo-header h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .demo-header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .demo-content {
+            padding: 40px 30px;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .feature-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .feature-card h3 {
+            color: #1e293b;
+            margin-bottom: 8px;
+        }
+
+        .feature-card p {
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+
+        .demo-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        .demo-btn {
+            background: #3B82F6;
+            color: white;
+            border: none;
+            padding: 15px 20px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .demo-btn:hover {
+            background: #2563EB;
+            transform: translateY(-1px);
+        }
+
+        .demo-btn:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .demo-btn.secondary {
+            background: #64748b;
+        }
+
+        .demo-btn.secondary:hover {
+            background: #475569;
+        }
+
+        .status-display {
+            background: #f1f5f9;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: #334155;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .status-display h4 {
+            margin-bottom: 10px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        .environment-warning {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #92400e;
+        }
+
+        .environment-warning strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .demo-header {
+                padding: 30px 20px;
+            }
+
+            .demo-content {
+                padding: 30px 20px;
+            }
+
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <div class="demo-header">
+            <h1>🔐 Saorsa Passkey Demo</h1>
+            <p>Experience secure biometric authentication</p>
+        </div>
+
+        <div class="demo-content">
+            <div id="tauri-warning" class="environment-warning">
+                <strong>⚠️ Demo Mode</strong>
+                This demo requires the full Saorsa Tauri application to function. 
+                In a real environment, passkeys would integrate with your device's biometric authentication.
+            </div>
+
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3>Biometric Security</h3>
+                    <p>TouchID, Windows Hello, or Linux authentication</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">🔑</div>
+                    <h3>Backup Access</h3>
+                    <p>Three-word address + PIN fallback method</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">🛡️</div>
+                    <h3>Local Storage</h3>
+                    <p>Credentials secured in OS keychain</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">🌐</div>
+                    <h3>Cross-Platform</h3>
+                    <p>Works on macOS, Windows, and Linux</p>
+                </div>
+            </div>
+
+            <div class="demo-actions">
+                <button class="demo-btn" id="check-availability" onclick="checkPasskeyAvailability()">
+                    🔍 Check Passkey Availability
+                </button>
+
+                <button class="demo-btn" id="setup-passkey" onclick="setupPasskey()" disabled>
+                    🔐 Setup Biometric Authentication
+                </button>
+
+                <button class="demo-btn" id="authenticate" onclick="authenticateWithPasskey()" disabled>
+                    ✅ Authenticate with Passkey
+                </button>
+
+                <button class="demo-btn secondary" id="backup-auth" onclick="authenticateWithBackup()" disabled>
+                    🔑 Authenticate with Backup
+                </button>
+
+                <button class="demo-btn secondary" onclick="showTechnicalDetails()">
+                    📋 View Technical Details
+                </button>
+            </div>
+
+            <div id="status-display" class="status-display" style="display: none;">
+                <h4>Status & Logs:</h4>
+                <div id="status-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Demo state
+        let demoState = {
+            isAvailable: false,
+            hasPasskey: false,
+            platform: 'demo',
+            logs: []
+        };
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}`;
+            demoState.logs.push(logEntry);
+            
+            const statusDisplay = document.getElementById('status-display');
+            const statusContent = document.getElementById('status-content');
+            
+            statusDisplay.style.display = 'block';
+            statusContent.innerHTML = demoState.logs.join('\n');
+            statusContent.scrollTop = statusContent.scrollHeight;
+            
+            console.log(logEntry);
+        }
+
+        function updateButtonStates() {
+            document.getElementById('setup-passkey').disabled = !demoState.isAvailable || demoState.hasPasskey;
+            document.getElementById('authenticate').disabled = !demoState.hasPasskey;
+            document.getElementById('backup-auth').disabled = !demoState.hasPasskey;
+        }
+
+        function checkPasskeyAvailability() {
+            log('Checking passkey availability...');
+            
+            // Simulate checking Tauri environment
+            if (typeof window.__TAURI__ !== 'undefined') {
+                log('Tauri environment detected');
+                
+                // In real implementation, this would call:
+                // window.__TAURI__.core.invoke('check_passkey_availability')
+                
+                setTimeout(() => {
+                    demoState.isAvailable = true;
+                    demoState.platform = getPlatformName();
+                    log(`Passkeys available on ${demoState.platform}`, 'success');
+                    updateButtonStates();
+                }, 1000);
+            } else {
+                log('Demo mode: Simulating passkey availability', 'warning');
+                setTimeout(() => {
+                    demoState.isAvailable = true;
+                    demoState.platform = 'Demo Platform';
+                    log(`Demo: Passkeys would be available on ${getPlatformName()}`, 'success');
+                    updateButtonStates();
+                }, 1000);
+            }
+        }
+
+        function setupPasskey() {
+            log('Setting up passkey with biometric authentication...');
+            
+            // Simulate the setup process
+            const steps = [
+                'Validating backup password...',
+                'Generating Ed25519 key pair...',
+                'Requesting biometric enrollment...',
+                'Storing credentials in OS keychain...',
+                'Passkey setup completed!'
+            ];
+            
+            let stepIndex = 0;
+            const interval = setInterval(() => {
+                if (stepIndex < steps.length - 1) {
+                    log(steps[stepIndex]);
+                    stepIndex++;
+                } else {
+                    log(steps[stepIndex], 'success');
+                    demoState.hasPasskey = true;
+                    updateButtonStates();
+                    clearInterval(interval);
+                }
+            }, 800);
+        }
+
+        function authenticateWithPasskey() {
+            log('Initiating biometric authentication...');
+            
+            // Simulate biometric prompt
+            setTimeout(() => {
+                log('Biometric prompt displayed');
+                log('User authenticated successfully', 'success');
+                log('Generated authentication signature');
+                log('Derived encryption key from signature');
+                log('Identity unlocked!', 'success');
+            }, 1500);
+        }
+
+        function authenticateWithBackup() {
+            log('Backup authentication requested');
+            
+            // Simple prompt for demo
+            const words = prompt('Enter three words (space-separated):');
+            const pin = prompt('Enter PIN:');
+            
+            if (words && pin) {
+                log(`Validating three words: ${words}`);
+                log('Verifying PIN...');
+                setTimeout(() => {
+                    log('Backup authentication successful', 'success');
+                    log('Derived encryption key from backup credentials');
+                    log('Identity unlocked via backup method!', 'success');
+                }, 1000);
+            } else {
+                log('Backup authentication canceled', 'warning');
+            }
+        }
+
+        function showTechnicalDetails() {
+            const details = `
+🔐 PASSKEY AUTHENTICATION ARCHITECTURE
+
+Platform Support:
+• macOS: TouchID via Security Framework
+• Windows: Windows Hello via WinRT APIs  
+• Linux: Polkit authentication dialogs
+
+Security Features:
+• Ed25519 cryptographic signatures
+• OS keychain credential storage
+• Random challenge-response authentication
+• Key derivation from biometric signatures
+• Three-word address + PIN backup method
+
+Implementation Details:
+• Rust backend with platform-specific modules
+• Tauri commands for frontend integration
+• WebAuthn-inspired authentication flow
+• Offline-first design (no network dependency)
+• Cross-platform compatibility layer
+
+File Structure:
+• src-tauri/src/passkey_auth.rs - Main module
+• src-tauri/src/platform/ - Platform implementations
+• src/passkey-auth.js - Frontend integration
+• tests/passkey_integration_tests.rs - Test suite
+
+Dependencies:
+• keyring - OS keychain access
+• ed25519-dalek - Cryptographic signatures
+• Platform-specific: objc (macOS), winapi (Windows), polkit (Linux)
+            `;
+            
+            alert(details.trim());
+        }
+
+        function getPlatformName() {
+            const platform = navigator.platform;
+            if (platform.includes('Mac')) return 'macOS (TouchID)';
+            if (platform.includes('Win')) return 'Windows (Windows Hello)';
+            if (platform.includes('Linux')) return 'Linux (Polkit)';
+            return 'Unknown Platform';
+        }
+
+        // Initialize demo
+        document.addEventListener('DOMContentLoaded', () => {
+            log('Passkey demo initialized');
+            log('Click "Check Passkey Availability" to begin');
+            
+            // Hide Tauri warning if actually in Tauri
+            if (typeof window.__TAURI__ !== 'undefined') {
+                document.getElementById('tauri-warning').style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

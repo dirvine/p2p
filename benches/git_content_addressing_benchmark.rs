@@ -313,7 +313,7 @@ fn benchmark_storage_operations(c: &mut Criterion) {
             let obj = GitObject::new(
                 ObjectType::Blob,
                 content,
-                ant_core::DataAccessLevel::Public {
+                saorsa_core::DataAccessLevel::Public {
                     signature: Default::default(),
                     content_hash: [0u8; 32],
                 },
@@ -331,7 +331,7 @@ fn benchmark_storage_operations(c: &mut Criterion) {
         let obj = GitObject::new(
             ObjectType::Blob,
             content,
-            ant_core::DataAccessLevel::Public {
+            saorsa_core::DataAccessLevel::Public {
                 signature: Default::default(),
                 content_hash: [0u8; 32],
             },
@@ -402,8 +402,8 @@ impl MockDhtStorage {
     }
 }
 
-impl ant_core::DhtStorageProvider for MockDhtStorage {
-    async fn store_secure_record(&self, _record: ant_core::EnhancedDhtRecord) -> ant_core::GitResult<()> {
+impl saorsa_core::DhtStorageProvider for MockDhtStorage {
+    async fn store_secure_record(&self, _record: saorsa_core::EnhancedDhtRecord) -> saorsa_core::GitResult<()> {
         // Simulate minimal storage latency
         tokio::time::sleep(tokio::time::Duration::from_micros(10)).await;
         Ok(())
@@ -411,10 +411,10 @@ impl ant_core::DhtStorageProvider for MockDhtStorage {
     
     async fn get_secure_record_with_k_consistency(
         &self,
-        _key: &ant_core::Key,
+        _key: &saorsa_core::Key,
         _requester: &str,
-        _context: &ant_core::AccessContext,
-    ) -> ant_core::GitResult<Option<ant_core::EnhancedDhtRecord>> {
+        _context: &saorsa_core::AccessContext,
+    ) -> saorsa_core::GitResult<Option<saorsa_core::EnhancedDhtRecord>> {
         // Simulate minimal retrieval latency
         tokio::time::sleep(tokio::time::Duration::from_micros(5)).await;
         Ok(None) // Return None for benchmarking (no actual data needed)
@@ -460,7 +460,7 @@ mod benchmark_tests {
         // Test multiple operations
         for _ in 0..100 {
             let _ = storage.store_secure_record(
-                ant_core::EnhancedDhtRecord::default()
+                saorsa_core::EnhancedDhtRecord::default()
             ).await;
         }
         

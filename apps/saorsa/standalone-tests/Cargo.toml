@@ -1,0 +1,24 @@
+[package]
+name = "saorsa-standalone-tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Core dependencies without Tauri
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1.0", features = ["v4"] }
+base64 = "0.22"
+ed25519-dalek = { version = "2.1", features = ["serde", "rand_core"] }
+aes-gcm = "0.10"
+sha2 = "0.10"
+rand = "0.8"
+anyhow = "1.0"
+tempfile = "3.8"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[workspace]

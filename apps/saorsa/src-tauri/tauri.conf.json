@@ -3,25 +3,10 @@
   "version": "0.2.7",
   "identifier": "com.saorsa.app",
   "build": {
-    "devUrl": "http://localhost:8080",
     "frontendDist": "../src"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Saorsa",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 800,
-        "minHeight": 600,
-        "resizable": true,
-        "maximized": false,
-        "decorations": true,
-        "alwaysOnTop": false,
-        "skipTaskbar": false,
-        "theme": "auto"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }
@@ -36,13 +21,7 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "iOS": {
-      "minimum-system-version": "13.0"
-    },
-    "android": {
-      "min-sdk-version": 24
-    }
+    ]
   },
   "plugins": {}
 }

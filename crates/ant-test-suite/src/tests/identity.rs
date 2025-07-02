@@ -138,7 +138,7 @@ impl IdentityTests {
             // Test preferences serialization
             match serde_json::to_string(&preferences) {
                 Ok(serialized) => {
-                    match serde_json::from_str::<ant_core::identity::manager::UserPreferences>(&serialized) {
+                    match serde_json::from_str::<saorsa_core::identity::manager::UserPreferences>(&serialized) {
                         Ok(deserialized) => {
                             ctx.log_info(&format!("✅ Preferences serialization verified (config {})", i + 1));
                             results.push(VerificationResult::success(start_time.elapsed())

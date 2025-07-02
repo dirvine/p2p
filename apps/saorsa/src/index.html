@@ -6,10 +6,202 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Saorsa Professional - Secure Collaboration Suite</title>
     <script src="main.js" defer></script>
+    <script src="passkey-auth.js" defer></script>
 </head>
 
 <body>
     <div id="app" class="app-container">
+        <!-- Welcome Screen (shown for first-time users) -->
+        <div id="welcome-screen" class="welcome-screen">
+            <div class="welcome-container">
+                <div class="welcome-header">
+                    <div class="welcome-logo">
+                        <svg width="64" height="64" viewBox="0 0 32 32" class="logo-icon">
+                            <circle cx="16" cy="16" r="14" fill="#3B82F6" opacity="0.1"/>
+                            <path d="M16 8 L8 16 L16 24 L24 16 Z" fill="#3B82F6"/>
+                        </svg>
+                        <h1>Welcome to Saorsa</h1>
+                    </div>
+                    <p class="welcome-subtitle">Secure, decentralized communication with cryptographic identity verification</p>
+                </div>
+
+                <div class="welcome-content">
+                    <div class="welcome-step active" id="welcome-step-1">
+                        <h2>Create Your Identity</h2>
+                        <p>Your identity is secured with Ed25519 cryptographic signatures and stored locally on your device. Choose a unique name that others can use to find you on the network.</p>
+                        
+                        <div class="identity-form">
+                            <div class="form-group">
+                                <label class="form-label" for="welcome-display-name">Display Name</label>
+                                <input 
+                                    type="text" 
+                                    id="welcome-display-name" 
+                                    class="form-input" 
+                                    placeholder="Enter your display name"
+                                    autocomplete="off"
+                                />
+                                <div id="welcome-name-availability" class="name-availability"></div>
+                                <p class="form-help">This name will be registered globally on the network and cannot be changed later.</p>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label" for="welcome-bio">Bio (Optional)</label>
+                                <textarea 
+                                    id="welcome-bio" 
+                                    class="form-input form-textarea" 
+                                    placeholder="Tell others about yourself..."
+                                    rows="3"
+                                ></textarea>
+                            </div>
+
+                            <div class="welcome-actions">
+                                <button class="btn btn-primary" id="create-identity-btn" onclick="createIdentityFromWelcome()" disabled>
+                                    Create My Identity
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="welcome-step" id="welcome-step-2">
+                        <h2>Identity Created!</h2>
+                        <div class="success-message">
+                            <div class="success-icon">✅</div>
+                            <p>Your cryptographically signed identity has been created and registered on the network.</p>
+                        </div>
+                        
+                        <div class="identity-summary">
+                            <div class="summary-item">
+                                <label>Display Name:</label>
+                                <span id="created-display-name">--</span>
+                            </div>
+                            <div class="summary-item">
+                                <label>Three-word Address:</label>
+                                <span id="created-address">--</span>
+                            </div>
+                            <div class="summary-item">
+                                <label>User ID:</label>
+                                <span id="created-user-id">--</span>
+                            </div>
+                        </div>
+
+                        <div class="welcome-actions">
+                            <button class="btn btn-primary" onclick="proceedToSecuritySetup()">
+                                Next: Setup Security
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="welcome-step" id="welcome-step-3">
+                        <h2>🔐 Secure Your Identity</h2>
+                        <p>Choose how you want to securely access Saorsa. We recommend setting up biometric authentication for convenience and security.</p>
+                        
+                        <div id="passkey-availability-check" class="security-status">
+                            <div class="status-indicator">
+                                <div class="spinner"></div>
+                                <span>Checking biometric availability...</span>
+                            </div>
+                        </div>
+                        
+                        <div id="security-options" class="security-options hidden">
+                            <div class="security-option recommended" id="biometric-option">
+                                <div class="option-header">
+                                    <div class="option-icon">🔐</div>
+                                    <div class="option-content">
+                                        <h3>Biometric Authentication</h3>
+                                        <p id="biometric-description">Use your device's biometric authentication</p>
+                                        <div class="recommendation-badge">Recommended</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="backup-setup-section" id="backup-setup">
+                                    <h4>Backup Access Method</h4>
+                                    <p>Create a backup method using three words and PIN for secure access when biometrics aren't available.</p>
+                                    
+                                    <div class="form-group">
+                                        <label class="form-label">Three Words</label>
+                                        <div class="three-words-input">
+                                            <input type="text" id="backup-word1" class="form-input" placeholder="First word" autocomplete="off" />
+                                            <input type="text" id="backup-word2" class="form-input" placeholder="Second word" autocomplete="off" />
+                                            <input type="text" id="backup-word3" class="form-input" placeholder="Third word" autocomplete="off" />
+                                        </div>
+                                        <p class="form-help">Choose three memorable words</p>
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label class="form-label" for="backup-pin">Backup PIN</label>
+                                        <input type="password" id="backup-pin" class="form-input" placeholder="Enter a secure PIN (8+ chars)" />
+                                        <p class="form-help">This PIN will be used for backup access and encryption</p>
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label class="form-label" for="backup-pin-confirm">Confirm PIN</label>
+                                        <input type="password" id="backup-pin-confirm" class="form-input" placeholder="Confirm your PIN" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="security-option" id="backup-only-option">
+                                <div class="option-header">
+                                    <div class="option-icon">🔑</div>
+                                    <div class="option-content">
+                                        <h3>Backup Access Only</h3>
+                                        <p>Use three words and PIN authentication only</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="welcome-actions" id="security-actions">
+                            <button class="btn btn-primary" id="setup-biometric-btn" onclick="setupBiometricAuth()" disabled>
+                                🔐 Setup Biometric + Backup
+                            </button>
+                            <button class="btn btn-secondary" id="setup-backup-only-btn" onclick="setupBackupOnlyAuth()" disabled>
+                                🔑 Setup Backup Only
+                            </button>
+                            <button class="btn btn-ghost" onclick="skipSecuritySetup()">
+                                Skip for Now
+                            </button>
+                        </div>
+
+                        <div id="security-setup-status" class="status-message hidden"></div>
+                    </div>
+
+                    <div class="welcome-step" id="welcome-step-4">
+                        <h2>🎉 Welcome to Saorsa!</h2>
+                        <div class="success-message">
+                            <div class="success-icon">🚀</div>
+                            <p>Your secure identity is ready and your authentication is configured.</p>
+                        </div>
+                        
+                        <div class="setup-summary">
+                            <div class="summary-item">
+                                <label>Identity:</label>
+                                <span id="final-display-name">--</span>
+                            </div>
+                            <div class="summary-item">
+                                <label>Address:</label>
+                                <span id="final-address">--</span>
+                            </div>
+                            <div class="summary-item">
+                                <label>Security:</label>
+                                <span id="final-security-method">--</span>
+                            </div>
+                        </div>
+
+                        <div class="welcome-actions">
+                            <button class="btn btn-primary" onclick="completeWelcome()">
+                                Start Using Saorsa
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="welcome-footer">
+                    <p>Your identity is stored securely in <code>~/.local/saorsa</code></p>
+                </div>
+            </div>
+        </div>
+
         <!-- Top Navigation Bar -->
         <nav class="top-nav">
             <div class="nav-left">
@@ -46,7 +238,7 @@
             </div>
             
             <div class="nav-right">
-                <button class="nav-action" title="Search">
+                <button class="nav-action" title="Search Users" onclick="showSearchModal()">
                     <svg width="20" height="20" viewBox="0 0 20 20">
                         <path d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" fill="currentColor"/>
                     </svg>
@@ -70,7 +262,11 @@
                             <div class="user-role">Team Leader</div>
                         </div>
                         <div class="dropdown-divider"></div>
-                        <a href="#" class="dropdown-item">Profile Settings</a>
+                        <a href="#" class="dropdown-item" onclick="showProfileModal()">Profile Settings</a>
+                        <a href="#" class="dropdown-item" onclick="showIdentityModal()">Identity Management</a>
+                        <a href="#" class="dropdown-item" onclick="showSecuritySettingsModal()">🔐 Security Settings</a>
+                        <a href="#" class="dropdown-item" onclick="resetIdentity()">Create New Identity</a>
+                        <div class="dropdown-divider"></div>
                         <a href="#" class="dropdown-item">Organization</a>
                         <a href="#" class="dropdown-item">Teams</a>
                         <div class="dropdown-divider"></div>
@@ -495,6 +691,194 @@
         </aside>
     </div>
 
-    <!-- Modals and overlays will be added here -->
+    <!-- Identity Management Modals -->
+    
+    <!-- Profile Settings Modal -->
+    <div id="profile-modal" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeModal('profile-modal')"></div>
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2>Profile Settings</h2>
+                <button class="modal-close" onclick="closeModal('profile-modal')">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="profile-form">
+                    <div class="form-group">
+                        <label>Display Name</label>
+                        <input type="text" id="profile-display-name" class="form-input" placeholder="Your display name">
+                        <div class="name-availability" id="name-availability" style="display: none;"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Three-Word Address</label>
+                        <input type="text" id="profile-three-word" class="form-input" placeholder="your.unique.address">
+                    </div>
+                    <div class="form-group">
+                        <label>Status Message</label>
+                        <input type="text" id="profile-status" class="form-input" placeholder="What's your status?">
+                    </div>
+                    <div class="form-group">
+                        <label>Bio</label>
+                        <textarea id="profile-bio" class="form-textarea" placeholder="Tell others about yourself..."></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('profile-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveProfile()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Identity Management Modal -->
+    <div id="identity-modal" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeModal('identity-modal')"></div>
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2>Identity Management</h2>
+                <button class="modal-close" onclick="closeModal('identity-modal')">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="identity-tabs">
+                    <button class="tab-btn active" onclick="switchIdentityTab('overview')">Overview</button>
+                    <button class="tab-btn" onclick="switchIdentityTab('create')">Create New</button>
+                    <button class="tab-btn" onclick="switchIdentityTab('backup')">Backup</button>
+                </div>
+                
+                <!-- Overview Tab -->
+                <div id="identity-overview" class="tab-content active">
+                    <div class="identity-card">
+                        <div class="identity-header">
+                            <div class="identity-avatar">
+                                <div class="avatar-placeholder" id="identity-avatar">--</div>
+                            </div>
+                            <div class="identity-info">
+                                <h3 id="identity-display-name">No Identity</h3>
+                                <p id="identity-three-word">---.---.---</p>
+                                <span class="verification-badge" id="verification-status">Not Verified</span>
+                            </div>
+                        </div>
+                        
+                        <div class="identity-details">
+                            <div class="detail-item">
+                                <label>User ID</label>
+                                <span id="identity-user-id" class="detail-value">--</span>
+                            </div>
+                            <div class="detail-item">
+                                <label>Public Key</label>
+                                <span id="identity-public-key" class="detail-value">--</span>
+                            </div>
+                            <div class="detail-item">
+                                <label>Network Address</label>
+                                <span id="identity-network-address" class="detail-value">--</span>
+                            </div>
+                            <div class="detail-item">
+                                <label>Created</label>
+                                <span id="identity-created" class="detail-value">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Create New Tab -->
+                <div id="identity-create" class="tab-content">
+                    <div class="create-identity-form">
+                        <h3>Create Your Unique Identity</h3>
+                        <p class="form-description">Your display name must be unique across the entire network. Choose wisely!</p>
+                        
+                        <div class="form-group">
+                            <label>Display Name *</label>
+                            <input type="text" id="new-display-name" class="form-input" placeholder="YourUniqueName" onkeyup="checkNameAvailability()">
+                            <div class="name-availability" id="new-name-availability"></div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Three-Word Address *</label>
+                            <input type="text" id="new-three-word" class="form-input" placeholder="your.unique.address">
+                            <div class="help-text">This will be your shareable network address</div>
+                        </div>
+                        
+                        <div class="security-info">
+                            <h4>🔐 Security Information</h4>
+                            <ul>
+                                <li>Your identity will be cryptographically signed</li>
+                                <li>A unique Ed25519 keypair will be generated</li>
+                                <li>Your identity will be registered in the DHT network</li>
+                                <li>Make sure to backup your identity after creation</li>
+                            </ul>
+                        </div>
+                        
+                        <button class="btn btn-primary" id="create-identity-btn" onclick="createNewIdentity()" disabled>
+                            Create Identity
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Backup Tab -->
+                <div id="identity-backup" class="tab-content">
+                    <div class="backup-section">
+                        <h3>Identity Backup & Recovery</h3>
+                        
+                        <div class="backup-actions">
+                            <div class="backup-item">
+                                <h4>Export Identity</h4>
+                                <p>Download your identity for backup purposes</p>
+                                <button class="btn btn-secondary" onclick="exportIdentity()">Export Identity</button>
+                            </div>
+                            
+                            <div class="backup-item">
+                                <h4>Import Identity</h4>
+                                <p>Restore your identity from a backup file</p>
+                                <input type="file" id="import-file" accept=".json" style="display: none;" onchange="importIdentity(event)">
+                                <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">Import Identity</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('identity-modal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Search Modal -->
+    <div id="search-modal" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeModal('search-modal')"></div>
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2>Search Network Users</h2>
+                <button class="modal-close" onclick="closeModal('search-modal')">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="search-form">
+                    <div class="search-input-wrapper">
+                        <input type="text" id="user-search-input" class="form-input" placeholder="Search by display name..." onkeyup="searchUsers()">
+                        <svg class="search-icon" width="20" height="20" viewBox="0 0 20 20">
+                            <path d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" fill="currentColor"/>
+                        </svg>
+                    </div>
+                </div>
+                
+                <div class="search-results" id="search-results">
+                    <div class="search-empty">
+                        <p>Start typing to search for users across the network</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('search-modal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="notification-toast" class="toast hidden">
+        <div class="toast-content">
+            <div class="toast-icon" id="toast-icon"></div>
+            <div class="toast-message" id="toast-message"></div>
+        </div>
+        <button class="toast-close" onclick="hideToast()">×</button>
+    </div>
+
 </body>
 </html>

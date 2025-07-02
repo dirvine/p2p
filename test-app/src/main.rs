@@ -58,12 +58,12 @@ async fn test_identity_manager() -> P2PResult<()> {
     
     // Test profile export/import
     info!("  Testing profile export/import...");
-    let export_data = manager.export_identity().await?;
+    let export_data = manager.export_identity(&identity.user_id).await?;
     info!("  ✅ Exported identity data ({} bytes)", export_data.len());
     
     // Create a new manager and import
     let manager2 = IdentityManager::new(IdentityManagerConfig::default());
-    let imported_identity = manager2.import_identity(&export_data).await?;
+    let imported_identity = manager2.import_identity(&export_data, "test_password").await?;
     
     if imported_identity.user_id == identity.user_id {
         info!("  ✅ Identity export/import successful");
@@ -119,7 +119,7 @@ async fn test_p2p_node_creation() -> P2PResult<()> {
             // Test basic DHT operations
             info!("  Testing DHT operations...");
             
-            let key = ant_core::dht::Key::new(b"test_key");
+            let key = saorsa_core::dht::Key::new(b"test_key");
             let value = b"test_value".to_vec();
             
             // Store value
@@ -147,7 +147,7 @@ async fn test_p2p_node_creation() -> P2PResult<()> {
         },
         Err(_) => {
             error!("  ❌ P2P node creation timed out");
-            return Err(ant_core::error::P2PError::Network("Node creation timed out".to_string()).into());
+            return Err(saorsa_core::error::P2PError::Network("Node creation timed out".to_string()).into());
         }
     }
     
@@ -175,7 +175,7 @@ async fn test_multi_node_communication() -> P2PResult<()> {
         },
         Err(_) => {
             error!("  ❌ Node 1 creation timed out");
-            return Err(ant_core::error::P2PError::Network("Node 1 creation timed out".to_string()).into());
+            return Err(saorsa_core::error::P2PError::Network("Node 1 creation timed out".to_string()).into());
         }
     };
     
@@ -193,7 +193,7 @@ async fn test_multi_node_communication() -> P2PResult<()> {
         },
         Err(_) => {
             error!("  ❌ Node 2 creation timed out");
-            return Err(ant_core::error::P2PError::Network("Node 2 creation timed out".to_string()).into());
+            return Err(saorsa_core::error::P2PError::Network("Node 2 creation timed out".to_string()).into());
         }
     };
     
@@ -207,7 +207,7 @@ async fn test_multi_node_communication() -> P2PResult<()> {
     // Test cross-node DHT operations
     info!("  Testing cross-node DHT communication...");
     
-    let key = ant_core::dht::Key::new(b"cross_node_test");
+    let key = saorsa_core::dht::Key::new(b"cross_node_test");
     let value = b"Hello from node 1!".to_vec();
     
     // Store value in node 1

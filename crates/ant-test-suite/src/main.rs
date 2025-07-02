@@ -321,9 +321,9 @@ fn init_logging(verbose: bool, no_color: bool) -> Result<()> {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
     let filter = if verbose {
-        "ant_test_suite=debug,ant_core=debug"
+        "ant_test_suite=debug,saorsa_core=debug"
     } else {
-        "ant_test_suite=info,ant_core=info"
+        "ant_test_suite=info,saorsa_core=info"
     };
 
     tracing_subscriber::registry()
