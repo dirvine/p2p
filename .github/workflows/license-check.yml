@@ -19,7 +19,7 @@ jobs:
           missing_headers=0
           
           for file in $(find . -name "*.rs" -not -path "./target/*" -not -path "./node_modules/*"); do
-            if ! head -n 15 "$file" | grep -q "Copyright.*MaidSafe Limited"; then
+            if ! head -n 15 "$file" | grep -q "Copyright.*Saorsa Labs Limited"; then
               echo "Missing license header: $file"
               missing_headers=$((missing_headers + 1))
             fi

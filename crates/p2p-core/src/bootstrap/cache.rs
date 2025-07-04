@@ -1,5 +1,5 @@
 
-// Copyright 2024 MaidSafe Limited
+// Copyright 2024 Saorsa Labs Limited
 //
 // This software is dual-licensed under:
 // - GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)

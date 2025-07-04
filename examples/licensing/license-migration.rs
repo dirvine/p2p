@@ -1,4 +1,4 @@
-// Copyright 2024 MaidSafe Limited
+// Copyright 2024 Saorsa Labs Limited
 //
 // This example demonstrates migrating between license types
 
