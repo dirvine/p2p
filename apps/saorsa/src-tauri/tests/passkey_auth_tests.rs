@@ -1,3 +1,4 @@
+
 // Unit tests for passkey authentication module
 
 use saorsa_lib::passkey_auth::{PasskeyAuthManager, StoredPasskeyCredential, MockAuthenticator, PlatformAuthenticator};

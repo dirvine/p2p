@@ -1,12 +1,11 @@
+
 //! Identity Storage Module for Tauri
 //! 
 //! Provides secure local storage for user identities with encryption.
 //! Stores identity data in the app's data directory using password-derived encryption.
 
 use saorsa_core::identity::{
-    UserIdentity, UserProfile, EncryptedUserProfile, IdentityChallenge,
-    ContactRequest, ProfilePermissions, PrivacySettings, DiscoverabilitySettings,
-    UserPreferences, VerificationLevel, IPv6BindingProof,
+    UserIdentity, EncryptedUserProfile,
 };
 use saorsa_core::identity::manager::{IdentityManager, IdentityManagerConfig};
 use saorsa_core::{Result, P2PError};

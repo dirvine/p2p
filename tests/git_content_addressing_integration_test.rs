@@ -1,3 +1,4 @@
+
 #!/usr/bin/env rust
 //! Comprehensive Integration Tests for Git-Like Content Addressing
 //!

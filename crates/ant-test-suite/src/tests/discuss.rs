@@ -1,3 +1,4 @@
+
 //! Discuss/forum system tests with comprehensive features
 //!
 //! Tests forum functionality including categories, topics, replies, voting, moderation,

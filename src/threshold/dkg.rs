@@ -1,3 +1,4 @@
+
 //! Distributed Key Generation (DKG) for threshold groups
 
 use super::{ThresholdError, Result};

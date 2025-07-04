@@ -1,3 +1,4 @@
+
 //! Error types module
 //!
 //! This module contains error types used throughout the P2P Foundation.

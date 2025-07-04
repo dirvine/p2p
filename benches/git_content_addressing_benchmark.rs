@@ -1,3 +1,4 @@
+
 #!/usr/bin/env rust
 //! Performance Benchmarks for Git-Like Content Addressing
 //!

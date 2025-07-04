@@ -1,3 +1,4 @@
+
 //! Git Application Layer
 //!
 //! This module provides high-level git operations for applications,

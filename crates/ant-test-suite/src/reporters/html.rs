@@ -1,3 +1,4 @@
+
 //! HTML output reporter
 
 use anyhow::Result;

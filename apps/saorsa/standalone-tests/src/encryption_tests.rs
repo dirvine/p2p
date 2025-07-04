@@ -1,3 +1,4 @@
+
 //! Encryption and security tests
 
 use sha2::{Sha256, Digest};

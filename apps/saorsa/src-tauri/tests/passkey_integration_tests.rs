@@ -1,21 +1,22 @@
+
 // tests/passkey_integration_tests.rs
 use saorsa_lib::passkey_auth::{PasskeyAuthManager, MockAuthenticator, PlatformAuthenticator};
 use tempfile::TempDir;
 use serial_test::serial;
 
+/// Helper to create test manager with mock authenticator
+fn create_test_manager(should_succeed: bool) -> (PasskeyAuthManager, TempDir) {
+    let temp_dir = TempDir::new().unwrap();
+    let mut manager = PasskeyAuthManager::new(temp_dir.path().to_path_buf()).unwrap();
+    manager.authenticator = PlatformAuthenticator::Mock(
+        MockAuthenticator::new(should_succeed)
+    );
+    (manager, temp_dir)
+}
+
 #[cfg(test)]
 mod passkey_tests {
     use super::*;
-    
-    /// Helper to create test manager with mock authenticator
-    fn create_test_manager(should_succeed: bool) -> (PasskeyAuthManager, TempDir) {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manager = PasskeyAuthManager::new(temp_dir.path().to_path_buf()).unwrap();
-        manager.authenticator = PlatformAuthenticator::Mock(
-            MockAuthenticator::new(should_succeed)
-        );
-        (manager, temp_dir)
-    }
     
     #[tokio::test]
     async fn test_passkey_availability() {

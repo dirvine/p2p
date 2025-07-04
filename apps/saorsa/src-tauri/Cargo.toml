@@ -41,7 +41,7 @@ tauri-build = { version = "2", features = [] }
 saorsa-core = { path = "../../../crates/p2p-core", features = ["quantum-resistant"] }
 
 # Tauri framework (latest v2.x)
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["test"] }
 tauri-plugin-opener = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2" 

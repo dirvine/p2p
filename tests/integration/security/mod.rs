@@ -1,3 +1,4 @@
+
 //! Security module integration tests
 //!
 //! Comprehensive tests for security functionality including:

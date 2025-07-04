@@ -1,3 +1,4 @@
+
 //! # Ant Connect Desktop - Tauri Application
 //!
 //! Native desktop application for P2P Foundation, built with Tauri for
@@ -21,7 +22,7 @@ use identity_storage::{IdentityStorage, IdentityStorageConfig};
 use passkey_auth::{PasskeyAuthManager, StoredPasskeyCredential};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State, Emitter};
@@ -44,15 +45,24 @@ use saorsa_core::{
 
 /// Application state for P2P network
 pub struct AppState {
-    network: RwLock<Option<Arc<P2PNode>>>,
-    contacts: RwLock<HashMap<String, Contact>>,
-    messages: RwLock<HashMap<String, Vec<Message>>>,
-    identity_manager: RwLock<Option<Arc<IdentityManager>>>,
-    identity_storage: RwLock<Option<Arc<IdentityStorage>>>,
-    passkey_manager: RwLock<Option<Arc<PasskeyAuthManager>>>,
-    blocked_users: RwLock<HashMap<String, i64>>, // user_id -> blocked_at timestamp
-    contact_categories: RwLock<Vec<String>>, // Available categories
-    contact_requests: RwLock<ContactRequests>, // Contact request management
+    #[cfg_attr(test, allow(dead_code))]
+    pub network: RwLock<Option<Arc<P2PNode>>>,
+    #[cfg_attr(test, allow(dead_code))]
+    pub contacts: RwLock<HashMap<String, Contact>>,
+    #[cfg_attr(test, allow(dead_code))]
+    pub messages: RwLock<HashMap<String, Vec<Message>>>,
+    #[cfg_attr(test, allow(dead_code))]
+    pub identity_manager: RwLock<Option<Arc<IdentityManager>>>,
+    #[cfg_attr(test, allow(dead_code))]
+    pub identity_storage: RwLock<Option<Arc<IdentityStorage>>>,
+    #[cfg_attr(test, allow(dead_code))]
+    pub passkey_manager: RwLock<Option<Arc<PasskeyAuthManager>>>,
+    #[cfg_attr(test, allow(dead_code))]
+    pub blocked_users: RwLock<HashMap<String, i64>>, // user_id -> blocked_at timestamp
+    #[cfg_attr(test, allow(dead_code))]
+    pub contact_categories: RwLock<Vec<String>>, // Available categories
+    #[cfg_attr(test, allow(dead_code))]
+    pub contact_requests: RwLock<ContactRequests>, // Contact request management
 }
 
 impl Default for AppState {
@@ -99,6 +109,16 @@ pub struct ContactPermissions {
     pub can_send_messages: bool,
 }
 
+/// Message status for tracking delivery
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum MessageStatus {
+    Pending,
+    Sent,
+    Delivered,
+    Read,
+    Failed,
+}
+
 /// Message data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -106,8 +126,13 @@ pub struct Message {
     pub content: String,
     pub from_peer: String,
     pub to_peer: String,
-    pub timestamp: i64,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
     pub is_from_me: bool,
+    pub status: MessageStatus,
+    pub reply_to: Option<String>,
+    pub edited: bool,
+    pub reactions: std::collections::HashMap<String, Vec<String>>,
+    pub attachments: Vec<String>,
 }
 
 /// Network status information
@@ -485,7 +510,7 @@ async fn send_message(
     
     // Create message
     let message_id = uuid::Uuid::new_v4().to_string();
-    let timestamp = chrono::Utc::now().timestamp();
+    let timestamp = chrono::Utc::now();
     let message = Message {
         id: message_id.clone(),
         content: content.clone(),
@@ -493,6 +518,11 @@ async fn send_message(
         to_peer: contact_id.clone(),
         timestamp,
         is_from_me: true,
+        status: MessageStatus::Sent,
+        reply_to: None,
+        edited: false,
+        reactions: std::collections::HashMap::new(),
+        attachments: vec![],
     };
     
     // Store message locally
@@ -530,8 +560,13 @@ async fn send_message(
             content: response_content,
             from_peer: "system".to_string(),
             to_peer: our_user_id,
-            timestamp: chrono::Utc::now().timestamp(),
+            timestamp: chrono::Utc::now(),
             is_from_me: false,
+            status: MessageStatus::Delivered,
+            reply_to: None,
+            edited: false,
+            reactions: std::collections::HashMap::new(),
+            attachments: vec![],
         };
         
         messages.entry(contact_id.clone()).or_insert_with(Vec::new).push(help_response.clone());
@@ -805,10 +840,12 @@ async fn send_ice_candidate(
                 value: serde_json::to_vec(&ice_payload)
                     .map_err(|e| format!("Failed to serialize ICE candidate: {}", e))?,
                 publisher: network.peer_id().to_string(),
-                expires_at: SystemTime::now() + std::time::Duration::from_secs(60)), // 1 minute expiry for ICE
+                created_at: SystemTime::now(),
+                expires_at: SystemTime::now() + std::time::Duration::from_secs(60), // 1 minute expiry for ICE
+                signature: None,
             };
             
-            dht_guard.put(signal_record).await
+            dht_guard.put(signal_record.key, signal_record.value).await
                 .map_err(|e| format!("Failed to store ICE candidate in DHT: {}", e))?;
         }
         
@@ -875,10 +912,12 @@ async fn end_call(
                 value: serde_json::to_vec(&end_payload)
                     .map_err(|e| format!("Failed to serialize end call: {}", e))?,
                 publisher: network.peer_id().to_string(),
-                expires_at: SystemTime::now() + std::time::Duration::from_secs(300)), // 5 minute expiry
+                created_at: SystemTime::now(),
+                expires_at: SystemTime::now() + std::time::Duration::from_secs(300), // 5 minute expiry
+                signature: None,
             };
             
-            dht_guard.put(signal_record).await
+            dht_guard.put(signal_record.key, signal_record.value).await
                 .map_err(|e| format!("Failed to store end call in DHT: {}", e))?;
         }
         
@@ -927,6 +966,7 @@ async fn create_inbox(
     state: State<'_, AppState>,
     inbox_name: String,
 ) -> Result<String, String> {
+    use rand::Rng;
     info!("Creating DHT inbox: {}", inbox_name);
     
     let net_guard = state.network.read().await;
@@ -938,11 +978,11 @@ async fn create_inbox(
     let identity_manager = identity_guard.as_ref()
         .ok_or("Identity manager not initialized")?;
     
-    // Get current identity
-    let current_identity = None
-        .ok_or("No current identity set")?;
+    // Get current identity  
+    // TODO: Get current identity from identity manager
+    return Err("Create inbox not implemented - identity management integration needed".to_string());
     
-    // Generate inbox address (three-word format)
+    /* TODO: The rest of this function needs identity integration - uncomment when identity integration is complete
         let mut rng = rand::thread_rng();
     let words = ["swift", "ocean", "mountain", "river", "forest", "cloud", "star", "moon", "sun", "wind"];
     let inbox_address = format!("{}.{}.{}", 
@@ -973,17 +1013,19 @@ async fn create_inbox(
             value: serde_json::to_vec(&inbox_metadata)
                 .map_err(|e| format!("Failed to serialize inbox metadata: {}", e))?,
             publisher: network.peer_id().to_string(),
-            expires_at: None, // Inboxes don't expire
+            created_at: SystemTime::now(),
+            expires_at: SystemTime::now() + std::time::Duration::from_secs(365 * 24 * 3600), // 1 year for inboxes
+            signature: None,
         };
         
-        dht_guard.put(inbox_record).await
+        dht_guard.put(inbox_record.key, inbox_record.value).await
             .map_err(|e| format!("Failed to store inbox in DHT: {}", e))?;
         
         // Also store a reference under the user's identity
         let user_inbox_key = Key::new(format!("inbox_{}_{}", current_identity.user_id, inbox_id).as_bytes());
-        let user_inbox_record = inbox_address.as_bytes().to_vec();
+        let user_inbox_value = inbox_address.as_bytes().to_vec();
         
-        dht_guard.put(user_inbox_record).await
+        dht_guard.put(user_inbox_key, user_inbox_value).await
             .map_err(|e| format!("Failed to store user inbox reference: {}", e))?;
         
         info!("Inbox created successfully: {} -> {}", inbox_name, inbox_address);
@@ -993,6 +1035,7 @@ async fn create_inbox(
     } else {
         Err("DHT not available".to_string())
     }
+    */
 }
 
 /// Open external URL
@@ -1437,7 +1480,7 @@ async fn bind_ipv6_identity(state: State<'_, AppState>) -> Result<String, String
         .ok_or("Identity manager not initialized")?;
     
     // Get current identity
-    let current_identity = None
+    let current_identity: UserIdentity = None
         .ok_or("No current identity set")?;
     
     // Get the node's IPv6 address
@@ -1475,10 +1518,12 @@ async fn bind_ipv6_identity(state: State<'_, AppState>) -> Result<String, String
             value: serde_json::to_vec(&binding_data)
                 .map_err(|e| format!("Failed to serialize binding: {}", e))?,
             publisher: network.peer_id().to_string(),
-            expires_at: SystemTime::now() + std::time::Duration::from_secs(24 * 3600)), // 24 hours
+            created_at: SystemTime::now(),
+            expires_at: SystemTime::now() + std::time::Duration::from_secs(24 * 3600), // 24 hours
+            signature: None,
         };
         
-        dht_guard.put(binding_record).await
+        dht_guard.put(binding_record.key, binding_record.value).await
             .map_err(|e| format!("Failed to store IPv6 binding: {}", e))?;
         
         info!("IPv6 identity binding created for {} -> {}", current_identity.user_id, ipv6_addr);
@@ -1526,10 +1571,7 @@ async fn search_users(
         
         // Search by display name prefix
         let name_search_key = Key::new(format!("name_{}", query.to_lowercase()).as_bytes());
-        let closest_names = dht_guard.get_closest_nodes(&name_search_key, 10);
-        
-        for node_key in closest_names {
-            if let Some(record) = dht_guard.get(&node_key).await {
+        if let Some(record) = dht_guard.get(&name_search_key).await {
                 // Try to parse as NameSignedPacket
                 if let Ok(packet) = serde_json::from_slice::<NameSignedPacket>(&record.value) {
                     // Verify the packet (simplified for now)
@@ -1545,7 +1587,6 @@ async fn search_users(
                         }
                     }
                 }
-            }
         }
         
         // Also search in local contacts
@@ -1594,7 +1635,7 @@ async fn send_contact_request(
     let identity_manager = identity_guard.as_ref()
         .ok_or("Identity manager not initialized")?;
     
-    let our_identity = None
+    let our_identity: UserIdentity = None
         .ok_or("No current identity set")?;
     
     // Create contact request
@@ -1622,10 +1663,12 @@ async fn send_contact_request(
             value: serde_json::to_vec(&contact_request)
                 .map_err(|e| format!("Failed to serialize request: {}", e))?,
             publisher: network.peer_id().to_string(),
-            expires_at: SystemTime::now() + std::time::Duration::from_secs(7 * 24 * 3600)), // 7 days
+            created_at: SystemTime::now(),
+            expires_at: SystemTime::now() + std::time::Duration::from_secs(7 * 24 * 3600), // 7 days
+            signature: None,
         };
         
-        dht_guard.put(request_record).await
+        dht_guard.put(request_record.key, request_record.value).await
             .map_err(|e| format!("Failed to store request in DHT: {}", e))?;
         
         // Also store a reference in our sent requests
@@ -1659,21 +1702,23 @@ async fn get_contact_requests(state: State<'_, AppState>) -> Result<serde_json::
     let identity_manager = identity_guard.as_ref()
         .ok_or("Identity manager not initialized")?;
     
-    let our_identity = None
-        .ok_or("No current identity set")?;
+    // TODO: Implement get_current_identity method on IdentityManager
+    return Err("Identity management not yet implemented".to_string());
     
-    let mut pending_requests = Vec::new();
+    let mut pending_requests: Vec<serde_json::Value> = Vec::new();
     
     // Check DHT for pending requests
     if let Some(dht) = network.dht() {
         let dht_guard = dht.read().await;
         
         // Search for contact requests directed to us
-        let request_prefix = format!("contact_request_{}_", our_identity.user_id);
-        let request_key = Key::new(request_prefix.as_bytes());
-        let closest_keys = dht_guard.get_closest_nodes(&request_key, 20);
+        // TODO: Implement proper search for contact request records
+        // let request_prefix = format!("contact_request_{}_", our_identity.user_id);
+        // let request_key = Key::new(request_prefix.as_bytes());
+        // Note: DHT search for records by prefix is not implemented
         
-        for key in closest_keys {
+        /*
+        for key in closest_nodes {
             if let Some(record) = dht_guard.get(&key).await {
                 if let Ok(request) = serde_json::from_slice::<serde_json::Value>(&record.value) {
                     if request.get("type").and_then(|v| v.as_str()) == Some("contact_request") &&
@@ -1683,6 +1728,7 @@ async fn get_contact_requests(state: State<'_, AppState>) -> Result<serde_json::
                 }
             }
         }
+        */
     }
     
     // Get locally stored requests
@@ -1778,10 +1824,12 @@ async fn accept_contact_request(
                 value: serde_json::to_vec(&acceptance_data)
                     .map_err(|e| format!("Failed to serialize acceptance: {}", e))?,
                 publisher: network.peer_id().to_string(),
-                expires_at: SystemTime::now() + std::time::Duration::from_secs(7 * 24 * 3600)), // 7 days
+                created_at: SystemTime::now(),
+                expires_at: SystemTime::now() + std::time::Duration::from_secs(7 * 24 * 3600), // 7 days
+                signature: None,
             };
             
-            dht_guard.put(acceptance_record).await.ok();
+            dht_guard.put(acceptance_record.key, acceptance_record.value).await.ok();
         }
     }
     
@@ -1827,10 +1875,12 @@ async fn reject_contact_request(
                     value: serde_json::to_vec(&rejection_data)
                         .map_err(|e| format!("Failed to serialize rejection: {}", e))?,
                     publisher: network.peer_id().to_string(),
-                    expires_at: SystemTime::now() + std::time::Duration::from_secs(24 * 3600)), // 1 day
+                    created_at: SystemTime::now(),
+                    expires_at: SystemTime::now() + std::time::Duration::from_secs(24 * 3600), // 1 day
+                    signature: None,
                 };
                 
-                dht_guard.put(rejection_record).await.ok();
+                dht_guard.put(rejection_record.key, rejection_record.value).await.ok();
             }
         }
     } else {
@@ -1860,8 +1910,9 @@ async fn cancel_contact_request(
                 let dht_guard = dht.read().await;
                 
                 // Remove the original request from DHT
-                let request_key = Key::new(format!("contact_request_{}_{}", request.to_user_id, request_id).as_bytes());
-                dht_guard.remove(&request_key).await.ok();
+                // TODO: Implement record deletion in DHT
+                // let request_key = Key::new(format!("contact_request_{}_{}", request.to_user_id, request_id).as_bytes());
+                // dht_guard.delete(&request_key).await.ok();
                 
                 // Store cancellation notification
                 let cancel_key = Key::new(format!("contact_cancel_{}_{}", request.to_user_id, request_id).as_bytes());
@@ -1877,10 +1928,12 @@ async fn cancel_contact_request(
                     value: serde_json::to_vec(&cancel_data)
                         .map_err(|e| format!("Failed to serialize cancellation: {}", e))?,
                     publisher: network.peer_id().to_string(),
-                    expires_at: SystemTime::now() + std::time::Duration::from_secs(24 * 3600)), // 1 day
+                    created_at: SystemTime::now(),
+                    expires_at: SystemTime::now() + std::time::Duration::from_secs(24 * 3600), // 1 day
+                    signature: None,
                 };
                 
-                dht_guard.put(cancel_record).await.ok();
+                dht_guard.put(cancel_record.key, cancel_record.value).await.ok();
             }
         }
     } else {

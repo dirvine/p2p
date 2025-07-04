@@ -1,3 +1,4 @@
+
 //! MCP Service Discovery Tests
 //!
 //! Comprehensive tests for the automatic MCP service announcement and discovery system.

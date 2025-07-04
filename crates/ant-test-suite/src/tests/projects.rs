@@ -1,3 +1,4 @@
+
 //! Projects system tests with comprehensive team management
 //!
 //! Tests file storage, group management, member addition/removal, document access control,

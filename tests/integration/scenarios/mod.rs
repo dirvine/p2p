@@ -1,3 +1,4 @@
+
 //! End-to-end scenario integration tests
 //!
 //! Comprehensive scenario tests that combine all system components:

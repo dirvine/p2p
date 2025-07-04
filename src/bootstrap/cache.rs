@@ -1,3 +1,4 @@
+
 //! Bootstrap Cache Implementation
 //!
 //! Manages a persistent cache of peer contacts with quality-based selection,

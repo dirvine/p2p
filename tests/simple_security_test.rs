@@ -1,3 +1,4 @@
+
 //! Simple security test to verify basic functionality
 
 use anyhow::Result;

@@ -8,7 +8,9 @@ members = [
     "crates/p2p-ffi",            # FFI bindings for Flutter
     "crates/p2p-cli",            # CLI tools and utilities
     "crates/ant-test-suite",     # Comprehensive test suite with data integrity verification
-    "apps/saorsa/src-tauri", # Tauri desktop application
+    "apps/saorsa/src-tauri",     # Tauri desktop application
+    "apps/saorsa-terminal-chat", # Terminal chat application
+    "apps/saorsa-network-tester",# Network testing tool
     "test-app",                  # Test application
     # "examples/*",                # Example applications - temporarily disabled for Tauri testing
 ]
@@ -39,6 +41,11 @@ quinn = "0.11"
 rustls = "0.23"
 rcgen = "0.13"
 
+# Iroh networking (automatic NAT traversal, dual-stack)
+iroh = "0.28"
+iroh-net = "0.28"
+iroh-base = "0.28"
+
 # Cryptography  
 ed25519-dalek = { version = "1.0", features = ["rand"] }
 rand_core = "0.5"
@@ -61,6 +68,9 @@ chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.22"
 toml = "0.8"
 shellexpand = "3.1"
+
+# Three-word networking addresses
+three-word-networking = "0.1.0"
 
 # Workspace-level profiles
 [profile.release]

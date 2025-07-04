@@ -1,3 +1,4 @@
+
 //! # macOS Platform Authentication Module
 //! 
 //! Provides TouchID biometric authentication for macOS using

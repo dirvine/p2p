@@ -1,0 +1,61 @@
+use std::io::{self, Write};
+use std::env;
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    
+    println!("🐜 P2P Foundation - Simple Chat");
+    println!("================================");
+    println!();
+    
+    // Check if bootstrap words were provided
+    if args.len() > 2 && args[1] == "--bootstrap-words" {
+        println!("🔗 Connecting to: {}", args[2]);
+        println!("   (In a real implementation, this would connect to the P2P network)");
+    } else {
+        println!("🎯 Your three-word address: ocean.swift.mountain");
+        println!("   Share this with friends so they can connect!");
+    }
+    
+    println!();
+    println!("💬 Chat commands:");
+    println!("   /help   - Show help");
+    println!("   /peers  - List connected peers");
+    println!("   /quit   - Exit chat");
+    println!("   Any other text will be sent as a message");
+    println!();
+    
+    // Simple chat loop
+    loop {
+        print!("> ");
+        io::stdout().flush().unwrap();
+        
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+        
+        let trimmed = input.trim();
+        match trimmed {
+            "/quit" => {
+                println!("👋 Goodbye!");
+                break;
+            }
+            "/help" => {
+                println!("Commands:");
+                println!("  /help  - Show this help");
+                println!("  /peers - List connected peers");
+                println!("  /quit  - Exit chat");
+            }
+            "/peers" => {
+                println!("Connected peers:");
+                println!("  • bootstrap.node (ocean.swift.mountain)");
+                println!("  • peer1.node (river.quick.forest)");
+                println!("  (In real implementation, would show actual peers)");
+            }
+            _ if !trimmed.is_empty() => {
+                println!("[You]: {}", trimmed);
+                println!("(Message would be sent to all connected peers)");
+            }
+            _ => {}
+        }
+    }
+}

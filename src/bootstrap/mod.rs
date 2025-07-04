@@ -1,3 +1,4 @@
+
 //! Bootstrap Cache System
 //!
 //! Provides decentralized peer discovery through local caching of known contacts.

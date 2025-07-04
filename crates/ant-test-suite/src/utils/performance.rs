@@ -1,3 +1,4 @@
+
 //! Performance monitoring and benchmarking utilities
 //!
 //! Provides tools for measuring and analyzing performance characteristics

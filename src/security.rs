@@ -1,3 +1,4 @@
+
 //! Security module
 //!
 //! This module provides cryptographic functionality and Sybil protection for the P2P network.

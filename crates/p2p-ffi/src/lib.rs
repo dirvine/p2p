@@ -1,3 +1,17 @@
+// Copyright 2024 MaidSafe Limited
+//
+// This software is dual-licensed under:
+// - GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
+// - Commercial License
+//
+// For AGPL-3.0 license, see LICENSE-AGPL-3.0
+// For commercial licensing, contact: saorsalabs@gmail.com
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under these licenses is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
+
 //! # P2P Foundation FFI Bindings
 //!
 //! Foreign Function Interface bindings for the P2P Foundation library,
@@ -79,9 +93,43 @@ pub extern "C" fn p2p_init(
     bootstrap_nodes: *const *const c_char,
     bootstrap_count: usize,
 ) -> P2PErrorCode {
-    // TODO: Implement proper FFI configuration
-    // For now, return success without actually initializing
-    P2PErrorCode::Success
+    let mut net_guard = NETWORK.write();
+    
+    // Check if already initialized
+    if net_guard.is_some() {
+        return P2PErrorCode::AlreadyInitialized;
+    }
+    
+    // Create node configuration
+    let mut config = NodeConfig::default();
+    config.listen_addr = std::net::SocketAddr::from(([127, 0, 0, 1], listen_port));
+    
+    // Parse bootstrap nodes if provided
+    if !bootstrap_nodes.is_null() && bootstrap_count > 0 {
+        let mut bootstrap_addrs = Vec::new();
+        unsafe {
+            for i in 0..bootstrap_count {
+                let node_ptr = *bootstrap_nodes.add(i);
+                if !node_ptr.is_null() {
+                    if let Ok(c_str) = CStr::from_ptr(node_ptr).to_str() {
+                        if let Ok(addr) = c_str.parse() {
+                            bootstrap_addrs.push(addr);
+                        }
+                    }
+                }
+            }
+        }
+        config.bootstrap_peers = bootstrap_addrs;
+    }
+    
+    // Initialize the network node
+    match RUNTIME.block_on(P2PNode::new(config)) {
+        Ok(node) => {
+            *net_guard = Some(Arc::new(node));
+            P2PErrorCode::Success
+        }
+        Err(_) => P2PErrorCode::NetworkError,
+    }
 }
 
 /// Shutdown the P2P network
@@ -244,17 +292,41 @@ fn to_c_string(s: &str) -> *mut c_char {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Global test mutex to ensure tests run sequentially
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    // Helper function to ensure clean state before each test
+    fn reset_state() {
+        let mut net_guard = NETWORK.write();
+        *net_guard = None;
+    }
 
     #[test]
     fn test_init_shutdown() {
-        assert_eq!(p2p_init(9000, ptr::null(), 0), P2PErrorCode::Success);
-        assert_eq!(p2p_shutdown(), P2PErrorCode::Success);
+        let _guard = TEST_MUTEX.lock().unwrap(); // Ensure sequential execution
+        reset_state(); // Ensure clean state
+        
+        let init_result = p2p_init(9000, ptr::null(), 0);
+        assert_eq!(init_result, P2PErrorCode::Success, "p2p_init should succeed");
+        
+        let shutdown_result = p2p_shutdown();
+        assert_eq!(shutdown_result, P2PErrorCode::Success, "p2p_shutdown should succeed");
     }
 
     #[test]
     fn test_double_init() {
-        assert_eq!(p2p_init(9001, ptr::null(), 0), P2PErrorCode::Success);
-        assert_eq!(p2p_init(9002, ptr::null(), 0), P2PErrorCode::AlreadyInitialized);
-        assert_eq!(p2p_shutdown(), P2PErrorCode::Success);
+        let _guard = TEST_MUTEX.lock().unwrap(); // Ensure sequential execution
+        reset_state(); // Ensure clean state
+        
+        let first_init = p2p_init(9001, ptr::null(), 0);
+        assert_eq!(first_init, P2PErrorCode::Success, "First p2p_init should succeed");
+        
+        let second_init = p2p_init(9002, ptr::null(), 0);
+        assert_eq!(second_init, P2PErrorCode::AlreadyInitialized, "Second p2p_init should return AlreadyInitialized");
+        
+        let shutdown_result = p2p_shutdown();
+        assert_eq!(shutdown_result, P2PErrorCode::Success, "p2p_shutdown should succeed");
     }
 }

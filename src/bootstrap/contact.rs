@@ -1,3 +1,4 @@
+
 //! Contact Entry and Quality Scoring
 //!
 //! Manages peer contact information with comprehensive quality metrics for

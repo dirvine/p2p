@@ -1,3 +1,4 @@
+
 //! MCP (Model Context Protocol) server integration tests
 //!
 //! Comprehensive tests for MCP server functionality including:

@@ -1,3 +1,4 @@
+
 // Frontend integration tests for Saorsa UI
 // Note: These tests require a running frontend development server
 
@@ -77,7 +78,7 @@ mod frontend_tests {
 }
 
 // JavaScript test helpers that would be injected into the webview
-const JS_TEST_HELPERS = r#"
+const JS_TEST_HELPERS: &str = r#"
     // Helper functions for UI testing
     window.testHelpers = {
         // Click element by selector

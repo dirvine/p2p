@@ -1,3 +1,4 @@
+
 //! Data verification utilities
 //!
 //! Core patterns and utilities for ensuring data integrity across

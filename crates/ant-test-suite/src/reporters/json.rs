@@ -1,3 +1,4 @@
+
 //! JSON output reporter
 
 use anyhow::Result;

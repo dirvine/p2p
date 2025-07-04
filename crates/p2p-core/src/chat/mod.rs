@@ -1,3 +1,4 @@
+
 //! Chat system (Slack-like) with channels, threads, and real-time messaging
 //! 
 //! Features:

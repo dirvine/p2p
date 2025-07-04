@@ -1,3 +1,4 @@
+
 //! Real-time test reporter with terminal UI
 
 use anyhow::{Context, Result};

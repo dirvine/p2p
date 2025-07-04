@@ -1,3 +1,4 @@
+
 //! Chat system tests
 //!
 //! Tests comprehensive chat functionality including channels, messages, 

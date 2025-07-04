@@ -1,3 +1,4 @@
+
 //! MCP Service Discovery Demo
 //!
 //! This example demonstrates the automatic MCP service announcement and discovery

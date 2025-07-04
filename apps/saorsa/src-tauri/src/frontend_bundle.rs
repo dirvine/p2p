@@ -1,3 +1,4 @@
+
 /// Frontend bundle with actual application files
 /// This module contains the complete frontend application embedded as static strings
 

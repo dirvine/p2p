@@ -1,0 +1,21 @@
+[package]
+name = "saorsa-network-tester"
+version = "0.1.0"
+edition = "2021"
+authors = ["P2P Foundation Team"]
+description = "Network testing tool with port conflict handling and IPv6 detection"
+
+[[bin]]
+name = "saorsa-network-tester"
+path = "src/main.rs"
+
+[dependencies]
+saorsa-core = { path = "../../crates/p2p-core" }
+tokio = { version = "1.35", features = ["full"] }
+anyhow = "1.0"
+colored = "2.1"
+env_logger = "0.11"
+
+# For macOS static builds
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.9"

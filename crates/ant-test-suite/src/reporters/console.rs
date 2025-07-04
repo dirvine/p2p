@@ -1,3 +1,4 @@
+
 //! Console output reporter
 
 use anyhow::Result;

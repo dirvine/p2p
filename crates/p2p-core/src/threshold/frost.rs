@@ -1,3 +1,4 @@
+
 //! FROST (Flexible Round-Optimized Schnorr Threshold) signatures implementation
 //! 
 //! Provides threshold signatures where t-of-n participants can create valid signatures

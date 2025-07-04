@@ -1,3 +1,4 @@
+
 //! FROST threshold signature tests
 
 use anyhow::{Context, Result};

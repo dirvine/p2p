@@ -1,3 +1,4 @@
+
 //! Test identity creation and serialization
 
 use saorsa_core::identity::manager::{UserIdentity, UserProfile, PrivacySettings, DiscoverabilitySettings, UserPreferences, VerificationLevel, DefaultPermissions};

@@ -1,3 +1,4 @@
+
 //! Test result reporting modules
 
 pub mod console;

@@ -1,3 +1,4 @@
+
 //! Chat and communication system tests
 
 use anyhow::{Context, Result};

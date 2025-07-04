@@ -1,3 +1,4 @@
+
 #!/usr/bin/env rust-script
 //! Quick test application for P2P communication and identity system
 //! 

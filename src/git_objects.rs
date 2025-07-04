@@ -1,3 +1,4 @@
+
 //! Git Object Implementations
 //!
 //! This module contains the specific implementations of git-like objects:

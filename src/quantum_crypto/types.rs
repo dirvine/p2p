@@ -1,3 +1,4 @@
+
 //! Core types for quantum-resistant cryptography
 
 use serde::{Deserialize, Serialize};

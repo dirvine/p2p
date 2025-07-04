@@ -42,6 +42,12 @@ bytes.workspace = true
 hex.workspace = true
 chrono.workspace = true
 base64.workspace = true
+three-word-networking.workspace = true
+
+# Iroh networking
+iroh.workspace = true
+iroh-net.workspace = true
+iroh-base.workspace = true
 
 # Core-specific dependencies
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -77,6 +83,7 @@ tempfile = "3.10"
 pretty_assertions = "1.4"
 serial_test = "3.1"
 criterion = { version = "0.4", features = ["html_reports"] }
+clap = { version = "4.4", features = ["derive"] }
 
 [features]
 default = ["dht", "mcp", "tunneling", "three-word-addresses"]
