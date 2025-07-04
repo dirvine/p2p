@@ -1,3 +1,15 @@
+// Copyright 2024 MaidSafe Limited
+//
+// This software is dual-licensed under:
+// - GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
+// - Commercial License
+//
+// For AGPL-3.0 license, see LICENSE-AGPL-3.0
+// For commercial licensing, contact: saorsalabs@gmail.com
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under these licenses is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 
 //! # Ant Connect Desktop - Tauri Application
 //!
@@ -2141,8 +2153,6 @@ fn init_logging() {
         .with_target(false)
         .try_init();
 }
-
-
 /// Create a custom protocol handler for serving frontend files
 fn create_frontend_protocol_handler<R: tauri::Runtime>() -> impl Fn(tauri::UriSchemeContext<'_, R>, tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> + Send + Sync + 'static {
     move |_ctx, request| {
