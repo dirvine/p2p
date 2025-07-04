@@ -53,17 +53,9 @@ pub enum PlatformAuthenticator {
 /// 
 /// Handles creation, storage, and verification of passkey credentials
 /// using platform-specific biometric authentication methods.
-/// 
-/// # Example
-/// ```no_run
-/// let manager = PasskeyAuthManager::new(data_dir)?;
-/// if manager.is_available().await {
-///     let credential = manager.create_passkey("user123", "alice.secure.chat").await?;
-/// }
-/// ```
 pub struct PasskeyAuthManager {
     data_dir: PathBuf,
-    authenticator: PlatformAuthenticator,
+    pub authenticator: PlatformAuthenticator,
     keychain_service: String,
 }
 
