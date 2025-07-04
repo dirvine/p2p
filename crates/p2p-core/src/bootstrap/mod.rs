@@ -1,3 +1,4 @@
+
 //! Bootstrap Cache System
 //!
 //! Provides decentralized peer discovery through local caching of known contacts.
@@ -9,13 +10,12 @@ pub mod cache;
 pub mod contact;
 pub mod discovery;
 pub mod merge;
-pub mod words;
 
 pub use cache::{BootstrapCache, CacheConfig, CacheError};
-pub use contact::{ContactEntry, QualityMetrics, QualityCalculator};
+pub use contact::{ContactEntry, QualityMetrics, QualityCalculator, IrohContactInfo, IrohQualityMetrics, IrohConnectionType};
 pub use discovery::{BootstrapDiscovery, BootstrapConfig, ConfigurableBootstrapDiscovery};
 pub use merge::{MergeCoordinator, MergeResult};
-pub use words::{ThreeWordAddress, WordDictionary, WordEncoder};
+pub use three_word_networking::{ThreeWordAddress, WordDictionary, WordEncoder};
 
 use crate::{Result, P2PError, PeerId};
 use std::path::PathBuf;
@@ -141,17 +141,23 @@ impl BootstrapManager {
     
     /// Convert multiaddr to three-word address
     pub fn encode_address(&self, multiaddr: &crate::Multiaddr) -> Result<ThreeWordAddress> {
-        self.word_encoder.encode_multiaddr(multiaddr)
+        self.word_encoder.encode_multiaddr_string(&multiaddr.to_string())
+            .map_err(|e| crate::P2PError::Bootstrap(format!("Failed to encode multiaddr: {}", e)))
     }
     
     /// Convert three-word address to multiaddr (requires registry lookup)
     pub fn decode_address(&self, words: &ThreeWordAddress) -> Result<crate::Multiaddr> {
-        self.word_encoder.decode_to_multiaddr(words)
+        // The published crate has a different API
+        let multiaddr_str = self.word_encoder.decode_to_multiaddr_string(words)
+            .map_err(|e| crate::P2PError::Bootstrap(format!("Failed to decode three-word address: {}", e)))?;
+        multiaddr_str.parse()
+            .map_err(|e| crate::P2PError::Bootstrap(format!("Invalid multiaddr from three-word address: {}", e)))
     }
     
     /// Validate three-word address format
     pub fn validate_words(&self, words: &ThreeWordAddress) -> Result<()> {
         words.validate(&self.word_encoder)
+            .map_err(|e| crate::P2PError::Bootstrap(format!("Validation failed: {}", e)))
     }
     
     /// Get the word encoder for direct access
@@ -202,6 +208,16 @@ pub struct CacheStats {
     pub cache_hit_rate: f64,
     /// Average quality score across all contacts
     pub average_quality_score: f64,
+    
+    // Iroh-specific statistics
+    /// Number of contacts with Iroh networking support
+    pub iroh_contacts: usize,
+    /// Number of contacts with successful NAT traversal
+    pub nat_traversal_contacts: usize,
+    /// Average Iroh connection setup time (milliseconds)
+    pub avg_iroh_setup_time_ms: f64,
+    /// Most successful Iroh connection type
+    pub preferred_iroh_connection_type: Option<String>,
 }
 
 /// Get the home cache directory

@@ -1,3 +1,17 @@
+
+// Copyright 2024 MaidSafe Limited
+//
+// This software is dual-licensed under:
+// - GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
+// - Commercial License
+//
+// For AGPL-3.0 license, see LICENSE-AGPL-3.0
+// For commercial licensing, contact: saorsalabs@gmail.com
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under these licenses is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
 //! Bootstrap Cache Implementation
 //!
 //! Manages a persistent cache of peer contacts with quality-based selection,
@@ -181,6 +195,69 @@ impl BootstrapCache {
         Ok(selected)
     }
     
+    /// Get bootstrap peers that support Iroh networking
+    pub async fn get_iroh_bootstrap_peers(&self, count: usize) -> Result<Vec<ContactEntry>> {
+        let contacts = self.contacts.read().await;
+        
+        // Filter for contacts with Iroh information
+        let mut iroh_contacts: Vec<&ContactEntry> = contacts.values()
+            .filter(|contact| contact.iroh_contact.is_some())
+            .collect();
+        
+        // Sort by combined quality (regular + Iroh quality)
+        iroh_contacts.sort_by(|a, b| {
+            let score_a = a.quality_metrics.quality_score + a.iroh_quality_score() * 0.3;
+            let score_b = b.quality_metrics.quality_score + b.iroh_quality_score() * 0.3;
+            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        
+        let selected: Vec<ContactEntry> = iroh_contacts
+            .into_iter()
+            .take(count)
+            .cloned()
+            .collect();
+        
+        debug!("Selected {} Iroh bootstrap peers from {} available Iroh contacts", 
+               selected.len(), contacts.values().filter(|c| c.iroh_contact.is_some()).count());
+        
+        Ok(selected)
+    }
+    
+    /// Get contacts by Iroh NodeId
+    pub async fn get_contact_by_node_id(&self, node_id: &iroh_net::NodeId) -> Option<ContactEntry> {
+        let contacts = self.contacts.read().await;
+        contacts.values()
+            .find(|contact| contact.iroh_node_id() == Some(node_id))
+            .cloned()
+    }
+    
+    /// Update Iroh connection metrics for a contact
+    pub async fn update_iroh_metrics(
+        &mut self, 
+        peer_id: &PeerId, 
+        connection_type: crate::bootstrap::contact::IrohConnectionType,
+        success: bool,
+        setup_time_ms: Option<u64>,
+        nat_traversal_attempted: bool,
+        nat_traversal_successful: bool
+    ) -> Result<()> {
+        let mut contacts = self.contacts.write().await;
+        
+        if let Some(contact) = contacts.get_mut(peer_id) {
+            contact.update_iroh_connection_result(
+                connection_type,
+                success,
+                setup_time_ms,
+                nat_traversal_attempted,
+                nat_traversal_successful
+            );
+            
+            debug!("Updated Iroh metrics for peer {}: {}", peer_id, contact.summary());
+        }
+        
+        Ok(())
+    }
+    
     /// Add or update a contact
     pub async fn add_contact(&mut self, contact: ContactEntry) -> Result<()> {
         let mut contacts = self.contacts.write().await;
@@ -298,6 +375,40 @@ impl BootstrapCache {
         stats.verified_contacts = contacts.values()
             .filter(|c| c.ipv6_identity_verified)
             .count();
+        
+        // Iroh-specific statistics
+        stats.iroh_contacts = contacts.values()
+            .filter(|c| c.iroh_contact.is_some())
+            .count();
+        stats.nat_traversal_contacts = contacts.values()
+            .filter(|c| c.iroh_contact.as_ref().map(|iroh| iroh.nat_traversal_successful).unwrap_or(false))
+            .count();
+        
+        // Calculate average Iroh setup time
+        let iroh_setup_times: Vec<f64> = contacts.values()
+            .filter_map(|c| c.iroh_contact.as_ref())
+            .filter(|iroh| iroh.iroh_quality.avg_connection_setup_time_ms > 0.0)
+            .map(|iroh| iroh.iroh_quality.avg_connection_setup_time_ms)
+            .collect();
+        stats.avg_iroh_setup_time_ms = if !iroh_setup_times.is_empty() {
+            iroh_setup_times.iter().sum::<f64>() / iroh_setup_times.len() as f64
+        } else {
+            0.0
+        };
+        
+        // Find most successful connection type
+        let mut connection_type_counts = std::collections::HashMap::new();
+        for contact in contacts.values() {
+            if let Some(ref iroh) = contact.iroh_contact {
+                for conn_type in &iroh.successful_connection_types {
+                    *connection_type_counts.entry(format!("{:?}", conn_type)).or_insert(0) += 1;
+                }
+            }
+        }
+        stats.preferred_iroh_connection_type = connection_type_counts
+            .into_iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(conn_type, _)| conn_type);
         
         if !contacts.is_empty() {
             stats.average_quality_score = contacts.values()
@@ -505,6 +616,10 @@ impl Default for CacheStats {
             last_cleanup: chrono::Utc::now(),
             cache_hit_rate: 0.0,
             average_quality_score: 0.0,
+            iroh_contacts: 0,
+            nat_traversal_contacts: 0,
+            avg_iroh_setup_time_ms: 0.0,
+            preferred_iroh_connection_type: None,
         }
     }
 }

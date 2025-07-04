@@ -1,3 +1,4 @@
+
 //! Contact Entry and Quality Scoring
 //!
 //! Manages peer contact information with comprehensive quality metrics for
@@ -7,6 +8,57 @@ use crate::PeerId;
 use std::time::Duration;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+
+// Iroh-specific imports
+use iroh_net::NodeId;
+use iroh_base::node_addr::RelayUrl;
+
+/// Iroh-specific contact information for NAT traversal
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IrohContactInfo {
+    /// Iroh NodeId for this peer
+    pub node_id: NodeId,
+    /// Direct UDP endpoints that can be used to reach this peer
+    pub direct_addresses: Vec<std::net::SocketAddr>,
+    /// Relay URL if the peer uses a relay for connectivity
+    pub relay_url: Option<RelayUrl>,
+    /// Quality information about Iroh connections
+    pub iroh_quality: IrohQualityMetrics,
+    /// Last successful Iroh connection timestamp
+    pub last_iroh_connection: chrono::DateTime<chrono::Utc>,
+    /// Whether we successfully performed NAT traversal to this peer
+    pub nat_traversal_successful: bool,
+    /// Connection types that have been successful with this peer
+    pub successful_connection_types: Vec<IrohConnectionType>,
+}
+
+/// Quality metrics specific to Iroh connections
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IrohQualityMetrics {
+    /// NAT traversal success rate (0.0 to 1.0)
+    pub nat_traversal_success_rate: f64,
+    /// Average time to establish Iroh connection (milliseconds)
+    pub avg_connection_setup_time_ms: f64,
+    /// Success rate for different connection types
+    pub connection_type_success_rates: HashMap<IrohConnectionType, f64>,
+    /// Relay usage statistics
+    pub relay_usage_rate: f64,
+    /// Hole punching success rate when attempted
+    pub hole_punching_success_rate: f64,
+}
+
+/// Types of connections that Iroh can establish
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum IrohConnectionType {
+    /// Direct IPv4 connection
+    DirectIPv4,
+    /// Direct IPv6 connection  
+    DirectIPv6,
+    /// Connection via relay
+    Relay,
+    /// Connection using hole punching
+    HolePunching,
+}
 
 /// A contact entry representing a known peer
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -27,6 +79,10 @@ pub struct ContactEntry {
     pub reputation_score: f64,
     /// Historical connection data for this peer
     pub connection_history: ConnectionHistory,
+    
+    // Iroh-specific contact information
+    /// Iroh contact data for NAT traversal and connectivity
+    pub iroh_contact: Option<IrohContactInfo>,
 }
 
 /// Quality metrics for peer evaluation
@@ -77,6 +133,24 @@ impl ContactEntry {
             ipv6_identity_verified: false,
             reputation_score: 0.5, // Neutral starting score
             connection_history: ConnectionHistory::new(),
+            iroh_contact: None, // No Iroh contact info initially
+        }
+    }
+    
+    /// Create a new contact entry with Iroh information
+    pub fn new_with_iroh(peer_id: PeerId, addresses: Vec<String>, iroh_info: IrohContactInfo) -> Self {
+        let now = chrono::Utc::now();
+        
+        Self {
+            peer_id,
+            addresses,
+            last_seen: now,
+            quality_metrics: QualityMetrics::new(),
+            capabilities: Vec::new(),
+            ipv6_identity_verified: false,
+            reputation_score: 0.5, // Neutral starting score
+            connection_history: ConnectionHistory::new(),
+            iroh_contact: Some(iroh_info),
         }
     }
     
@@ -179,14 +253,139 @@ impl ContactEntry {
     
     /// Get a summary string for debugging
     pub fn summary(&self) -> String {
+        let iroh_info = if let Some(ref iroh_contact) = self.iroh_contact {
+            format!(" Iroh: NAT:{:.1}%", iroh_contact.iroh_quality.nat_traversal_success_rate * 100.0)
+        } else {
+            " Iroh: None".to_string()
+        };
+        
         format!(
-            "Peer {} (Quality: {:.2}, Success: {:.1}%, Latency: {:.0}ms, Verified: {})",
+            "Peer {} (Quality: {:.2}, Success: {:.1}%, Latency: {:.0}ms, Verified: {}{})",
             self.peer_id.to_string().chars().take(8).collect::<String>(),
             self.quality_metrics.quality_score,
             self.quality_metrics.success_rate * 100.0,
             self.quality_metrics.avg_latency_ms,
-            self.ipv6_identity_verified
+            self.ipv6_identity_verified,
+            iroh_info
         )
+    }
+    
+    /// Update or set Iroh contact information
+    pub fn update_iroh_contact(&mut self, iroh_info: IrohContactInfo) {
+        self.iroh_contact = Some(iroh_info);
+        self.recalculate_quality_score(); // Iroh may affect overall quality
+    }
+    
+    /// Update Iroh connection result 
+    pub fn update_iroh_connection_result(
+        &mut self, 
+        connection_type: IrohConnectionType,
+        success: bool, 
+        setup_time_ms: Option<u64>,
+        nat_traversal_attempted: bool,
+        nat_traversal_successful: bool
+    ) {
+        if let Some(ref mut iroh_contact) = self.iroh_contact {
+            let now = chrono::Utc::now();
+            
+            if success {
+                iroh_contact.last_iroh_connection = now;
+                
+                // Add to successful connection types if not already present
+                if !iroh_contact.successful_connection_types.contains(&connection_type) {
+                    iroh_contact.successful_connection_types.push(connection_type.clone());
+                }
+                
+                // Update setup time
+                if let Some(setup_time) = setup_time_ms {
+                    let current_avg = iroh_contact.iroh_quality.avg_connection_setup_time_ms;
+                    iroh_contact.iroh_quality.avg_connection_setup_time_ms = 
+                        if current_avg == 0.0 {
+                            setup_time as f64
+                        } else {
+                            (current_avg + setup_time as f64) / 2.0 // Simple moving average
+                        };
+                }
+            }
+            
+            // Update NAT traversal success
+            if nat_traversal_attempted {
+                iroh_contact.nat_traversal_successful = nat_traversal_successful;
+                // Update NAT traversal success rate (simplified)
+                let current_rate = iroh_contact.iroh_quality.nat_traversal_success_rate;
+                iroh_contact.iroh_quality.nat_traversal_success_rate = 
+                    if current_rate == 0.0 {
+                        if nat_traversal_successful { 1.0 } else { 0.0 }
+                    } else {
+                        (current_rate + if nat_traversal_successful { 1.0 } else { 0.0 }) / 2.0
+                    };
+            }
+            
+            // Update connection type success rates
+            let current_rate = iroh_contact.iroh_quality.connection_type_success_rates
+                .get(&connection_type).copied().unwrap_or(0.0);
+            let new_rate = if current_rate == 0.0 {
+                if success { 1.0 } else { 0.0 }
+            } else {
+                (current_rate + if success { 1.0 } else { 0.0 }) / 2.0
+            };
+            iroh_contact.iroh_quality.connection_type_success_rates.insert(connection_type.clone(), new_rate);
+            
+            // Update relay usage if this was a relay connection
+            if matches!(connection_type, IrohConnectionType::Relay) {
+                let current_relay_rate = iroh_contact.iroh_quality.relay_usage_rate;
+                iroh_contact.iroh_quality.relay_usage_rate = 
+                    if current_relay_rate == 0.0 {
+                        1.0
+                    } else {
+                        (current_relay_rate + 1.0) / 2.0
+                    };
+            }
+            
+            // Update hole punching success if applicable
+            if matches!(connection_type, IrohConnectionType::HolePunching) {
+                let current_hp_rate = iroh_contact.iroh_quality.hole_punching_success_rate;
+                iroh_contact.iroh_quality.hole_punching_success_rate = 
+                    if current_hp_rate == 0.0 {
+                        if success { 1.0 } else { 0.0 }
+                    } else {
+                        (current_hp_rate + if success { 1.0 } else { 0.0 }) / 2.0
+                    };
+            }
+            
+            self.recalculate_quality_score();
+        }
+    }
+    
+    /// Get Iroh NodeId if available
+    pub fn iroh_node_id(&self) -> Option<&NodeId> {
+        self.iroh_contact.as_ref().map(|contact| &contact.node_id)
+    }
+    
+    /// Check if peer supports specific Iroh connection type
+    pub fn supports_iroh_connection_type(&self, connection_type: &IrohConnectionType) -> bool {
+        self.iroh_contact.as_ref()
+            .map(|contact| contact.successful_connection_types.contains(connection_type))
+            .unwrap_or(false)
+    }
+    
+    /// Get Iroh quality score (0.0 to 1.0)
+    pub fn iroh_quality_score(&self) -> f64 {
+        if let Some(ref iroh_contact) = self.iroh_contact {
+            let nat_score = iroh_contact.iroh_quality.nat_traversal_success_rate;
+            let setup_score = if iroh_contact.iroh_quality.avg_connection_setup_time_ms > 0.0 {
+                // Lower setup time = higher score
+                (5000.0 / (iroh_contact.iroh_quality.avg_connection_setup_time_ms + 1000.0)).min(1.0)
+            } else {
+                0.5 // Neutral if no data
+            };
+            let type_diversity_score = iroh_contact.successful_connection_types.len() as f64 / 4.0; // Up to 4 types
+            
+            // Weighted average
+            (nat_score * 0.5 + setup_score * 0.3 + type_diversity_score * 0.2).clamp(0.0, 1.0)
+        } else {
+            0.0 // No Iroh information
+        }
     }
 }
 
@@ -303,6 +502,23 @@ impl QualityCalculator {
             .count();
         score += capability_count as f64 * self.capability_bonus;
         
+        // Iroh connectivity bonus (significant advantage for NAT traversal)
+        if let Some(ref iroh_contact) = contact.iroh_contact {
+            let iroh_score = iroh_contact.iroh_quality.overall_score();
+            // Give 10% bonus for having Iroh + quality-based multiplier
+            let iroh_bonus = 0.10 * iroh_score;
+            score += iroh_bonus;
+            
+            // Additional bonus for NAT traversal capability
+            if iroh_contact.nat_traversal_successful {
+                score += 0.05; // 5% bonus for successful NAT traversal
+            }
+            
+            // Bonus for connection type diversity (more ways to connect = better)
+            let diversity_bonus = (iroh_contact.successful_connection_types.len() as f64 / 4.0) * 0.03;
+            score += diversity_bonus;
+        }
+        
         // Clamp to valid range
         score.clamp(0.0, 1.0)
     }
@@ -340,6 +556,87 @@ impl Clone for QualityCalculator {
 }
 
 impl Default for QualityCalculator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl IrohContactInfo {
+    /// Create new Iroh contact info
+    pub fn new(node_id: NodeId, direct_addresses: Vec<std::net::SocketAddr>) -> Self {
+        let now = chrono::Utc::now();
+        
+        Self {
+            node_id,
+            direct_addresses,
+            relay_url: None,
+            iroh_quality: IrohQualityMetrics::new(),
+            last_iroh_connection: now,
+            nat_traversal_successful: false,
+            successful_connection_types: Vec::new(),
+        }
+    }
+    
+    /// Create new Iroh contact info with relay
+    pub fn new_with_relay(node_id: NodeId, direct_addresses: Vec<std::net::SocketAddr>, relay_url: RelayUrl) -> Self {
+        let now = chrono::Utc::now();
+        
+        Self {
+            node_id,
+            direct_addresses,
+            relay_url: Some(relay_url),
+            iroh_quality: IrohQualityMetrics::new(),
+            last_iroh_connection: now,
+            nat_traversal_successful: false,
+            successful_connection_types: Vec::new(),
+        }
+    }
+    
+    /// Update direct addresses
+    pub fn update_direct_addresses(&mut self, addresses: Vec<std::net::SocketAddr>) {
+        self.direct_addresses = addresses;
+    }
+    
+    /// Set relay URL
+    pub fn set_relay_url(&mut self, relay_url: Option<RelayUrl>) {
+        self.relay_url = relay_url;
+    }
+    
+    /// Check if this contact has any connectivity options
+    pub fn has_connectivity_options(&self) -> bool {
+        !self.direct_addresses.is_empty() || self.relay_url.is_some()
+    }
+}
+
+impl IrohQualityMetrics {
+    /// Create new Iroh quality metrics with default values
+    pub fn new() -> Self {
+        Self {
+            nat_traversal_success_rate: 0.0,
+            avg_connection_setup_time_ms: 0.0,
+            connection_type_success_rates: HashMap::new(),
+            relay_usage_rate: 0.0,
+            hole_punching_success_rate: 0.0,
+        }
+    }
+    
+    /// Get overall Iroh connectivity score
+    pub fn overall_score(&self) -> f64 {
+        let nat_score = self.nat_traversal_success_rate;
+        let speed_score = if self.avg_connection_setup_time_ms > 0.0 {
+            (5000.0 / (self.avg_connection_setup_time_ms + 1000.0)).min(1.0)
+        } else {
+            0.5
+        };
+        let reliability_score = self.connection_type_success_rates.values().sum::<f64>() / 
+            self.connection_type_success_rates.len().max(1) as f64;
+        
+        // Weighted combination
+        (nat_score * 0.4 + speed_score * 0.3 + reliability_score * 0.3).clamp(0.0, 1.0)
+    }
+}
+
+impl Default for IrohQualityMetrics {
     fn default() -> Self {
         Self::new()
     }
@@ -417,5 +714,114 @@ mod tests {
         
         assert!(metrics.quality_score < 0.8);
         assert!(metrics.uptime_score < 0.9);
+    }
+    
+    #[test]
+    fn test_iroh_contact_creation() {
+        use iroh_net::key::SecretKey;
+        
+        let secret_key = SecretKey::generate();
+        let node_id = iroh_net::NodeId::from(secret_key.public());
+        let addresses = vec!["127.0.0.1:9000".parse().unwrap()];
+        
+        let iroh_contact = IrohContactInfo::new(node_id, addresses.clone());
+        
+        assert_eq!(iroh_contact.node_id, node_id);
+        assert_eq!(iroh_contact.direct_addresses, addresses);
+        assert!(iroh_contact.relay_url.is_none());
+        assert!(!iroh_contact.nat_traversal_successful);
+    }
+    
+    #[test]
+    fn test_contact_with_iroh_info() {
+        use iroh_net::key::SecretKey;
+        
+        let secret_key = SecretKey::generate();
+        let node_id = iroh_net::NodeId::from(secret_key.public());
+        let addresses = vec!["127.0.0.1:9000".parse().unwrap()];
+        let iroh_info = IrohContactInfo::new(node_id, addresses);
+        
+        let contact = ContactEntry::new_with_iroh(
+            PeerId::from("test-peer"),
+            vec!["/ip4/127.0.0.1/tcp/9000".to_string()],
+            iroh_info
+        );
+        
+        assert!(contact.iroh_contact.is_some());
+        assert_eq!(contact.iroh_node_id(), Some(&node_id));
+        assert!(has_connectivity_options(&contact));
+    }
+    
+    #[test]
+    fn test_iroh_connection_result_update() {
+        use iroh_net::key::SecretKey;
+        
+        let secret_key = SecretKey::generate();
+        let node_id = iroh_net::NodeId::from(secret_key.public());
+        let addresses = vec!["127.0.0.1:9000".parse().unwrap()];
+        let iroh_info = IrohContactInfo::new(node_id, addresses);
+        
+        let mut contact = ContactEntry::new_with_iroh(
+            PeerId::from("test-peer"),
+            vec!["/ip4/127.0.0.1/tcp/9000".to_string()],
+            iroh_info
+        );
+        
+        // Simulate successful Iroh connection with NAT traversal
+        contact.update_iroh_connection_result(
+            IrohConnectionType::DirectIPv4,
+            true,
+            Some(250), // 250ms setup time
+            true,  // NAT traversal attempted
+            true   // NAT traversal successful
+        );
+        
+        assert!(contact.iroh_contact.as_ref().unwrap().nat_traversal_successful);
+        assert_eq!(contact.iroh_contact.as_ref().unwrap().iroh_quality.avg_connection_setup_time_ms, 250.0);
+        assert!(contact.supports_iroh_connection_type(&IrohConnectionType::DirectIPv4));
+        
+        let iroh_quality = contact.iroh_quality_score();
+        assert!(iroh_quality > 0.0);
+    }
+    
+    #[test]
+    fn test_iroh_quality_affects_overall_score() {
+        use iroh_net::key::SecretKey;
+        
+        let secret_key = SecretKey::generate();
+        let node_id = iroh_net::NodeId::from(secret_key.public());
+        let addresses = vec!["127.0.0.1:9000".parse().unwrap()];
+        let iroh_info = IrohContactInfo::new(node_id, addresses);
+        
+        // Contact without Iroh
+        let mut contact_no_iroh = ContactEntry::new(
+            PeerId::from("test-peer-no-iroh"),
+            vec!["/ip4/127.0.0.1/tcp/9000".to_string()]
+        );
+        contact_no_iroh.update_connection_result(true, Some(100), None);
+        
+        // Contact with Iroh
+        let mut contact_with_iroh = ContactEntry::new_with_iroh(
+            PeerId::from("test-peer-with-iroh"),
+            vec!["/ip4/127.0.0.1/tcp/9000".to_string()],
+            iroh_info
+        );
+        contact_with_iroh.update_connection_result(true, Some(100), None);
+        contact_with_iroh.update_iroh_connection_result(
+            IrohConnectionType::DirectIPv4,
+            true,
+            Some(200),
+            true,
+            true
+        );
+        
+        // Iroh contact should have higher quality score
+        assert!(contact_with_iroh.quality_metrics.quality_score > contact_no_iroh.quality_metrics.quality_score);
+    }
+    
+    fn has_connectivity_options(contact: &ContactEntry) -> bool {
+        contact.iroh_contact.as_ref()
+            .map(|iroh| iroh.has_connectivity_options())
+            .unwrap_or(false)
     }
 }

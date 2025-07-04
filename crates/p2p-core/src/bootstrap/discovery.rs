@@ -1,3 +1,4 @@
+
 //! Bootstrap Discovery Module
 //! 
 //! Provides multiple mechanisms for discovering bootstrap nodes:
@@ -70,9 +71,12 @@ impl BootstrapDiscovery {
 
         // Try to decode as a generated three-word address
         // For now, parse as ThreeWordAddress and attempt resolution
-        let word_address = ThreeWordAddress::from_string(three_words)?;
-        self.word_encoder.decode_to_multiaddr(&word_address)
-            .with_context(|| format!("Failed to resolve three-word address: {}", three_words))
+        let word_address = ThreeWordAddress::from_string(three_words)
+            .map_err(|e| anyhow::anyhow!("Invalid three-word address format: {}", e))?;
+        let multiaddr_str = self.word_encoder.decode_to_multiaddr_string(&word_address)
+            .map_err(|e| anyhow::anyhow!("Failed to decode three-word address: {}", e))?;
+        multiaddr_str.parse()
+            .with_context(|| format!("Invalid multiaddr from three-word address: {}", three_words))
     }
 
     /// Get all available bootstrap addresses

@@ -1,3 +1,4 @@
+
 //! Distributed Hash Table (DHT) Implementation
 //!
 //! This module provides a Kademlia-based DHT for distributed peer routing and data storage.
@@ -1923,14 +1924,12 @@ impl DHT {
     
     /// Generate a three-word address for an inbox
     fn generate_three_word_address(&self, inbox_id: &str) -> String {
-        use crate::bootstrap::words::WordEncoder;
+        use three_word_networking::WordEncoder;
         
         let encoder = WordEncoder::new();
-        let fake_multiaddr = format!("/inbox/{}/dht", inbox_id).parse().unwrap_or_else(|_| {
-            "/ip6/::1/udp/9000/quic".parse().unwrap()
-        });
+        let fake_multiaddr_str = format!("/inbox/{}/dht", inbox_id);
         
-        if let Ok(words) = encoder.encode_multiaddr(&fake_multiaddr) {
+        if let Ok(words) = encoder.encode_multiaddr_string(&fake_multiaddr_str) {
             words.to_string()
         } else {
             format!("inbox.{}.messages", inbox_id.chars().take(8).collect::<String>())
