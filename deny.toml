@@ -38,7 +38,7 @@ exclude = []
 all-features = false
 # If set, these feature will be enabled when collecting metadata. If `--features`
 # is specified on the cmd line they will take precedence over this option.
-feature-depth = 1
+features = []
 
 # This section is considered when running `cargo deny check advisories`
 # More documentation for the advisories section can be found here:
@@ -51,7 +51,7 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 # The lint level for security vulnerabilities
 vulnerability = "deny"
 # The lint level for unmaintained crates
-unmaintained = "warn"
+unmaintained = "allow"
 # The lint level for crates that have been yanked from their source registry
 yanked = "warn"
 # The lint level for crates with security notices. Note that as of
@@ -82,9 +82,7 @@ allow = [
     "ISC",
     "Unicode-DFS-2016",
     "CC0-1.0",
-    "AGPL-3.0",
-    "AGPL-3.0-only",
-    "AGPL-3.0-or-later", 
+    "AGPL-3.0", 
     "MPL-2.0",
     "0BSD",
     "Zlib",
