@@ -119,8 +119,8 @@ impl Default for NodeConfig {
         Self {
             peer_id: None,
             listen_addrs: vec![
-                "/ip6/::/tcp/9000".to_string(),
-                "/ip4/0.0.0.0/tcp/9000".to_string(),
+                "/ip6/::/tcp/9000".parse().unwrap(),
+                "/ip4/0.0.0.0/tcp/9000".parse().unwrap(),
             ],
             listen_addr: "127.0.0.1:9000".parse().unwrap(),
             bootstrap_peers: Vec::new(),
@@ -1998,13 +1998,18 @@ impl NodeBuilder {
     
     /// Add a listen address
     pub fn listen_on(mut self, addr: &str) -> Self {
-        self.config.listen_addrs.push(addr.to_string());
+        if let Ok(multiaddr) = addr.parse() {
+            self.config.listen_addrs.push(multiaddr);
+        }
         self
     }
     
     /// Add a bootstrap peer
     pub fn with_bootstrap_peer(mut self, addr: &str) -> Self {
-        self.config.bootstrap_peers.push(addr.to_string());
+        if let Ok(multiaddr) = addr.parse() {
+            self.config.bootstrap_peers.push(multiaddr);
+        }
+        self.config.bootstrap_peers_str.push(addr.to_string());
         self
     }
     
@@ -2048,6 +2053,18 @@ impl NodeBuilder {
     /// Configure production settings
     pub fn with_production_config(mut self, production_config: ProductionConfig) -> Self {
         self.config.production_config = Some(production_config);
+        self
+    }
+    
+    /// Configure DHT settings
+    pub fn with_dht(mut self, dht_config: DHTConfig) -> Self {
+        self.config.dht_config = dht_config;
+        self
+    }
+    
+    /// Enable DHT with default configuration
+    pub fn with_default_dht(mut self) -> Self {
+        self.config.dht_config = DHTConfig::default();
         self
     }
     
@@ -2177,10 +2194,10 @@ mod tests {
         NodeConfig {
             peer_id: Some("test_peer_123".to_string()),
             listen_addrs: vec![
-                "/ip6/::1/tcp/9001".to_string(),
-                "/ip4/127.0.0.1/tcp/9001".to_string(),
+                "/ip6/::1/tcp/0".to_string(),
+                "/ip4/127.0.0.1/tcp/0".to_string(),
             ],
-            listen_addr: "127.0.0.1:9001".parse().unwrap(),
+            listen_addr: "127.0.0.1:0".parse().unwrap(),
             bootstrap_peers: vec![],
             bootstrap_peers_str: vec![],
             enable_ipv6: true,
@@ -2349,7 +2366,7 @@ mod tests {
         let config = create_test_node_config();
         let node = P2PNode::new(config).await?;
 
-        let peer_addr = "/ip4/127.0.0.1/tcp/9002".to_string();
+        let peer_addr = "/ip4/127.0.0.1/tcp/0".to_string();
         
         // Connect to a peer
         let peer_id = node.connect_peer(&peer_addr).await?;
@@ -2384,7 +2401,7 @@ mod tests {
         let node = P2PNode::new(config).await?;
 
         let mut events = node.subscribe_events();
-        let peer_addr = "/ip4/127.0.0.1/tcp/9003".to_string();
+        let peer_addr = "/ip4/127.0.0.1/tcp/0".to_string();
 
         // Connect to a peer (this should emit an event)
         let peer_id = node.connect_peer(&peer_addr).await?;
