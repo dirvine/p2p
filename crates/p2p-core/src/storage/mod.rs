@@ -17,7 +17,7 @@
 //! and multi-device access.
 
 use crate::dht::{DHT, Key};
-use crate::identity::enhanced::{EnhancedIdentity, DeviceId};
+use crate::identity::enhanced::EnhancedIdentity;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, Duration};
 use thiserror::Error;

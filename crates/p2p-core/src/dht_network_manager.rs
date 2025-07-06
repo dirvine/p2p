@@ -371,7 +371,7 @@ impl DhtNetworkManager {
                     info!("Found value for key {} from peer: {}", key.to_hex(), source);
                     
                     // Cache locally for future requests
-                    let mut dht_guard = self.dht.write().await;
+                    let dht_guard = self.dht.write().await;
                     if let Err(e) = dht_guard.put(key.clone(), value.clone()).await {
                         warn!("Failed to cache retrieved value: {}", e);
                     }
@@ -855,7 +855,7 @@ impl DhtNetworkManager {
                 let dht_key = Key::new(message.source.as_bytes());
                 let node = DHTNode::new(message.source.clone(), vec![], &dht_key);
                 
-                let mut dht_guard = self.dht.write().await;
+                let dht_guard = self.dht.write().await;
         if let Err(e) = dht_guard.add_node(node).await {
                     warn!("Failed to add joining node to routing table: {}", e);
                 }
@@ -868,7 +868,7 @@ impl DhtNetworkManager {
             DhtNetworkOperation::Leave => {
                 info!("Handling LEAVE request from: {}", message.source);
                 // Remove the leaving node from our routing table
-                let mut dht_guard = self.dht.write().await;
+                let dht_guard = self.dht.write().await;
         if let Err(e) = dht_guard.remove_node(&message.source).await {
                     warn!("Failed to remove leaving node from routing table: {}", e);
                 }
@@ -901,9 +901,9 @@ impl DhtNetworkManager {
             target: Some(request.source.clone()),
             message_type: DhtMessageType::Response,
             payload: match result {
-                DhtNetworkResult::PutSuccess { key, replicated_to } => 
+                DhtNetworkResult::PutSuccess { key, replicated_to: _ } => 
                     DhtNetworkOperation::Put { key, value: vec![] }, // Response doesn't need value
-                DhtNetworkResult::GetSuccess { key, value, .. } => 
+                DhtNetworkResult::GetSuccess { key,  .. } => 
                     DhtNetworkOperation::Get { key },
                 DhtNetworkResult::GetNotFound { key } => 
                     DhtNetworkOperation::Get { key },
@@ -951,7 +951,7 @@ impl DhtNetworkManager {
         
         // Update DHT routing table
         let node = DHTNode::new(peer_id, peer_info.addresses.clone(), &dht_key);
-        let mut dht_guard = self.dht.write().await;
+        let dht_guard = self.dht.write().await;
         if let Err(e) = dht_guard.add_node(node).await {
             warn!("Failed to update routing table: {}", e);
         }

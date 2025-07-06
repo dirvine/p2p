@@ -20,7 +20,7 @@
 
 use super::{Transport, Connection, TransportType, TransportOptions, ConnectionInfo, ConnectionQuality};
 use crate::tunneling::{TunnelManager, TunnelManagerConfig, detect_network_capabilities};
-use crate::{Multiaddr, P2PError, Result};
+use crate::{P2PError, Result};
 use async_trait::async_trait;
 use std::net::{SocketAddr, Ipv6Addr};
 use std::sync::Arc;
@@ -73,9 +73,9 @@ pub struct TunneledConnection {
     /// Underlying TCP connection over tunnel
     stream: TcpStream,
     /// Local address (IPv6 via tunnel)
-    local_addr: Multiaddr,
+    local_addr: SocketAddr,
     /// Remote address (IPv6 via tunnel)
-    remote_addr: Multiaddr,
+    remote_addr: SocketAddr,
     /// Connection establishment time
     established_at: Instant,
     /// Tunnel information
@@ -234,7 +234,7 @@ impl TunneledTransport {
 
 #[async_trait]
 impl Transport for TunneledTransport {
-    async fn listen(&self, addr: SocketAddr) -> Result<Vec<Multiaddr>> {
+    async fn listen(&self, addr: SocketAddr) -> Result<SocketAddr> {
         let tunnel_info = self.get_tunnel_info().await?;
         
         // Convert IPv4 listen address to IPv6 via tunnel
@@ -248,14 +248,12 @@ impl Transport for TunneledTransport {
         let local_addr = listener.local_addr()
             .map_err(|e| P2PError::Network(format!("Failed to get local address: {}", e)))?;
         
-        let multiaddr = format!("/ip6/{}/tcp/{}", local_addr.ip(), local_addr.port());
-        
-        info!("Tunneled transport listening on {}", multiaddr);
+        info!("Tunneled transport listening on {}", local_addr);
         
         // In a real implementation, we would spawn a task to handle incoming connections
         // and integrate with the connection pool
         
-        Ok(vec![multiaddr])
+        Ok(local_addr)
     }
     
     async fn accept(&self) -> Result<Box<dyn Connection>> {
@@ -263,35 +261,21 @@ impl Transport for TunneledTransport {
         Err(P2PError::Transport("Tunneled transport accept not yet implemented".to_string()))
     }
     
-    async fn connect(&self, addr: &Multiaddr) -> Result<Box<dyn Connection>> {
+    async fn connect(&self, addr: SocketAddr) -> Result<Box<dyn Connection>> {
         self.connect_with_options(addr, TransportOptions::default()).await
     }
     
-    async fn connect_with_options(&self, addr: &Multiaddr, options: TransportOptions) -> Result<Box<dyn Connection>> {
+    async fn connect_with_options(&self, addr: SocketAddr, options: TransportOptions) -> Result<Box<dyn Connection>> {
         let tunnel_info = self.get_tunnel_info().await?;
         
         info!("Connecting via tunnel ({:?}) to {}", tunnel_info.protocol, addr);
         
-        // Parse the multiaddr to get target
-        // For now, assume it's in format /ip6/ADDRESS/tcp/PORT
-        let parts: Vec<&str> = addr.split('/').collect();
-        if parts.len() < 5 || parts[1] != "ip6" || parts[3] != "tcp" {
-            return Err(P2PError::Network(format!("Invalid IPv6 multiaddr: {}", addr)));
-        }
-        
-        let target_ip: Ipv6Addr = parts[2].parse()
-            .map_err(|e| P2PError::Network(format!("Invalid IPv6 address: {}", e)))?;
-        let target_port: u16 = parts[4].parse()
-            .map_err(|e| P2PError::Network(format!("Invalid port: {}", e)))?;
-        
-        let target_addr = SocketAddr::new(target_ip.into(), target_port);
-        
-        debug!("Establishing tunneled connection to {}", target_addr);
+        debug!("Establishing tunneled connection to {}", addr);
         
         // Establish connection with timeout
         let stream = tokio::time::timeout(
             options.connect_timeout,
-            TcpStream::connect(target_addr)
+            TcpStream::connect(addr)
         ).await
         .map_err(|_| P2PError::Network("Connection timeout".to_string()))?
         .map_err(|e| P2PError::Network(format!("Connection failed: {}", e)))?;
@@ -305,8 +289,8 @@ impl Transport for TunneledTransport {
         
         let connection = TunneledConnection {
             stream,
-            local_addr: format!("/ip6/{}/tcp/{}", local_addr.ip(), local_addr.port()),
-            remote_addr: format!("/ip6/{}/tcp/{}", remote_addr.ip(), remote_addr.port()),
+            local_addr,
+            remote_addr,
             established_at: Instant::now(),
             _tunnel_info: tunnel_info,
         };
@@ -314,19 +298,17 @@ impl Transport for TunneledTransport {
         Ok(Box::new(connection))
     }
     
-    fn supported_addresses(&self) -> Vec<String> {
-        vec![
-            "/ip6/*/tcp/*".to_string(),
-            "/ip4/*/tcp/*".to_string(), // Via tunneling
-        ]
+    fn supports_ipv6(&self) -> bool {
+        true // Tunneled transport supports both IPv4 and IPv6
     }
     
     fn transport_type(&self) -> TransportType {
         TransportType::TCP // Tunneled TCP
     }
     
-    fn supports_address(&self, addr: &Multiaddr) -> bool {
-        addr.contains("/ip6/") || addr.contains("/ip4/")
+    fn supports_address(&self, addr: SocketAddr) -> bool {
+        // Tunneled transport supports both IPv4 and IPv6 through tunneling
+        true
     }
 }
 
@@ -376,8 +358,8 @@ impl Connection for TunneledConnection {
     async fn info(&self) -> ConnectionInfo {
         ConnectionInfo {
             transport_type: TransportType::TCP,
-            local_addr: self.local_addr.clone(),
-            remote_addr: self.remote_addr.clone(),
+            local_addr: self.local_addr,
+            remote_addr: self.remote_addr,
             is_encrypted: false, // TCP over tunnel is not encrypted by default
             cipher_suite: "none".to_string(),
             used_0rtt: false,
@@ -416,11 +398,11 @@ impl Connection for TunneledConnection {
         })
     }
     
-    fn local_addr(&self) -> Multiaddr {
-        self.local_addr.clone()
+    fn local_addr(&self) -> SocketAddr {
+        self.local_addr
     }
     
-    fn remote_addr(&self) -> Multiaddr {
-        self.remote_addr.clone()
+    fn remote_addr(&self) -> SocketAddr {
+        self.remote_addr
     }
 }

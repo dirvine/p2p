@@ -813,7 +813,7 @@ impl ProjectsManager {
     
     /// Encrypt content using AES-GCM
     fn encrypt_content(&self, content: &[u8], key: &[u8]) -> Result<Vec<u8>> {
-        use aes_gcm::{Aes256Gcm, Key, Nonce, AeadInPlace, KeyInit};
+        use aes_gcm::{Aes256Gcm, Nonce, AeadInPlace, KeyInit};
         use rand::RngCore;
         
         // Removed unused P2PError import
@@ -847,7 +847,7 @@ impl ProjectsManager {
     
     /// Decrypt content using AES-GCM
     fn decrypt_content(&self, encrypted: &[u8], key: &[u8]) -> Result<Vec<u8>> {
-        use aes_gcm::{Aes256Gcm, Key, Nonce, AeadInPlace, KeyInit};
+        use aes_gcm::{Aes256Gcm, Nonce, AeadInPlace, KeyInit};
         // Removed unused P2PError import
         
         // Ensure key is exactly 32 bytes for AES-256

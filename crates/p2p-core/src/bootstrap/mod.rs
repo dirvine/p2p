@@ -25,7 +25,7 @@ pub mod discovery;
 pub mod merge;
 
 pub use cache::{BootstrapCache, CacheConfig, CacheError};
-pub use contact::{ContactEntry, QualityMetrics, QualityCalculator, IrohContactInfo, IrohQualityMetrics, IrohConnectionType};
+pub use contact::{ContactEntry, QualityMetrics, QualityCalculator, QuicContactInfo, QuicQualityMetrics, QuicConnectionType};
 pub use discovery::{BootstrapDiscovery, BootstrapConfig, ConfigurableBootstrapDiscovery};
 pub use merge::{MergeCoordinator, MergeResult};
 pub use three_word_networking::{ThreeWordAddress, WordDictionary, WordEncoder};
@@ -222,14 +222,14 @@ pub struct CacheStats {
     /// Average quality score across all contacts
     pub average_quality_score: f64,
     
-    // Iroh-specific statistics
-    /// Number of contacts with Iroh networking support
+    // QUIC-specific statistics
+    /// Number of contacts with QUIC networking support
     pub iroh_contacts: usize,
-    /// Number of contacts with successful NAT traversal
+    /// Number of contacts with successful NAT traversal (deprecated)
     pub nat_traversal_contacts: usize,
-    /// Average Iroh connection setup time (milliseconds)
+    /// Average QUIC connection setup time (milliseconds)
     pub avg_iroh_setup_time_ms: f64,
-    /// Most successful Iroh connection type
+    /// Most successful QUIC connection type
     pub preferred_iroh_connection_type: Option<String>,
 }
 

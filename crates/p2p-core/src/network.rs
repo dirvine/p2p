@@ -16,7 +16,7 @@
 //! This module provides core networking functionality for the P2P Foundation.
 //! It handles peer connections, network events, and node lifecycle management.
 
-use crate::{PeerId, Multiaddr, P2PError, Result};
+use crate::{PeerId, P2PError, Result};
 use crate::mcp::{MCPServer, MCPServerConfig, Tool, MCPCallContext, MCP_PROTOCOL, NetworkSender};
 use crate::dht::{DHT, DHTConfig as DHTConfigInner};
 use crate::production::{ProductionConfig, ResourceManager, ResourceMetrics};
@@ -39,13 +39,13 @@ pub struct NodeConfig {
     pub peer_id: Option<PeerId>,
     
     /// Addresses to listen on for incoming connections
-    pub listen_addrs: Vec<Multiaddr>,
+    pub listen_addrs: Vec<std::net::SocketAddr>,
     
     /// Primary listen address (for compatibility)
     pub listen_addr: std::net::SocketAddr,
     
     /// Bootstrap peers to connect to on startup (legacy)
-    pub bootstrap_peers: Vec<Multiaddr>,
+    pub bootstrap_peers: Vec<std::net::SocketAddr>,
     
     /// Bootstrap peers as strings (for integration tests)
     pub bootstrap_peers_str: Vec<String>,
@@ -132,8 +132,8 @@ impl Default for NodeConfig {
         Self {
             peer_id: None,
             listen_addrs: vec![
-                "/ip6/::/tcp/9000".parse().unwrap(),
-                "/ip4/0.0.0.0/tcp/9000".parse().unwrap(),
+                "[::]:9000".parse().unwrap(),
+                "0.0.0.0:9000".parse().unwrap(),
             ],
             listen_addr: "127.0.0.1:9000".parse().unwrap(),
             bootstrap_peers: Vec::new(),
@@ -307,7 +307,7 @@ pub struct P2PNode {
     event_tx: broadcast::Sender<P2PEvent>,
     
     /// Listen addresses
-    listen_addrs: RwLock<Vec<Multiaddr>>,
+    listen_addrs: RwLock<Vec<std::net::SocketAddr>>,
     
     /// Node start time
     start_time: Instant,
@@ -621,21 +621,16 @@ impl P2PNode {
         info!("Starting network listeners...");
         
         // Get available transports from transport manager
-        let transport_manager = &self.transport_manager;
+        let _transport_manager = &self.transport_manager;
         
         // Listen on each configured address
-        for multiaddr in &self.config.listen_addrs {
-            // Convert Multiaddr to SocketAddr for transport layer
-            if let Some(socket_addr) = self.multiaddr_to_socketaddr(multiaddr) {
-                // Start listeners for each registered transport
-                // For now, we'll use the default transport (QUIC preferred, TCP fallback)
-                if let Err(e) = self.start_listener_on_address(socket_addr).await {
-                    warn!("Failed to start listener on {}: {}", socket_addr, e);
-                } else {
-                    info!("Started listener on {}", socket_addr);
-                }
+        for &socket_addr in &self.config.listen_addrs {
+            // Start listeners for each registered transport
+            // For now, we'll use the default transport (QUIC preferred, TCP fallback)
+            if let Err(e) = self.start_listener_on_address(socket_addr).await {
+                warn!("Failed to start listener on {}: {}", socket_addr, e);
             } else {
-                warn!("Could not parse address for listening: {}", multiaddr);
+                info!("Started listener on {}", socket_addr);
             }
         }
         
@@ -674,7 +669,7 @@ impl P2PNode {
                         {
                             let mut node_listen_addrs = self.listen_addrs.write().await;
                             // Don't clear - accumulate addresses from multiple listeners
-                            node_listen_addrs.extend(listen_addrs);
+                            node_listen_addrs.push(listen_addrs);
                         }
                         
                         // Start accepting connections in background
@@ -706,7 +701,7 @@ impl P2PNode {
                 {
                     let mut node_listen_addrs = self.listen_addrs.write().await;
                     // Don't clear - accumulate addresses from multiple listeners (TCP fallback)
-                    node_listen_addrs.extend(listen_addrs);
+                    node_listen_addrs.push(listen_addrs);
                 }
                 
                 // Start accepting connections in background
@@ -736,9 +731,9 @@ impl P2PNode {
         
         // Clone necessary data for the background task
         let event_tx = self.event_tx.clone();
-        let peer_id = self.peer_id.clone();
+        let _peer_id = self.peer_id.clone();
         let peers = Arc::clone(&self.peers);
-        let transport_manager = Arc::clone(&self.transport_manager);
+        let _transport_manager = Arc::clone(&self.transport_manager);
         let mcp_server = self.mcp_server.clone();
         
         // Spawn background task to accept incoming connections
@@ -748,7 +743,7 @@ impl P2PNode {
                     Ok(mut connection) => {
                         let remote_addr = connection.remote_addr();
                         let connection_peer_id = format!("peer_from_{}", 
-                            remote_addr.replace("/", "_").replace(":", "_"));
+                            remote_addr.to_string().replace(":", "_"));
                         
                         info!("Accepted {:?} connection from {} (peer: {})", 
                               transport_type, remote_addr, connection_peer_id);
@@ -761,7 +756,7 @@ impl P2PNode {
                             let mut peers_guard = peers.write().await;
                             let peer_info = PeerInfo {
                                 peer_id: connection_peer_id.clone(),
-                                addresses: vec![remote_addr.clone()],
+                                addresses: vec![remote_addr.to_string()],
                                 connected_at: tokio::time::Instant::now(),
                                 last_seen: tokio::time::Instant::now(),
                                 status: ConnectionStatus::Connected,
@@ -1127,45 +1122,6 @@ impl P2PNode {
         Ok(())
     }
     
-    /// Convert Multiaddr to SocketAddr (helper function)
-    fn multiaddr_to_socketaddr(&self, multiaddr: &Multiaddr) -> Option<std::net::SocketAddr> {
-        // Simple conversion - in practice this would be more robust
-        let addr_str = multiaddr.to_string();
-        
-        // Handle IPv4 addresses like "/ip4/0.0.0.0/tcp/9000" or "/ip4/0.0.0.0/udp/9000/quic"
-        if addr_str.starts_with("/ip4/") {
-            let parts: Vec<&str> = addr_str.split('/').collect();
-            if parts.len() >= 5 {
-                let ip = parts[2];
-                let port = parts[4];
-                if let Ok(port_num) = port.parse::<u16>() {
-                    if let Ok(ip_addr) = ip.parse::<std::net::Ipv4Addr>() {
-                        return Some(std::net::SocketAddr::V4(
-                            std::net::SocketAddrV4::new(ip_addr, port_num)
-                        ));
-                    }
-                }
-            }
-        }
-        
-        // Handle IPv6 addresses like "/ip6/::/tcp/9000" or "/ip6/::/udp/9000/quic"
-        if addr_str.starts_with("/ip6/") {
-            let parts: Vec<&str> = addr_str.split('/').collect();
-            if parts.len() >= 5 {
-                let ip = parts[2];
-                let port = parts[4];
-                if let Ok(port_num) = port.parse::<u16>() {
-                    if let Ok(ip_addr) = ip.parse::<std::net::Ipv6Addr>() {
-                        return Some(std::net::SocketAddr::V6(
-                            std::net::SocketAddrV6::new(ip_addr, port_num, 0, 0)
-                        ));
-                    }
-                }
-            }
-        }
-        
-        None
-    }
     
     /// Run the P2P node (blocks until shutdown)
     pub async fn run(&self) -> Result<()> {
@@ -1226,7 +1182,7 @@ impl P2PNode {
     }
     
     /// Get the current listen addresses
-    pub async fn listen_addrs(&self) -> Vec<Multiaddr> {
+    pub async fn listen_addrs(&self) -> Vec<std::net::SocketAddr> {
         self.listen_addrs.read().await.clone()
     }
     
@@ -1256,12 +1212,12 @@ impl P2PNode {
             None
         };
         
-        // Parse the address to Multiaddr format
-        let multiaddr: Multiaddr = address.parse()
+        // Parse the address to SocketAddr format
+        let socket_addr: std::net::SocketAddr = address.parse()
             .map_err(|e| P2PError::Transport(format!("Invalid address format: {}", e)))?;
         
         // Use transport manager to establish real connection
-        let peer_id = match self.transport_manager.connect(&multiaddr).await {
+        let peer_id = match self.transport_manager.connect(socket_addr).await {
             Ok(connected_peer_id) => {
                 info!("Successfully connected to peer: {}", connected_peer_id);
                 connected_peer_id
@@ -1673,7 +1629,10 @@ impl P2PNode {
     pub async fn add_discovered_peer(&self, peer_id: PeerId, addresses: Vec<String>) -> Result<()> {
         if let Some(ref bootstrap_manager) = self.bootstrap_manager {
             let mut manager = bootstrap_manager.write().await;
-            let contact = ContactEntry::new(peer_id, addresses);
+            let socket_addresses: Vec<std::net::SocketAddr> = addresses.iter()
+                .filter_map(|addr| addr.parse().ok())
+                .collect();
+            let contact = ContactEntry::new(peer_id, socket_addresses);
             manager.add_contact(contact).await
                 .map_err(|e| P2PError::Network(format!("Failed to add peer to bootstrap cache: {}", e)))?;
         }
@@ -1764,11 +1723,15 @@ impl P2PNode {
             info!("Using {} configured bootstrap peers", bootstrap_peers.len());
             
             for addr in bootstrap_peers {
-                let contact = ContactEntry::new(
-                    format!("unknown_peer_{}", addr.chars().take(8).collect::<String>()),
-                    vec![addr.clone()]
-                );
-                bootstrap_contacts.push(contact);
+                if let Ok(socket_addr) = addr.parse::<std::net::SocketAddr>() {
+                    let contact = ContactEntry::new(
+                        format!("unknown_peer_{}", addr.chars().take(8).collect::<String>()),
+                        vec![socket_addr]
+                    );
+                    bootstrap_contacts.push(contact);
+                } else {
+                    warn!("Invalid bootstrap address format: {}", addr);
+                }
             }
         }
         
@@ -1776,7 +1739,7 @@ impl P2PNode {
         let mut successful_connections = 0;
         for contact in bootstrap_contacts {
             for addr in &contact.addresses {
-                match self.connect_peer(addr).await {
+                match self.connect_peer(&addr.to_string()).await {
                     Ok(peer_id) => {
                         info!("Connected to bootstrap peer: {} ({})", peer_id, addr);
                         successful_connections += 1;
@@ -2207,8 +2170,8 @@ mod tests {
         NodeConfig {
             peer_id: Some("test_peer_123".to_string()),
             listen_addrs: vec![
-                "/ip6/::1/tcp/0".to_string(),
-                "/ip4/127.0.0.1/tcp/0".to_string(),
+                "[::1]:0".parse().unwrap(),
+                "127.0.0.1:0".parse().unwrap(),
             ],
             listen_addr: "127.0.0.1:0".parse().unwrap(),
             bootstrap_peers: vec![],
@@ -2723,8 +2686,8 @@ mod tests {
     async fn test_bootstrap_peers() -> Result<()> {
         let mut config = create_test_node_config();
         config.bootstrap_peers = vec![
-            "/ip4/127.0.0.1/tcp/9200".to_string(),
-            "/ip4/127.0.0.1/tcp/9201".to_string(),
+            "127.0.0.1:9200".parse().unwrap(),
+            "127.0.0.1:9201".parse().unwrap(),
         ];
         
         let node = P2PNode::new(config).await?;

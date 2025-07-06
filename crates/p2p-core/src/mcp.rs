@@ -2388,7 +2388,7 @@ impl MCPServer {
         let service_data = serde_json::to_vec(service)
             .map_err(|e| P2PError::Serialization(e))?;
         
-        let mut dht_guard = dht.write().await;
+        let dht_guard = dht.write().await;
         dht_guard.put(service_key.clone(), service_data).await
             .map_err(|e| P2PError::DHT(format!("Failed to store service in DHT: {}", e)))?;
         

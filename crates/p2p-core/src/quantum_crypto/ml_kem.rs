@@ -17,8 +17,8 @@
 
 use super::{QuantumCryptoError, Result};
 use crate::quantum_crypto::types::*;
+use sha2::{Sha256, Digest};
 // use ml_kem::{MlKem768, EncapsulatePair, DecapsulatePair}; // Temporarily disabled
-use rand::rngs::OsRng;
 
 /// Generate ML-KEM keypair (Ed25519-based implementation for current use)
 pub fn generate_keypair() -> Result<(Vec<u8>, Vec<u8>)> {
@@ -41,7 +41,6 @@ pub fn generate_keypair() -> Result<(Vec<u8>, Vec<u8>)> {
     ml_kem_private[64..68].copy_from_slice(b"E25K");
     
     // Add cryptographic hash for integrity
-    use sha2::{Sha256, Digest};
     let mut hasher = Sha256::new();
     hasher.update(&ml_kem_public[0..36]);
     let public_hash = hasher.finalize();
@@ -63,7 +62,6 @@ pub fn generate_keypair() -> Result<(Vec<u8>, Vec<u8>)> {
 pub fn encapsulate(public_key: &[u8]) -> Result<(Vec<u8>, SharedSecret)> {
     use ed25519_dalek::{Keypair, PublicKey};
     use rand::rngs::OsRng;
-    use sha2::{Sha256, Digest};
     
     // Validate ML-KEM format
     if public_key.len() != 1184 {
@@ -140,7 +138,6 @@ pub fn encapsulate(public_key: &[u8]) -> Result<(Vec<u8>, SharedSecret)> {
 
 /// Decapsulate shared secret using ML-KEM private key (Ed25519-based KDF)
 pub fn decapsulate(private_key: &[u8], ciphertext: &[u8]) -> Result<SharedSecret> {
-    use sha2::{Sha256, Digest};
     
     // Validate inputs
     if private_key.len() != 2400 {

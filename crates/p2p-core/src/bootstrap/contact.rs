@@ -20,57 +20,48 @@
 use crate::PeerId;
 use std::time::Duration;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use serde::{Deserialize, Serialize};
 
-// Iroh-specific imports
-use iroh_net::NodeId;
-use iroh_base::node_addr::RelayUrl;
+// Temporary compatibility types for iroh removal
+type NodeId = String; // Simplified placeholder
+type RelayUrl = String; // Simplified placeholder
 
-/// Iroh-specific contact information for NAT traversal
+/// QUIC-specific contact information for direct connectivity
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct IrohContactInfo {
-    /// Iroh NodeId for this peer
-    pub node_id: NodeId,
-    /// Direct UDP endpoints that can be used to reach this peer
-    pub direct_addresses: Vec<std::net::SocketAddr>,
-    /// Relay URL if the peer uses a relay for connectivity
-    pub relay_url: Option<RelayUrl>,
-    /// Quality information about Iroh connections
-    pub iroh_quality: IrohQualityMetrics,
-    /// Last successful Iroh connection timestamp
-    pub last_iroh_connection: chrono::DateTime<chrono::Utc>,
-    /// Whether we successfully performed NAT traversal to this peer
-    pub nat_traversal_successful: bool,
+pub struct QuicContactInfo {
+    /// Direct socket addresses that can be used to reach this peer
+    pub direct_addresses: Vec<SocketAddr>,
+    /// Quality information about QUIC connections
+    pub quic_quality: QuicQualityMetrics,
+    /// Last successful QUIC connection timestamp
+    pub last_quic_connection: chrono::DateTime<chrono::Utc>,
     /// Connection types that have been successful with this peer
-    pub successful_connection_types: Vec<IrohConnectionType>,
+    pub successful_connection_types: Vec<QuicConnectionType>,
 }
 
-/// Quality metrics specific to Iroh connections
+/// Quality metrics specific to QUIC connections
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct IrohQualityMetrics {
-    /// NAT traversal success rate (0.0 to 1.0)
-    pub nat_traversal_success_rate: f64,
-    /// Average time to establish Iroh connection (milliseconds)
+pub struct QuicQualityMetrics {
+    /// Average response time in milliseconds
+    pub avg_response_time_ms: f64,
+    /// Average throughput in Mbps
+    pub avg_throughput_mbps: f64,
+    /// Connection success rate (0.0 to 1.0)
+    pub connection_success_rate: f64,
+    /// Average time to establish QUIC connection (milliseconds)
     pub avg_connection_setup_time_ms: f64,
     /// Success rate for different connection types
-    pub connection_type_success_rates: HashMap<IrohConnectionType, f64>,
-    /// Relay usage statistics
-    pub relay_usage_rate: f64,
-    /// Hole punching success rate when attempted
-    pub hole_punching_success_rate: f64,
+    pub connection_type_success_rates: HashMap<QuicConnectionType, f64>,
 }
 
-/// Types of connections that Iroh can establish
+/// Types of connections that QUIC can establish
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum IrohConnectionType {
+pub enum QuicConnectionType {
     /// Direct IPv4 connection
     DirectIPv4,
     /// Direct IPv6 connection  
     DirectIPv6,
-    /// Connection via relay
-    Relay,
-    /// Connection using hole punching
-    HolePunching,
 }
 
 /// A contact entry representing a known peer
@@ -78,8 +69,8 @@ pub enum IrohConnectionType {
 pub struct ContactEntry {
     /// Unique identifier for this peer
     pub peer_id: PeerId,
-    /// List of network addresses where this peer can be reached
-    pub addresses: Vec<String>,
+    /// List of socket addresses where this peer can be reached
+    pub addresses: Vec<SocketAddr>,
     /// Timestamp when this peer was last seen online
     pub last_seen: chrono::DateTime<chrono::Utc>,
     /// Quality metrics for connection performance evaluation
@@ -93,9 +84,9 @@ pub struct ContactEntry {
     /// Historical connection data for this peer
     pub connection_history: ConnectionHistory,
     
-    // Iroh-specific contact information
-    /// Iroh contact data for NAT traversal and connectivity
-    pub iroh_contact: Option<IrohContactInfo>,
+    // QUIC-specific contact information
+    /// QUIC contact data for direct connectivity
+    pub quic_contact: Option<QuicContactInfo>,
 }
 
 /// Quality metrics for peer evaluation
@@ -134,7 +125,7 @@ pub struct ConnectionHistory {
 
 impl ContactEntry {
     /// Create a new contact entry
-    pub fn new(peer_id: PeerId, addresses: Vec<String>) -> Self {
+    pub fn new(peer_id: PeerId, addresses: Vec<SocketAddr>) -> Self {
         let now = chrono::Utc::now();
         
         Self {
@@ -146,12 +137,12 @@ impl ContactEntry {
             ipv6_identity_verified: false,
             reputation_score: 0.5, // Neutral starting score
             connection_history: ConnectionHistory::new(),
-            iroh_contact: None, // No Iroh contact info initially
+            quic_contact: None, // No QUIC contact info initially
         }
     }
     
-    /// Create a new contact entry with Iroh information
-    pub fn new_with_iroh(peer_id: PeerId, addresses: Vec<String>, iroh_info: IrohContactInfo) -> Self {
+    /// Create a new contact entry with QUIC information
+    pub fn new_with_quic(peer_id: PeerId, addresses: Vec<SocketAddr>, quic_info: QuicContactInfo) -> Self {
         let now = chrono::Utc::now();
         
         Self {
@@ -163,7 +154,7 @@ impl ContactEntry {
             ipv6_identity_verified: false,
             reputation_score: 0.5, // Neutral starting score
             connection_history: ConnectionHistory::new(),
-            iroh_contact: Some(iroh_info),
+            quic_contact: Some(quic_info),
         }
     }
     
@@ -266,10 +257,10 @@ impl ContactEntry {
     
     /// Get a summary string for debugging
     pub fn summary(&self) -> String {
-        let iroh_info = if let Some(ref iroh_contact) = self.iroh_contact {
-            format!(" Iroh: NAT:{:.1}%", iroh_contact.iroh_quality.nat_traversal_success_rate * 100.0)
+        let quic_info = if let Some(ref quic_contact) = self.quic_contact {
+            format!(" QUIC: Setup:{:.0}ms", quic_contact.quic_quality.avg_connection_setup_time_ms)
         } else {
-            " Iroh: None".to_string()
+            " QUIC: None".to_string()
         };
         
         format!(
@@ -279,40 +270,38 @@ impl ContactEntry {
             self.quality_metrics.success_rate * 100.0,
             self.quality_metrics.avg_latency_ms,
             self.ipv6_identity_verified,
-            iroh_info
+            quic_info
         )
     }
     
-    /// Update or set Iroh contact information
-    pub fn update_iroh_contact(&mut self, iroh_info: IrohContactInfo) {
-        self.iroh_contact = Some(iroh_info);
-        self.recalculate_quality_score(); // Iroh may affect overall quality
+    /// Update or set QUIC contact information
+    pub fn update_quic_contact(&mut self, quic_info: QuicContactInfo) {
+        self.quic_contact = Some(quic_info);
+        self.recalculate_quality_score(); // QUIC may affect overall quality
     }
     
-    /// Update Iroh connection result 
-    pub fn update_iroh_connection_result(
+    /// Update QUIC connection result 
+    pub fn update_quic_connection_result(
         &mut self, 
-        connection_type: IrohConnectionType,
+        connection_type: QuicConnectionType,
         success: bool, 
-        setup_time_ms: Option<u64>,
-        nat_traversal_attempted: bool,
-        nat_traversal_successful: bool
+        setup_time_ms: Option<u64>
     ) {
-        if let Some(ref mut iroh_contact) = self.iroh_contact {
+        if let Some(ref mut quic_contact) = self.quic_contact {
             let now = chrono::Utc::now();
             
             if success {
-                iroh_contact.last_iroh_connection = now;
+                quic_contact.last_quic_connection = now;
                 
                 // Add to successful connection types if not already present
-                if !iroh_contact.successful_connection_types.contains(&connection_type) {
-                    iroh_contact.successful_connection_types.push(connection_type.clone());
+                if !quic_contact.successful_connection_types.contains(&connection_type) {
+                    quic_contact.successful_connection_types.push(connection_type.clone());
                 }
                 
                 // Update setup time
                 if let Some(setup_time) = setup_time_ms {
-                    let current_avg = iroh_contact.iroh_quality.avg_connection_setup_time_ms;
-                    iroh_contact.iroh_quality.avg_connection_setup_time_ms = 
+                    let current_avg = quic_contact.quic_quality.avg_connection_setup_time_ms;
+                    quic_contact.quic_quality.avg_connection_setup_time_ms = 
                         if current_avg == 0.0 {
                             setup_time as f64
                         } else {
@@ -321,83 +310,48 @@ impl ContactEntry {
                 }
             }
             
-            // Update NAT traversal success
-            if nat_traversal_attempted {
-                iroh_contact.nat_traversal_successful = nat_traversal_successful;
-                // Update NAT traversal success rate (simplified)
-                let current_rate = iroh_contact.iroh_quality.nat_traversal_success_rate;
-                iroh_contact.iroh_quality.nat_traversal_success_rate = 
-                    if current_rate == 0.0 {
-                        if nat_traversal_successful { 1.0 } else { 0.0 }
-                    } else {
-                        (current_rate + if nat_traversal_successful { 1.0 } else { 0.0 }) / 2.0
-                    };
-            }
-            
             // Update connection type success rates
-            let current_rate = iroh_contact.iroh_quality.connection_type_success_rates
+            let current_rate = quic_contact.quic_quality.connection_type_success_rates
                 .get(&connection_type).copied().unwrap_or(0.0);
             let new_rate = if current_rate == 0.0 {
                 if success { 1.0 } else { 0.0 }
             } else {
                 (current_rate + if success { 1.0 } else { 0.0 }) / 2.0
             };
-            iroh_contact.iroh_quality.connection_type_success_rates.insert(connection_type.clone(), new_rate);
-            
-            // Update relay usage if this was a relay connection
-            if matches!(connection_type, IrohConnectionType::Relay) {
-                let current_relay_rate = iroh_contact.iroh_quality.relay_usage_rate;
-                iroh_contact.iroh_quality.relay_usage_rate = 
-                    if current_relay_rate == 0.0 {
-                        1.0
-                    } else {
-                        (current_relay_rate + 1.0) / 2.0
-                    };
-            }
-            
-            // Update hole punching success if applicable
-            if matches!(connection_type, IrohConnectionType::HolePunching) {
-                let current_hp_rate = iroh_contact.iroh_quality.hole_punching_success_rate;
-                iroh_contact.iroh_quality.hole_punching_success_rate = 
-                    if current_hp_rate == 0.0 {
-                        if success { 1.0 } else { 0.0 }
-                    } else {
-                        (current_hp_rate + if success { 1.0 } else { 0.0 }) / 2.0
-                    };
-            }
+            quic_contact.quic_quality.connection_type_success_rates.insert(connection_type.clone(), new_rate);
             
             self.recalculate_quality_score();
         }
     }
     
-    /// Get Iroh NodeId if available
-    pub fn iroh_node_id(&self) -> Option<&NodeId> {
-        self.iroh_contact.as_ref().map(|contact| &contact.node_id)
+    /// Get QUIC direct addresses if available
+    pub fn quic_direct_addresses(&self) -> Option<&Vec<SocketAddr>> {
+        self.quic_contact.as_ref().map(|contact| &contact.direct_addresses)
     }
     
-    /// Check if peer supports specific Iroh connection type
-    pub fn supports_iroh_connection_type(&self, connection_type: &IrohConnectionType) -> bool {
-        self.iroh_contact.as_ref()
+    /// Check if peer supports specific QUIC connection type
+    pub fn supports_quic_connection_type(&self, connection_type: &QuicConnectionType) -> bool {
+        self.quic_contact.as_ref()
             .map(|contact| contact.successful_connection_types.contains(connection_type))
             .unwrap_or(false)
     }
     
-    /// Get Iroh quality score (0.0 to 1.0)
-    pub fn iroh_quality_score(&self) -> f64 {
-        if let Some(ref iroh_contact) = self.iroh_contact {
-            let nat_score = iroh_contact.iroh_quality.nat_traversal_success_rate;
-            let setup_score = if iroh_contact.iroh_quality.avg_connection_setup_time_ms > 0.0 {
+    /// Get QUIC quality score (0.0 to 1.0)
+    pub fn quic_quality_score(&self) -> f64 {
+        if let Some(ref quic_contact) = self.quic_contact {
+            let setup_score = if quic_contact.quic_quality.avg_connection_setup_time_ms > 0.0 {
                 // Lower setup time = higher score
-                (5000.0 / (iroh_contact.iroh_quality.avg_connection_setup_time_ms + 1000.0)).min(1.0)
+                (5000.0 / (quic_contact.quic_quality.avg_connection_setup_time_ms + 1000.0)).min(1.0)
             } else {
                 0.5 // Neutral if no data
             };
-            let type_diversity_score = iroh_contact.successful_connection_types.len() as f64 / 4.0; // Up to 4 types
+            let type_diversity_score = quic_contact.successful_connection_types.len() as f64 / 2.0; // Up to 2 types (IPv4/IPv6)
+            let success_score = quic_contact.quic_quality.connection_success_rate;
             
             // Weighted average
-            (nat_score * 0.5 + setup_score * 0.3 + type_diversity_score * 0.2).clamp(0.0, 1.0)
+            (setup_score * 0.4 + type_diversity_score * 0.3 + success_score * 0.3).clamp(0.0, 1.0)
         } else {
-            0.0 // No Iroh information
+            0.0 // No QUIC information
         }
     }
 }
@@ -515,20 +469,15 @@ impl QualityCalculator {
             .count();
         score += capability_count as f64 * self.capability_bonus;
         
-        // Iroh connectivity bonus (significant advantage for NAT traversal)
-        if let Some(ref iroh_contact) = contact.iroh_contact {
-            let iroh_score = iroh_contact.iroh_quality.overall_score();
-            // Give 10% bonus for having Iroh + quality-based multiplier
-            let iroh_bonus = 0.10 * iroh_score;
-            score += iroh_bonus;
-            
-            // Additional bonus for NAT traversal capability
-            if iroh_contact.nat_traversal_successful {
-                score += 0.05; // 5% bonus for successful NAT traversal
-            }
+        // QUIC connectivity bonus
+        if let Some(ref quic_contact) = contact.quic_contact {
+            let quic_score = contact.quic_quality_score();
+            // Give 10% bonus for having QUIC + quality-based multiplier
+            let quic_bonus = 0.10 * quic_score;
+            score += quic_bonus;
             
             // Bonus for connection type diversity (more ways to connect = better)
-            let diversity_bonus = (iroh_contact.successful_connection_types.len() as f64 / 4.0) * 0.03;
+            let diversity_bonus = (quic_contact.successful_connection_types.len() as f64 / 2.0) * 0.03;
             score += diversity_bonus;
         }
         
@@ -574,33 +523,15 @@ impl Default for QualityCalculator {
     }
 }
 
-impl IrohContactInfo {
-    /// Create new Iroh contact info
-    pub fn new(node_id: NodeId, direct_addresses: Vec<std::net::SocketAddr>) -> Self {
+impl QuicContactInfo {
+    /// Create new QUIC contact info
+    pub fn new(direct_addresses: Vec<std::net::SocketAddr>) -> Self {
         let now = chrono::Utc::now();
         
         Self {
-            node_id,
             direct_addresses,
-            relay_url: None,
-            iroh_quality: IrohQualityMetrics::new(),
-            last_iroh_connection: now,
-            nat_traversal_successful: false,
-            successful_connection_types: Vec::new(),
-        }
-    }
-    
-    /// Create new Iroh contact info with relay
-    pub fn new_with_relay(node_id: NodeId, direct_addresses: Vec<std::net::SocketAddr>, relay_url: RelayUrl) -> Self {
-        let now = chrono::Utc::now();
-        
-        Self {
-            node_id,
-            direct_addresses,
-            relay_url: Some(relay_url),
-            iroh_quality: IrohQualityMetrics::new(),
-            last_iroh_connection: now,
-            nat_traversal_successful: false,
+            quic_quality: QuicQualityMetrics::new(),
+            last_quic_connection: now,
             successful_connection_types: Vec::new(),
         }
     }
@@ -610,46 +541,45 @@ impl IrohContactInfo {
         self.direct_addresses = addresses;
     }
     
-    /// Set relay URL
-    pub fn set_relay_url(&mut self, relay_url: Option<RelayUrl>) {
-        self.relay_url = relay_url;
-    }
-    
     /// Check if this contact has any connectivity options
     pub fn has_connectivity_options(&self) -> bool {
-        !self.direct_addresses.is_empty() || self.relay_url.is_some()
+        !self.direct_addresses.is_empty()
     }
 }
 
-impl IrohQualityMetrics {
-    /// Create new Iroh quality metrics with default values
+impl QuicQualityMetrics {
+    /// Create new QUIC quality metrics with default values
     pub fn new() -> Self {
         Self {
-            nat_traversal_success_rate: 0.0,
+            avg_response_time_ms: 0.0,
+            avg_throughput_mbps: 0.0,
+            connection_success_rate: 0.0,
             avg_connection_setup_time_ms: 0.0,
             connection_type_success_rates: HashMap::new(),
-            relay_usage_rate: 0.0,
-            hole_punching_success_rate: 0.0,
         }
     }
     
-    /// Get overall Iroh connectivity score
+    /// Get overall QUIC connectivity score
     pub fn overall_score(&self) -> f64 {
-        let nat_score = self.nat_traversal_success_rate;
         let speed_score = if self.avg_connection_setup_time_ms > 0.0 {
             (5000.0 / (self.avg_connection_setup_time_ms + 1000.0)).min(1.0)
         } else {
             0.5
         };
-        let reliability_score = self.connection_type_success_rates.values().sum::<f64>() / 
-            self.connection_type_success_rates.len().max(1) as f64;
+        let reliability_score = if !self.connection_type_success_rates.is_empty() {
+            self.connection_type_success_rates.values().sum::<f64>() / 
+            self.connection_type_success_rates.len() as f64
+        } else {
+            0.0
+        };
+        let success_score = self.connection_success_rate;
         
         // Weighted combination
-        (nat_score * 0.4 + speed_score * 0.3 + reliability_score * 0.3).clamp(0.0, 1.0)
+        (speed_score * 0.4 + reliability_score * 0.3 + success_score * 0.3).clamp(0.0, 1.0)
     }
 }
 
-impl Default for IrohQualityMetrics {
+impl Default for QuicQualityMetrics {
     fn default() -> Self {
         Self::new()
     }
@@ -662,7 +592,7 @@ mod tests {
     #[test]
     fn test_contact_entry_creation() {
         let peer_id = PeerId::from("test-peer");
-        let addresses = vec!["/ip4/127.0.0.1/tcp/9000".to_string()];
+        let addresses = vec!["127.0.0.1:9000".parse().unwrap()];
         
         let contact = ContactEntry::new(peer_id.clone(), addresses.clone());
         
@@ -676,7 +606,7 @@ mod tests {
     fn test_quality_calculation() {
         let mut contact = ContactEntry::new(
             PeerId::from("test-peer"),
-            vec!["/ip4/127.0.0.1/tcp/9000".to_string()]
+            vec!["127.0.0.1:9000".parse().unwrap()]
         );
         
         // Simulate successful connections
@@ -693,7 +623,7 @@ mod tests {
     fn test_capability_bonus() {
         let mut contact = ContactEntry::new(
             PeerId::from("test-peer"),
-            vec!["/ip4/127.0.0.1/tcp/9000".to_string()]
+            vec!["127.0.0.1:9000".parse().unwrap()]
         );
         
         let initial_score = contact.quality_metrics.quality_score;
@@ -707,7 +637,7 @@ mod tests {
     fn test_stale_detection() {
         let mut contact = ContactEntry::new(
             PeerId::from("test-peer"),
-            vec!["/ip4/127.0.0.1/tcp/9000".to_string()]
+            vec!["127.0.0.1:9000".parse().unwrap()]
         );
         
         // Set last seen to 2 hours ago
@@ -730,111 +660,88 @@ mod tests {
     }
     
     #[test]
-    fn test_iroh_contact_creation() {
-        use iroh_net::key::SecretKey;
-        
-        let secret_key = SecretKey::generate();
-        let node_id = iroh_net::NodeId::from(secret_key.public());
+    fn test_quic_contact_creation() {
         let addresses = vec!["127.0.0.1:9000".parse().unwrap()];
         
-        let iroh_contact = IrohContactInfo::new(node_id, addresses.clone());
+        let quic_contact = QuicContactInfo::new(addresses.clone());
         
-        assert_eq!(iroh_contact.node_id, node_id);
-        assert_eq!(iroh_contact.direct_addresses, addresses);
-        assert!(iroh_contact.relay_url.is_none());
-        assert!(!iroh_contact.nat_traversal_successful);
+        assert_eq!(quic_contact.direct_addresses, addresses);
+        assert!(quic_contact.has_connectivity_options());
     }
     
     #[test]
-    fn test_contact_with_iroh_info() {
-        use iroh_net::key::SecretKey;
-        
-        let secret_key = SecretKey::generate();
-        let node_id = iroh_net::NodeId::from(secret_key.public());
+    fn test_contact_with_quic_info() {
         let addresses = vec!["127.0.0.1:9000".parse().unwrap()];
-        let iroh_info = IrohContactInfo::new(node_id, addresses);
+        let quic_info = QuicContactInfo::new(addresses);
         
-        let contact = ContactEntry::new_with_iroh(
+        let contact = ContactEntry::new_with_quic(
             PeerId::from("test-peer"),
-            vec!["/ip4/127.0.0.1/tcp/9000".to_string()],
-            iroh_info
+            vec!["127.0.0.1:9000".parse().unwrap()],
+            quic_info
         );
         
-        assert!(contact.iroh_contact.is_some());
-        assert_eq!(contact.iroh_node_id(), Some(&node_id));
+        assert!(contact.quic_contact.is_some());
+        assert!(contact.quic_direct_addresses().is_some());
         assert!(has_connectivity_options(&contact));
     }
     
     #[test]
-    fn test_iroh_connection_result_update() {
-        use iroh_net::key::SecretKey;
-        
-        let secret_key = SecretKey::generate();
-        let node_id = iroh_net::NodeId::from(secret_key.public());
+    fn test_quic_connection_result_update() {
         let addresses = vec!["127.0.0.1:9000".parse().unwrap()];
-        let iroh_info = IrohContactInfo::new(node_id, addresses);
+        let quic_info = QuicContactInfo::new(addresses);
         
-        let mut contact = ContactEntry::new_with_iroh(
+        let mut contact = ContactEntry::new_with_quic(
             PeerId::from("test-peer"),
-            vec!["/ip4/127.0.0.1/tcp/9000".to_string()],
-            iroh_info
+            vec!["127.0.0.1:9000".parse().unwrap()],
+            quic_info
         );
         
-        // Simulate successful Iroh connection with NAT traversal
-        contact.update_iroh_connection_result(
-            IrohConnectionType::DirectIPv4,
+        // Simulate successful QUIC connection
+        contact.update_quic_connection_result(
+            QuicConnectionType::DirectIPv4,
             true,
-            Some(250), // 250ms setup time
-            true,  // NAT traversal attempted
-            true   // NAT traversal successful
+            Some(250) // 250ms setup time
         );
         
-        assert!(contact.iroh_contact.as_ref().unwrap().nat_traversal_successful);
-        assert_eq!(contact.iroh_contact.as_ref().unwrap().iroh_quality.avg_connection_setup_time_ms, 250.0);
-        assert!(contact.supports_iroh_connection_type(&IrohConnectionType::DirectIPv4));
+        assert_eq!(contact.quic_contact.as_ref().unwrap().quic_quality.avg_connection_setup_time_ms, 250.0);
+        assert!(contact.supports_quic_connection_type(&QuicConnectionType::DirectIPv4));
         
-        let iroh_quality = contact.iroh_quality_score();
-        assert!(iroh_quality > 0.0);
+        let quic_quality = contact.quic_quality_score();
+        assert!(quic_quality > 0.0);
     }
     
     #[test]
-    fn test_iroh_quality_affects_overall_score() {
-        use iroh_net::key::SecretKey;
-        
-        let secret_key = SecretKey::generate();
-        let node_id = iroh_net::NodeId::from(secret_key.public());
+    fn test_quic_quality_affects_overall_score() {
         let addresses = vec!["127.0.0.1:9000".parse().unwrap()];
-        let iroh_info = IrohContactInfo::new(node_id, addresses);
+        let quic_info = QuicContactInfo::new(addresses);
         
-        // Contact without Iroh
-        let mut contact_no_iroh = ContactEntry::new(
-            PeerId::from("test-peer-no-iroh"),
-            vec!["/ip4/127.0.0.1/tcp/9000".to_string()]
+        // Contact without QUIC
+        let mut contact_no_quic = ContactEntry::new(
+            PeerId::from("test-peer-no-quic"),
+            vec!["127.0.0.1:9000".parse().unwrap()]
         );
-        contact_no_iroh.update_connection_result(true, Some(100), None);
+        contact_no_quic.update_connection_result(true, Some(100), None);
         
-        // Contact with Iroh
-        let mut contact_with_iroh = ContactEntry::new_with_iroh(
-            PeerId::from("test-peer-with-iroh"),
-            vec!["/ip4/127.0.0.1/tcp/9000".to_string()],
-            iroh_info
+        // Contact with QUIC
+        let mut contact_with_quic = ContactEntry::new_with_quic(
+            PeerId::from("test-peer-with-quic"),
+            vec!["127.0.0.1:9000".parse().unwrap()],
+            quic_info
         );
-        contact_with_iroh.update_connection_result(true, Some(100), None);
-        contact_with_iroh.update_iroh_connection_result(
-            IrohConnectionType::DirectIPv4,
+        contact_with_quic.update_connection_result(true, Some(100), None);
+        contact_with_quic.update_quic_connection_result(
+            QuicConnectionType::DirectIPv4,
             true,
-            Some(200),
-            true,
-            true
+            Some(200)
         );
         
-        // Iroh contact should have higher quality score
-        assert!(contact_with_iroh.quality_metrics.quality_score > contact_no_iroh.quality_metrics.quality_score);
+        // QUIC contact should have higher quality score
+        assert!(contact_with_quic.quality_metrics.quality_score > contact_no_quic.quality_metrics.quality_score);
     }
     
     fn has_connectivity_options(contact: &ContactEntry) -> bool {
-        contact.iroh_contact.as_ref()
-            .map(|iroh| iroh.has_connectivity_options())
+        contact.quic_contact.as_ref()
+            .map(|quic| !quic.direct_addresses.is_empty())
             .unwrap_or(false)
     }
 }

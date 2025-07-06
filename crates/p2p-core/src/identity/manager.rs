@@ -418,7 +418,7 @@ impl EncryptedUserProfile {
     
     /// Encrypt profile data using AES-GCM
     fn encrypt_profile_data(data: &[u8], key: &[u8]) -> Result<Vec<u8>> {
-        use aes_gcm::{Aes256Gcm, Key, Nonce, AeadInPlace, KeyInit};
+        use aes_gcm::{Aes256Gcm, Nonce, AeadInPlace, KeyInit};
         use rand::RngCore;
         
         if key.len() != 32 {
@@ -449,7 +449,7 @@ impl EncryptedUserProfile {
     
     /// Decrypt profile data using AES-GCM
     fn decrypt_profile_data(encrypted: &[u8], key: &[u8]) -> Result<Vec<u8>> {
-        use aes_gcm::{Aes256Gcm, Key, Nonce, AeadInPlace, KeyInit};
+        use aes_gcm::{Aes256Gcm, Nonce, AeadInPlace, KeyInit};
         
         if key.len() != 32 {
             return Err(P2PError::Identity("Invalid decryption key length - must be 32 bytes".to_string()));

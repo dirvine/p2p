@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 use std::sync::Arc;
+use std::net::SocketAddr;
 use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn, error};
@@ -195,64 +196,66 @@ impl BootstrapCache {
         Ok(selected)
     }
     
-    /// Get bootstrap peers that support Iroh networking
-    pub async fn get_iroh_bootstrap_peers(&self, count: usize) -> Result<Vec<ContactEntry>> {
+    /// Get bootstrap peers that support QUIC networking
+    pub async fn get_quic_bootstrap_peers(&self, count: usize) -> Result<Vec<ContactEntry>> {
         let contacts = self.contacts.read().await;
         
-        // Filter for contacts with Iroh information
-        let mut iroh_contacts: Vec<&ContactEntry> = contacts.values()
-            .filter(|contact| contact.iroh_contact.is_some())
+        // Filter for contacts with QUIC information
+        let mut quic_contacts: Vec<&ContactEntry> = contacts.values()
+            .filter(|contact| contact.quic_contact.is_some())
             .collect();
         
-        // Sort by combined quality (regular + Iroh quality)
-        iroh_contacts.sort_by(|a, b| {
-            let score_a = a.quality_metrics.quality_score + a.iroh_quality_score() * 0.3;
-            let score_b = b.quality_metrics.quality_score + b.iroh_quality_score() * 0.3;
+        // Sort by combined quality (regular + QUIC quality)
+        quic_contacts.sort_by(|a, b| {
+            let score_a = a.quality_metrics.quality_score + a.quic_quality_score() * 0.3;
+            let score_b = b.quality_metrics.quality_score + b.quic_quality_score() * 0.3;
             score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
         });
         
-        let selected: Vec<ContactEntry> = iroh_contacts
+        let selected: Vec<ContactEntry> = quic_contacts
             .into_iter()
             .take(count)
             .cloned()
             .collect();
         
-        debug!("Selected {} Iroh bootstrap peers from {} available Iroh contacts", 
-               selected.len(), contacts.values().filter(|c| c.iroh_contact.is_some()).count());
+        debug!("Selected {} QUIC bootstrap peers from {} available QUIC contacts", 
+               selected.len(), contacts.values().filter(|c| c.quic_contact.is_some()).count());
         
         Ok(selected)
     }
     
-    /// Get contacts by Iroh NodeId
-    pub async fn get_contact_by_node_id(&self, node_id: &iroh_net::NodeId) -> Option<ContactEntry> {
+    /// Get contacts by QUIC direct addresses
+    pub async fn get_contact_by_addresses(&self, target_addresses: &Vec<SocketAddr>) -> Option<ContactEntry> {
         let contacts = self.contacts.read().await;
         contacts.values()
-            .find(|contact| contact.iroh_node_id() == Some(node_id))
+            .find(|contact| {
+                if let Some(quic_addrs) = contact.quic_direct_addresses() {
+                    quic_addrs.iter().any(|addr| target_addresses.contains(addr))
+                } else {
+                    false
+                }
+            })
             .cloned()
     }
     
-    /// Update Iroh connection metrics for a contact
-    pub async fn update_iroh_metrics(
+    /// Update QUIC connection metrics for a contact
+    pub async fn update_quic_metrics(
         &mut self, 
         peer_id: &PeerId, 
-        connection_type: crate::bootstrap::contact::IrohConnectionType,
+        connection_type: crate::bootstrap::contact::QuicConnectionType,
         success: bool,
-        setup_time_ms: Option<u64>,
-        nat_traversal_attempted: bool,
-        nat_traversal_successful: bool
+        setup_time_ms: Option<u64>
     ) -> Result<()> {
         let mut contacts = self.contacts.write().await;
         
         if let Some(contact) = contacts.get_mut(peer_id) {
-            contact.update_iroh_connection_result(
+            contact.update_quic_connection_result(
                 connection_type,
                 success,
-                setup_time_ms,
-                nat_traversal_attempted,
-                nat_traversal_successful
+                setup_time_ms
             );
             
-            debug!("Updated Iroh metrics for peer {}: {}", peer_id, contact.summary());
+            debug!("Updated QUIC metrics for peer {}: {}", peer_id, contact.summary());
         }
         
         Ok(())
@@ -376,22 +379,20 @@ impl BootstrapCache {
             .filter(|c| c.ipv6_identity_verified)
             .count();
         
-        // Iroh-specific statistics
+        // QUIC-specific statistics
         stats.iroh_contacts = contacts.values()
-            .filter(|c| c.iroh_contact.is_some())
+            .filter(|c| c.quic_contact.is_some())
             .count();
-        stats.nat_traversal_contacts = contacts.values()
-            .filter(|c| c.iroh_contact.as_ref().map(|iroh| iroh.nat_traversal_successful).unwrap_or(false))
-            .count();
+        stats.nat_traversal_contacts = 0; // NAT traversal not tracked in simplified QUIC implementation
         
-        // Calculate average Iroh setup time
-        let iroh_setup_times: Vec<f64> = contacts.values()
-            .filter_map(|c| c.iroh_contact.as_ref())
-            .filter(|iroh| iroh.iroh_quality.avg_connection_setup_time_ms > 0.0)
-            .map(|iroh| iroh.iroh_quality.avg_connection_setup_time_ms)
+        // Calculate average QUIC setup time
+        let quic_setup_times: Vec<f64> = contacts.values()
+            .filter_map(|c| c.quic_contact.as_ref())
+            .filter(|quic| quic.quic_quality.avg_connection_setup_time_ms > 0.0)
+            .map(|quic| quic.quic_quality.avg_connection_setup_time_ms)
             .collect();
-        stats.avg_iroh_setup_time_ms = if !iroh_setup_times.is_empty() {
-            iroh_setup_times.iter().sum::<f64>() / iroh_setup_times.len() as f64
+        stats.avg_iroh_setup_time_ms = if !quic_setup_times.is_empty() {
+            quic_setup_times.iter().sum::<f64>() / quic_setup_times.len() as f64
         } else {
             0.0
         };
@@ -399,8 +400,8 @@ impl BootstrapCache {
         // Find most successful connection type
         let mut connection_type_counts = std::collections::HashMap::new();
         for contact in contacts.values() {
-            if let Some(ref iroh) = contact.iroh_contact {
-                for conn_type in &iroh.successful_connection_types {
+            if let Some(ref quic) = contact.quic_contact {
+                for conn_type in &quic.successful_connection_types {
                     *connection_type_counts.entry(format!("{:?}", conn_type)).or_insert(0) += 1;
                 }
             }
@@ -697,7 +698,7 @@ mod tests {
         
         let contact = ContactEntry::new(
             PeerId::from("test-peer"),
-            vec!["/ip4/127.0.0.1/tcp/9000".to_string()]
+            vec!["127.0.0.1:9000".parse().unwrap()]
         );
         
         cache.add_contact(contact).await.unwrap();
@@ -720,7 +721,7 @@ mod tests {
             let mut cache = BootstrapCache::new(temp_dir.path().to_path_buf(), config.clone()).await.unwrap();
             let contact = ContactEntry::new(
                 PeerId::from("test-peer"),
-                vec!["/ip4/127.0.0.1/tcp/9000".to_string()]
+                vec!["127.0.0.1:9000".parse().unwrap()]
             );
             cache.add_contact(contact).await.unwrap();
             cache.save_to_disk().await.unwrap();
@@ -749,7 +750,7 @@ mod tests {
         for i in 0..10 {
             let contact = ContactEntry::new(
                 PeerId::from(format!("test-peer-{}", i)),
-                vec![format!("/ip4/127.0.0.1/tcp/{}", 9000 + i)]
+                vec![format!("127.0.0.1:{}", 9000 + i).parse().unwrap()]
             );
             cache.add_contact(contact).await.unwrap();
         }

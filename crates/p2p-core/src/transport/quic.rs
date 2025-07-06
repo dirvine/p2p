@@ -17,7 +17,7 @@
 //! QUIC provides better performance, 0-RTT connections, and built-in encryption.
 
 use super::{Transport, Connection, TransportType, TransportOptions, ConnectionInfo, ConnectionQuality};
-use crate::{Multiaddr, P2PError, Result};
+use crate::{P2PError, Result};
 use async_trait::async_trait;
 use quinn::{Endpoint, ServerConfig, ClientConfig, Connection as QuinnConnection, crypto::rustls::QuicClientConfig, crypto::rustls::QuicServerConfig};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
@@ -26,7 +26,6 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-// use tokio::io::{AsyncReadExt, AsyncWriteExt}; // Not used yet
 use tokio::sync::Mutex;
 use tracing::{debug, info};
 
@@ -45,9 +44,9 @@ pub struct QuicConnection {
     /// Underlying QUIC connection
     connection: QuinnConnection,
     /// Local address
-    local_addr: Multiaddr,
+    local_addr: SocketAddr,
     /// Remote address
-    remote_addr: Multiaddr,
+    remote_addr: SocketAddr,
     /// Connection info
     info: ConnectionInfo,
     /// Active streams for multiplexing
@@ -112,7 +111,7 @@ impl QuicTransport {
 
 #[async_trait]
 impl Transport for QuicTransport {
-    async fn listen(&self, addr: SocketAddr) -> Result<Vec<Multiaddr>> {
+    async fn listen(&self, addr: SocketAddr) -> Result<SocketAddr> {
         let server_config = Self::create_server_config()?;
         
         let endpoint = Endpoint::server(server_config, addr)
@@ -129,14 +128,7 @@ impl Transport for QuicTransport {
             *endpoint_guard = Some(endpoint);
         }
         
-        // Convert to multiaddr format
-        let multiaddr = if local_addr.is_ipv6() {
-            format!("/ip6/{}/udp/{}/quic", local_addr.ip(), local_addr.port())
-        } else {
-            format!("/ip4/{}/udp/{}/quic", local_addr.ip(), local_addr.port())
-        };
-        
-        Ok(vec![multiaddr])
+        Ok(local_addr)
     }
     
     async fn accept(&self) -> Result<Box<dyn Connection>> {
@@ -158,26 +150,14 @@ impl Transport for QuicTransport {
         let connection = connecting.await
             .map_err(|e| P2PError::Transport(format!("QUIC connection handshake failed: {}", e)))?;
         
-        let local_addr = connection.local_ip().unwrap_or_else(|| "0.0.0.0".parse().unwrap());
-        let remote_addr = connection.remote_address();
-        
-        // Convert addresses to multiaddr format
-        let local_multiaddr = if local_addr.is_ipv6() {
-            format!("/ip6/{}/udp/{}/quic", local_addr, remote_addr.port())
-        } else {
-            format!("/ip4/{}/udp/{}/quic", local_addr, remote_addr.port())
-        };
-        
-        let remote_multiaddr = if remote_addr.is_ipv6() {
-            format!("/ip6/{}/udp/{}/quic", remote_addr.ip(), remote_addr.port())
-        } else {
-            format!("/ip4/{}/udp/{}/quic", remote_addr.ip(), remote_addr.port())
-        };
+        let local_socket_addr = endpoint.local_addr()
+            .map_err(|e| P2PError::Transport(format!("Failed to get local address: {}", e)))?;
+        let remote_socket_addr = connection.remote_address();
         
         let connection_info = ConnectionInfo {
             transport_type: TransportType::QUIC,
-            local_addr: local_multiaddr.clone(),
-            remote_addr: remote_multiaddr.clone(),
+            local_addr: local_socket_addr,
+            remote_addr: remote_socket_addr,
             is_encrypted: true,
             cipher_suite: "TLS_AES_256_GCM_SHA384".to_string(),
             used_0rtt: false, // For incoming connections, we can't determine 0-RTT easily
@@ -187,26 +167,25 @@ impl Transport for QuicTransport {
         
         let quic_connection = QuicConnection {
             connection,
-            local_addr: local_multiaddr,
-            remote_addr: remote_multiaddr,
+            local_addr: local_socket_addr,
+            remote_addr: remote_socket_addr,
             info: connection_info,
             active_streams: Arc::new(Mutex::new(HashMap::new())),
             stream_counter: Arc::new(Mutex::new(0)),
         };
         
-        info!("QUIC accepted incoming connection from {}", remote_addr);
+        info!("QUIC accepted incoming connection from {}", remote_socket_addr);
         Ok(Box::new(quic_connection))
     }
     
-    async fn connect(&self, addr: &Multiaddr) -> Result<Box<dyn Connection>> {
+    async fn connect(&self, addr: SocketAddr) -> Result<Box<dyn Connection>> {
         self.connect_with_options(addr, TransportOptions::default()).await
     }
     
-    async fn connect_with_options(&self, addr: &Multiaddr, options: TransportOptions) -> Result<Box<dyn Connection>> {
+    async fn connect_with_options(&self, addr: SocketAddr, options: TransportOptions) -> Result<Box<dyn Connection>> {
         debug!("QUIC connecting to {}", addr);
         
-        // Parse multiaddr to get host:port
-        let socket_addr = self.parse_multiaddr(addr)?;
+        let socket_addr = addr;
         
         // Create client endpoint if not exists
         let endpoint = {
@@ -234,21 +213,9 @@ impl Transport for QuicTransport {
             .map_err(|_| P2PError::Transport("QUIC connection timeout".to_string()))?
             .map_err(|e| P2PError::Transport(format!("QUIC handshake failed: {}", e)))?;
         
-        let local_addr = connection.local_ip().unwrap_or_else(|| "0.0.0.0".parse().unwrap());
-        let remote_addr = connection.remote_address();
-        
-        // Convert addresses to multiaddr format
-        let local_multiaddr = if local_addr.is_ipv6() {
-            format!("/ip6/{}/udp/{}/quic", local_addr, remote_addr.port())
-        } else {
-            format!("/ip4/{}/udp/{}/quic", local_addr, remote_addr.port())
-        };
-        
-        let remote_multiaddr = if remote_addr.is_ipv6() {
-            format!("/ip6/{}/udp/{}/quic", remote_addr.ip(), remote_addr.port())
-        } else {
-            format!("/ip4/{}/udp/{}/quic", remote_addr.ip(), remote_addr.port())
-        };
+        let local_socket_addr = endpoint.local_addr()
+            .map_err(|e| P2PError::Transport(format!("Failed to get local address: {}", e)))?;
+        let remote_socket_addr = connection.remote_address();
         
         // Check if 0-RTT was actually used
         let used_0rtt = if self.enable_0rtt {
@@ -261,8 +228,8 @@ impl Transport for QuicTransport {
         
         let connection_info = ConnectionInfo {
             transport_type: TransportType::QUIC,
-            local_addr: local_multiaddr.clone(),
-            remote_addr: remote_multiaddr.clone(),
+            local_addr: local_socket_addr,
+            remote_addr: remote_socket_addr,
             is_encrypted: true, // QUIC is always encrypted
             cipher_suite: "TLS_AES_256_GCM_SHA384".to_string(), // QUIC uses TLS 1.3
             used_0rtt,
@@ -272,8 +239,8 @@ impl Transport for QuicTransport {
         
         let quic_connection = QuicConnection {
             connection,
-            local_addr: local_multiaddr,
-            remote_addr: remote_multiaddr,
+            local_addr: local_socket_addr,
+            remote_addr: remote_socket_addr,
             info: connection_info,
             active_streams: Arc::new(Mutex::new(HashMap::new())),
             stream_counter: Arc::new(Mutex::new(0)),
@@ -283,44 +250,19 @@ impl Transport for QuicTransport {
         Ok(Box::new(quic_connection))
     }
     
-    fn supported_addresses(&self) -> Vec<String> {
-        vec![
-            "/ip4/0.0.0.0/udp/0/quic".to_string(),
-            "/ip6/::/udp/0/quic".to_string(),
-        ]
+    fn supports_ipv6(&self) -> bool {
+        true // QUIC supports both IPv4 and IPv6
     }
     
     fn transport_type(&self) -> TransportType {
         TransportType::QUIC
     }
     
-    fn supports_address(&self, addr: &Multiaddr) -> bool {
-        addr.contains("/quic") && addr.contains("/udp/") && (addr.contains("/ip4/") || addr.contains("/ip6/"))
+    fn supports_address(&self, _addr: SocketAddr) -> bool {
+        true // QUIC supports all socket addresses
     }
 }
 
-impl QuicTransport {
-    /// Parse a multiaddr into a SocketAddr
-    fn parse_multiaddr(&self, addr: &Multiaddr) -> Result<SocketAddr> {
-        // Format: /ip4/127.0.0.1/udp/9000/quic or /ip6/::1/udp/9000/quic
-        
-        let parts: Vec<&str> = addr.split('/').collect();
-        if parts.len() < 6 {
-            return Err(P2PError::Transport(format!("Invalid QUIC multiaddr format: {}", addr)));
-        }
-        
-        let ip_str = parts[2];
-        let port_str = parts[4];
-        
-        let port: u16 = port_str.parse()
-            .map_err(|_| P2PError::Transport(format!("Invalid port in multiaddr: {}", port_str)))?;
-        
-        let socket_addr: SocketAddr = format!("{}:{}", ip_str, port).parse()
-            .map_err(|_| P2PError::Transport(format!("Invalid address in multiaddr: {}", addr)))?;
-        
-        Ok(socket_addr)
-    }
-}
 
 #[async_trait]
 impl Connection for QuicConnection {
@@ -442,12 +384,12 @@ impl Connection for QuicConnection {
         })
     }
     
-    fn local_addr(&self) -> Multiaddr {
-        self.local_addr.clone()
+    fn local_addr(&self) -> SocketAddr {
+        self.local_addr
     }
     
-    fn remote_addr(&self) -> Multiaddr {
-        self.remote_addr.clone()
+    fn remote_addr(&self) -> SocketAddr {
+        self.remote_addr
     }
 }
 

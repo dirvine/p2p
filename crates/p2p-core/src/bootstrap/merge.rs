@@ -507,13 +507,13 @@ mod tests {
         
         let mut main_contact = ContactEntry::new(
             PeerId::from("test-peer"),
-            vec!["/ip4/127.0.0.1/tcp/9000".to_string()]
+            vec!["127.0.0.1:9000".parse().unwrap()]
         );
         main_contact.quality_metrics.quality_score = 0.5;
         
         let mut instance_contact = ContactEntry::new(
             PeerId::from("test-peer"),
-            vec!["/ip4/127.0.0.1/tcp/9001".to_string()]
+            vec!["127.0.0.1:9001".parse().unwrap()]
         );
         instance_contact.quality_metrics.quality_score = 0.8;
         
@@ -531,14 +531,14 @@ mod tests {
         
         let mut main_contact = ContactEntry::new(
             PeerId::from("test-peer"),
-            vec!["/ip4/127.0.0.1/tcp/9000".to_string()]
+            vec!["127.0.0.1:9000".parse().unwrap()]
         );
         main_contact.connection_history.total_attempts = 10;
         main_contact.connection_history.successful_connections = 8;
         
         let mut instance_contact = ContactEntry::new(
             PeerId::from("test-peer"),
-            vec!["/ip4/127.0.0.1/tcp/9001".to_string()]
+            vec!["127.0.0.1:9001".parse().unwrap()]
         );
         instance_contact.connection_history.total_attempts = 5;
         instance_contact.connection_history.successful_connections = 4;

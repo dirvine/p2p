@@ -19,7 +19,7 @@
 //! TCP functionality is intentionally limited - QUIC is preferred.
 
 use super::{Transport, Connection, TransportType, TransportOptions, ConnectionInfo, ConnectionQuality};
-use crate::{Multiaddr, P2PError, Result};
+use crate::{P2PError, Result};
 use async_trait::async_trait;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
@@ -42,9 +42,9 @@ pub struct TcpConnection {
     /// Underlying TCP stream
     stream: TcpStream,
     /// Local address
-    local_addr: Multiaddr,
+    local_addr: SocketAddr,
     /// Remote address
-    remote_addr: Multiaddr,
+    remote_addr: SocketAddr,
     /// Connection info
     info: ConnectionInfo,
     /// Whether the connection is encrypted (reserved for future TLS support)
@@ -64,7 +64,7 @@ impl TcpTransport {
 
 #[async_trait]
 impl Transport for TcpTransport {
-    async fn listen(&self, addr: SocketAddr) -> Result<Vec<Multiaddr>> {
+    async fn listen(&self, addr: SocketAddr) -> Result<SocketAddr> {
         let listener = TcpListener::bind(addr).await
             .map_err(|e| P2PError::Transport(format!("Failed to bind TCP listener: {}", e)))?;
         
@@ -79,14 +79,7 @@ impl Transport for TcpTransport {
             *listener_guard = Some(Arc::new(listener));
         }
         
-        // Convert to multiaddr format
-        let multiaddr = if local_addr.is_ipv6() {
-            format!("/ip6/{}/tcp/{}", local_addr.ip(), local_addr.port())
-        } else {
-            format!("/ip4/{}/tcp/{}", local_addr.ip(), local_addr.port())
-        };
-        
-        Ok(vec![multiaddr])
+        Ok(local_addr)
     }
     
     async fn accept(&self) -> Result<Box<dyn Connection>> {
@@ -107,23 +100,12 @@ impl Transport for TcpTransport {
         let local_addr = stream.local_addr()
             .map_err(|e| P2PError::Transport(format!("Failed to get local address: {}", e)))?;
         
-        // Convert addresses to multiaddr format
-        let local_multiaddr = if local_addr.is_ipv6() {
-            format!("/ip6/{}/tcp/{}", local_addr.ip(), local_addr.port())
-        } else {
-            format!("/ip4/{}/tcp/{}", local_addr.ip(), local_addr.port())
-        };
-        
-        let remote_multiaddr = if remote_addr.is_ipv6() {
-            format!("/ip6/{}/tcp/{}", remote_addr.ip(), remote_addr.port())
-        } else {
-            format!("/ip4/{}/tcp/{}", remote_addr.ip(), remote_addr.port())
-        };
+        // No need to convert to multiaddr format - using SocketAddr directly
         
         let connection_info = ConnectionInfo {
             transport_type: TransportType::TCP,
-            local_addr: local_multiaddr.clone(),
-            remote_addr: remote_multiaddr.clone(),
+            local_addr,
+            remote_addr,
             is_encrypted: false,
             cipher_suite: String::new(),
             used_0rtt: false,
@@ -133,8 +115,8 @@ impl Transport for TcpTransport {
         
         let connection = TcpConnection {
             stream,
-            local_addr: local_multiaddr,
-            remote_addr: remote_multiaddr,
+            local_addr,
+            remote_addr,
             info: connection_info,
             _encrypted: false,
         };
@@ -143,20 +125,17 @@ impl Transport for TcpTransport {
         Ok(Box::new(connection))
     }
     
-    async fn connect(&self, addr: &Multiaddr) -> Result<Box<dyn Connection>> {
+    async fn connect(&self, addr: SocketAddr) -> Result<Box<dyn Connection>> {
         self.connect_with_options(addr, TransportOptions::default()).await
     }
     
-    async fn connect_with_options(&self, addr: &Multiaddr, options: TransportOptions) -> Result<Box<dyn Connection>> {
+    async fn connect_with_options(&self, addr: SocketAddr, options: TransportOptions) -> Result<Box<dyn Connection>> {
         debug!("TCP connecting to {}", addr);
-        
-        // Parse multiaddr to get host:port
-        let socket_addr = self.parse_multiaddr(addr)?;
         
         // Connect with timeout
         let stream = tokio::time::timeout(
             options.connect_timeout,
-            TcpStream::connect(socket_addr)
+            TcpStream::connect(addr)
         ).await
             .map_err(|_| P2PError::Transport("TCP connection timeout".to_string()))?
             .map_err(|e| P2PError::Transport(format!("TCP connection failed: {}", e)))?;
@@ -166,23 +145,12 @@ impl Transport for TcpTransport {
         let remote_addr = stream.peer_addr()
             .map_err(|e| P2PError::Transport(format!("Failed to get remote address: {}", e)))?;
         
-        // Convert addresses to multiaddr format
-        let local_multiaddr = if local_addr.is_ipv6() {
-            format!("/ip6/{}/tcp/{}", local_addr.ip(), local_addr.port())
-        } else {
-            format!("/ip4/{}/tcp/{}", local_addr.ip(), local_addr.port())
-        };
-        
-        let remote_multiaddr = if remote_addr.is_ipv6() {
-            format!("/ip6/{}/tcp/{}", remote_addr.ip(), remote_addr.port())
-        } else {
-            format!("/ip4/{}/tcp/{}", remote_addr.ip(), remote_addr.port())
-        };
+        // No need to convert to multiaddr format - using SocketAddr directly
         
         let connection_info = ConnectionInfo {
             transport_type: TransportType::TCP,
-            local_addr: local_multiaddr.clone(),
-            remote_addr: remote_multiaddr.clone(),
+            local_addr,
+            remote_addr,
             is_encrypted: false, // TODO: Add TLS support
             cipher_suite: if self.require_tls { "TLS_AES_256_GCM_SHA384".to_string() } else { String::new() },
             used_0rtt: false,
@@ -192,8 +160,8 @@ impl Transport for TcpTransport {
         
         let connection = TcpConnection {
             stream,
-            local_addr: local_multiaddr,
-            remote_addr: remote_multiaddr,
+            local_addr,
+            remote_addr,
             info: connection_info,
             _encrypted: self.require_tls,
         };
@@ -202,50 +170,22 @@ impl Transport for TcpTransport {
         Ok(Box::new(connection))
     }
     
-    fn supported_addresses(&self) -> Vec<String> {
+    fn supports_ipv6(&self) -> bool {
         warn!("TCP transport is fallback only. Consider using QUIC for better performance.");
-        vec![
-            "/ip4/0.0.0.0/tcp/0".to_string(),
-            "/ip6/::/tcp/0".to_string(),
-        ]
+        true // TCP supports both IPv4 and IPv6
     }
     
     fn transport_type(&self) -> TransportType {
         TransportType::TCP
     }
     
-    fn supports_address(&self, addr: &Multiaddr) -> bool {
-        let supports = addr.contains("/tcp/") && (addr.contains("/ip4/") || addr.contains("/ip6/"));
-        if supports {
-            warn!("Using TCP fallback for address: {}. QUIC would provide better performance.", addr);
-        }
-        supports
+    fn supports_address(&self, addr: SocketAddr) -> bool {
+        warn!("Using TCP fallback for address: {}. QUIC would provide better performance.", addr);
+        true // TCP supports both IPv4 and IPv6
     }
 }
 
-impl TcpTransport {
-    /// Parse a multiaddr into a SocketAddr
-    fn parse_multiaddr(&self, addr: &Multiaddr) -> Result<SocketAddr> {
-        // Simple parsing for now - in reality this would use a proper multiaddr parser
-        // Format: /ip4/127.0.0.1/tcp/9000 or /ip6/::1/tcp/9000
-        
-        let parts: Vec<&str> = addr.split('/').collect();
-        if parts.len() < 5 {
-            return Err(P2PError::Transport(format!("Invalid multiaddr format: {}", addr)));
-        }
-        
-        let ip_str = parts[2];
-        let port_str = parts[4];
-        
-        let port: u16 = port_str.parse()
-            .map_err(|_| P2PError::Transport(format!("Invalid port in multiaddr: {}", port_str)))?;
-        
-        let socket_addr: SocketAddr = format!("{}:{}", ip_str, port).parse()
-            .map_err(|_| P2PError::Transport(format!("Invalid address in multiaddr: {}", addr)))?;
-        
-        Ok(socket_addr)
-    }
-}
+// TCP transport implementation complete
 
 #[async_trait]
 impl Connection for TcpConnection {
@@ -334,11 +274,11 @@ impl Connection for TcpConnection {
         })
     }
     
-    fn local_addr(&self) -> Multiaddr {
-        self.local_addr.clone()
+    fn local_addr(&self) -> SocketAddr {
+        self.local_addr
     }
     
-    fn remote_addr(&self) -> Multiaddr {
-        self.remote_addr.clone()
+    fn remote_addr(&self) -> SocketAddr {
+        self.remote_addr
     }
 }

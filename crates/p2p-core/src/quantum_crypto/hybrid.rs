@@ -18,7 +18,7 @@ use crate::quantum_crypto::types::*;
 use crate::quantum_crypto::{ml_kem, ml_dsa};
 use ed25519_dalek::{Keypair as Ed25519Keypair, PublicKey, Signer, Verifier};
 use rand_core::OsRng;
-use sha2::{Sha256, Digest};
+use sha2::Sha256;
 
 /// Hybrid key exchange state
 pub struct HybridKeyExchange {
