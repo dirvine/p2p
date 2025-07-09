@@ -59,6 +59,10 @@ pub enum P2PError {
     #[error("Storage error: {0}")]
     Storage(String),
     
+    /// Memory management error (allocation, locking, protection)
+    #[error("Memory error: {0}")]
+    Memory(String),
+    
     /// Invalid state error (operations in wrong state)
     #[error("Invalid state: {0}")]
     InvalidState(String),

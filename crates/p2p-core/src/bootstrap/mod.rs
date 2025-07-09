@@ -28,7 +28,26 @@ pub use cache::{BootstrapCache, CacheConfig, CacheError};
 pub use contact::{ContactEntry, QualityMetrics, QualityCalculator, QuicContactInfo, QuicQualityMetrics, QuicConnectionType};
 pub use discovery::{BootstrapDiscovery, BootstrapConfig, ConfigurableBootstrapDiscovery};
 pub use merge::{MergeCoordinator, MergeResult};
-pub use three_word_networking::{ThreeWordAddress, WordDictionary, WordEncoder};
+// TODO: Re-enable when three_word_networking crate is available
+// pub use three_word_networking::{ThreeWordAddress, WordDictionary, WordEncoder};
+
+/// Placeholder for ThreeWordAddress
+#[derive(Debug, Clone)]
+pub struct ThreeWordAddress(pub String);
+
+/// Placeholder for WordDictionary
+#[derive(Debug, Clone)]
+pub struct WordDictionary;
+
+/// Placeholder for WordEncoder
+#[derive(Debug, Clone)]
+pub struct WordEncoder;
+
+impl WordEncoder {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 use crate::{Result, P2PError, PeerId};
 use std::path::PathBuf;

@@ -17,21 +17,23 @@
 //! 
 //! ## Features
 //! 
-//! - QUIC-based transport for modern networking
-//! - IPv6-first with comprehensive tunneling support
+//! - QUIC-based transport with NAT traversal
+//! - IPv4-first with simple addressing
 //! - Kademlia DHT for distributed routing
 //! - Built-in MCP server for AI capabilities
-//! - Minimal dependencies and small footprint
+//! - Four-word human-readable addresses
 //! 
 //! ## Example
 //! 
 //! ```rust,no_run
-//! use saorsa_core::{P2PNode, NodeConfig};
+//! use saorsa_core::{P2PNode, NodeConfig, NetworkAddress};
+//! use std::str::FromStr;
 //! 
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
+//!     let addr = NetworkAddress::from_str("127.0.0.1:9000")?;
 //!     let node = P2PNode::builder()
-//!         .listen_on("/ip6/::/tcp/9000")
+//!         .listen_on(addr)
 //!         .with_mcp_server()
 //!         .build()
 //!         .await?;
@@ -43,6 +45,9 @@
 
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
+
+/// Network address types
+pub mod address;
 
 /// Network core functionality
 pub mod network;
@@ -56,8 +61,6 @@ pub mod dht_network_manager;
 /// Transport layer (QUIC, TCP)
 pub mod transport;
 
-/// IPv6/IPv4 tunneling protocols
-pub mod tunneling;
 
 /// Model Context Protocol server
 pub mod mcp;
@@ -98,7 +101,32 @@ pub mod bootstrap;
 /// Error types
 pub mod error;
 
+/// Peer record system for DHT-based peer discovery
+pub mod peer_record;
+
+/// Enhanced cryptographic signature verification system
+pub mod crypto_verify;
+
+/// Monotonic counter system for replay attack prevention
+pub mod monotonic_counter;
+
+/// Secure memory management for cryptographic operations
+pub mod secure_memory;
+
+/// Hierarchical key derivation system
+pub mod key_derivation;
+
+/// Encrypted key storage with Argon2id and AES-256-GCM
+pub mod encrypted_key_storage;
+
+/// Persistent state management with crash recovery
+pub mod persistent_state;
+
+/// Identity management system with Ed25519/X25519 key pairs
+pub mod identity_manager;
+
 // Re-export main types
+pub use address::{NetworkAddress, AddressBook};
 pub use network::{P2PNode, NodeConfig, NodeBuilder, P2PEvent};
 pub use dht::{Key, Record};
 pub use dht_network_manager::{DhtNetworkManager, DhtNetworkConfig, DhtNetworkOperation, DhtNetworkResult, DhtNetworkEvent, DhtPeerInfo, BootstrapNode};
@@ -106,6 +134,14 @@ pub use mcp::{MCPServer, Tool, MCPService};
 pub use production::{ProductionConfig, ResourceManager, ResourceMetrics};
 pub use bootstrap::{BootstrapManager, BootstrapCache, ContactEntry, CacheConfig};
 pub use error::{P2PError, Result};
+pub use peer_record::{PeerDHTRecord, PeerEndpoint, UserId, EndpointId, NatType, SignatureCache};
+pub use crypto_verify::{EnhancedSignatureVerifier, VerificationStats, BatchVerificationRequest, BatchVerificationResult, EnhancedSignatureVerification};
+pub use monotonic_counter::{MonotonicCounterSystem, PeerCounter, SequenceValidationResult, CounterStats, BatchUpdateRequest, BatchUpdateResult};
+pub use secure_memory::{SecureMemory, SecureVec, SecureString, SecureMemoryPool, PoolStats, allocate_secure, secure_vec_with_capacity, secure_string_with_capacity};
+pub use key_derivation::{MasterSeed, DerivationPath, DerivedKey, HierarchicalKeyDerivation, BatchDerivationRequest, BatchDerivationResult, DerivationPriority, DerivationStats};
+pub use encrypted_key_storage::{EncryptedKeyStorageManager, SecurityLevel, PasswordValidation, StorageStats, KeyMetadata, Argon2Config, DerivationPriority as KeyDerivationPriority};
+pub use persistent_state::{PersistentStateManager, StateConfig, RecoveryMode, FlushStrategy, RecoveryStats, IntegrityReport, WalEntry, TransactionType, StateChangeEvent};
+pub use identity_manager::{IdentityManager, Identity, IdentityState, IdentityKeyPair, IdentityCreationParams, IdentityVerification, IdentityUpdate, RevocationCertificate, RevocationReason, IdentitySyncPackage, IdentityStats};
 
 // Enhanced identity exports
 #[cfg(feature = "quantum-resistant")]
@@ -144,18 +180,17 @@ pub use threshold::{
 // Quantum crypto exports for types used by threshold
 pub use quantum_crypto::types::{GroupId, ParticipantId};
 
-// Placeholder types (will be replaced with actual libp2p types)
+// Network address types
 /// Peer identifier used throughout Saorsa
 /// 
-/// Currently implemented as a String for simplicity, but will be replaced
-/// with proper libp2p PeerId type in future versions.
+/// Currently implemented as a String for simplicity, but can be enhanced
+/// with cryptographic verification in future versions.
 pub type PeerId = String;
 
-/// Multiaddress used for network addressing
+/// Network address used for peer-to-peer communication
 /// 
-/// Currently implemented as a String for simplicity, but will be replaced  
-/// with proper libp2p Multiaddr type in future versions.
-pub type Multiaddr = String;
+/// Supports both traditional IP:port format and human-readable four-word format.
+pub type Multiaddr = NetworkAddress;
 
 /// Saorsa Core version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

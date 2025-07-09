@@ -1937,16 +1937,20 @@ impl DHT {
     
     /// Generate a three-word address for an inbox
     fn generate_three_word_address(&self, inbox_id: &str) -> String {
-        use three_word_networking::WordEncoder;
+        // TODO: Replace with real three_word_networking when available
+        // For now, use a simple placeholder implementation
+        let words = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"];
+        let mut hash = 0u32;
         
-        let encoder = WordEncoder::new();
-        let fake_multiaddr_str = format!("/inbox/{}/dht", inbox_id);
-        
-        if let Ok(words) = encoder.encode_multiaddr_string(&fake_multiaddr_str) {
-            words.to_string()
-        } else {
-            format!("inbox.{}.messages", inbox_id.chars().take(8).collect::<String>())
+        for byte in inbox_id.as_bytes() {
+            hash = hash.wrapping_mul(31).wrapping_add(*byte as u32);
         }
+        
+        let word1 = words[hash as usize % words.len()];
+        let word2 = words[(hash >> 8) as usize % words.len()];
+        let word3 = words[(hash >> 16) as usize % words.len()];
+        
+        format!("{}.{}.{}", word1, word2, word3)
     }
     
     /// Add a node to the DHT routing table

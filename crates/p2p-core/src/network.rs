@@ -16,12 +16,12 @@
 //! This module provides core networking functionality for the P2P Foundation.
 //! It handles peer connections, network events, and node lifecycle management.
 
-use crate::{PeerId, P2PError, Result};
+use crate::{PeerId, P2PError, Result, NetworkAddress};
 use crate::mcp::{MCPServer, MCPServerConfig, Tool, MCPCallContext, MCP_PROTOCOL, NetworkSender};
 use crate::dht::{DHT, DHTConfig as DHTConfigInner};
 use crate::production::{ProductionConfig, ResourceManager, ResourceMetrics};
 use crate::bootstrap::{BootstrapManager, ContactEntry, QualityMetrics};
-use crate::transport::{TransportManager, QuicTransport, TcpTransport, TransportSelection, TransportOptions};
+use crate::transport::{TransportManager, QuicTransport, TransportSelection, TransportOptions};
 use crate::identity::manager::IdentityManagerConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -426,10 +426,7 @@ impl P2PNode {
             }
         }
         
-        // Add TCP transport (fallback)
-        let tcp_transport = TcpTransport::new(false); // Don't require TLS for now
-        transport_manager.register_transport(Arc::new(tcp_transport));
-        info!("Registered TCP transport");
+        // Only QUIC transport is supported - no TCP fallback
         
         let transport_manager = Arc::new(transport_manager);
         
@@ -661,7 +658,7 @@ impl P2PNode {
         // Try QUIC first (preferred transport)
         match crate::transport::QuicTransport::new(true) {
             Ok(quic_transport) => {
-                match quic_transport.listen(addr).await {
+                match quic_transport.listen(NetworkAddress::new(addr)).await {
                     Ok(listen_addrs) => {
                         info!("QUIC listener started on {} -> {:?}", addr, listen_addrs);
                         
@@ -669,7 +666,7 @@ impl P2PNode {
                         {
                             let mut node_listen_addrs = self.listen_addrs.write().await;
                             // Don't clear - accumulate addresses from multiple listeners
-                            node_listen_addrs.push(listen_addrs);
+                            node_listen_addrs.push(listen_addrs.socket_addr());
                         }
                         
                         // Start accepting connections in background
@@ -691,33 +688,8 @@ impl P2PNode {
             }
         }
         
-        // Fallback to TCP only if QUIC fails
-        let tcp_transport = crate::transport::TcpTransport::new(false);
-        match tcp_transport.listen(addr).await {
-            Ok(listen_addrs) => {
-                info!("TCP listener started on {} -> {:?}", addr, listen_addrs);
-                
-                // Store the actual listening addresses in the node (TCP fallback)
-                {
-                    let mut node_listen_addrs = self.listen_addrs.write().await;
-                    // Don't clear - accumulate addresses from multiple listeners (TCP fallback)
-                    node_listen_addrs.push(listen_addrs);
-                }
-                
-                // Start accepting connections in background
-                self.start_connection_acceptor(
-                    Arc::new(tcp_transport), 
-                    addr, 
-                    crate::transport::TransportType::TCP
-                ).await?;
-                
-                Ok(())
-            }
-            Err(e) => {
-                warn!("Failed to start TCP listener on {}: {}", addr, e);
-                Err(e)
-            }
-        }
+        // No TCP fallback - QUIC only
+        Err(crate::P2PError::Transport(format!("Failed to start QUIC listener on {}", addr)))
     }
     
     /// Start connection acceptor background task
@@ -1217,7 +1189,7 @@ impl P2PNode {
             .map_err(|e| P2PError::Transport(format!("Invalid address format: {}", e)))?;
         
         // Use transport manager to establish real connection
-        let peer_id = match self.transport_manager.connect(socket_addr).await {
+        let peer_id = match self.transport_manager.connect(NetworkAddress::new(socket_addr)).await {
             Ok(connected_peer_id) => {
                 info!("Successfully connected to peer: {}", connected_peer_id);
                 connected_peer_id

@@ -13,20 +13,18 @@
 
 //! Transport Layer
 //!
-//! This module provides transport protocol implementations for the P2P Foundation.
-//! It supports QUIC and TCP transports with automatic selection, connection pooling,
-//! and performance monitoring.
+//! This module provides QUIC transport implementation for the P2P Foundation.
+//! It supports QUIC with NAT traversal, connection pooling, and performance monitoring.
 
-pub mod tcp;
 pub mod quic;
-pub mod tunneled;
 
-use crate::{PeerId, P2PError, Result};
+use crate::{PeerId, P2PError, Result, NetworkAddress};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
@@ -35,21 +33,15 @@ use tracing::{debug, info, warn};
 /// Transport protocol types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TransportType {
-    /// QUIC transport protocol
+    /// QUIC transport protocol with NAT traversal
     QUIC,
-    /// TCP transport protocol  
-    TCP,
 }
 
-/// Transport selection strategy
+/// Transport selection strategy (simplified for QUIC-only)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TransportSelection {
-    /// Automatically select best transport
-    Auto,
-    /// Prefer specific transport with fallback
-    Prefer(TransportType),
-    /// Force specific transport only
-    Force(TransportType),
+    /// Use QUIC transport (default and only option)
+    QUIC,
 }
 
 /// Connection quality metrics
@@ -73,9 +65,9 @@ pub struct ConnectionInfo {
     /// Transport type being used
     pub transport_type: TransportType,
     /// Local address
-    pub local_addr: SocketAddr,
+    pub local_addr: NetworkAddress,
     /// Remote address
-    pub remote_addr: SocketAddr,
+    pub remote_addr: NetworkAddress,
     /// Whether connection is encrypted
     pub is_encrypted: bool,
     /// Cipher suite being used
@@ -129,25 +121,25 @@ pub struct TransportMessage {
 #[async_trait]
 pub trait Transport: Send + Sync {
     /// Start listening on the given address
-    async fn listen(&self, addr: SocketAddr) -> Result<SocketAddr>;
+    async fn listen(&self, addr: NetworkAddress) -> Result<NetworkAddress>;
     
     /// Accept incoming connections (for server-side)
     async fn accept(&self) -> Result<Box<dyn Connection>>;
     
     /// Connect to a remote peer
-    async fn connect(&self, addr: SocketAddr) -> Result<Box<dyn Connection>>;
+    async fn connect(&self, addr: NetworkAddress) -> Result<Box<dyn Connection>>;
     
     /// Connect with specific transport options
-    async fn connect_with_options(&self, addr: SocketAddr, options: TransportOptions) -> Result<Box<dyn Connection>>;
+    async fn connect_with_options(&self, addr: NetworkAddress, options: TransportOptions) -> Result<Box<dyn Connection>>;
     
-    /// Check if this transport supports IPv6
+    /// Check if this transport supports IPv6 (deprecated - IPv4-only focus)
     fn supports_ipv6(&self) -> bool;
     
     /// Get transport type
     fn transport_type(&self) -> TransportType;
     
     /// Check if address is supported
-    fn supports_address(&self, addr: SocketAddr) -> bool;
+    fn supports_address(&self, addr: &NetworkAddress) -> bool;
 }
 
 /// Connection trait for active connections
@@ -172,10 +164,10 @@ pub trait Connection: Send + Sync {
     async fn measure_quality(&self) -> Result<ConnectionQuality>;
     
     /// Get local address
-    fn local_addr(&self) -> SocketAddr;
+    fn local_addr(&self) -> NetworkAddress;
     
     /// Get remote address
-    fn remote_addr(&self) -> SocketAddr;
+    fn remote_addr(&self) -> NetworkAddress;
 }
 
 /// Transport configuration options
@@ -238,14 +230,14 @@ impl TransportManager {
     }
     
     /// Connect to a peer using the best available transport
-    pub async fn connect(&self, addr: SocketAddr) -> Result<PeerId> {
-        let transport_type = self.select_transport(addr).await?;
+    pub async fn connect(&self, addr: NetworkAddress) -> Result<PeerId> {
+        let transport_type = self.select_transport(&addr).await?;
         let transport = self.transports.get(&transport_type)
             .ok_or_else(|| P2PError::Transport(format!("Transport {:?} not available", transport_type)))?;
         
         debug!("Connecting to {} using {:?}", addr, transport_type);
         
-        let connection = transport.connect_with_options(addr, self.options.clone()).await?;
+        let connection = transport.connect_with_options(addr.clone(), self.options.clone()).await?;
         let peer_id = format!("peer_from_{}_{}", addr.ip(), addr.port()); // Simplified peer ID
         
         // Add to connection pool
@@ -256,11 +248,11 @@ impl TransportManager {
     }
     
     /// Connect with specific transport
-    pub async fn connect_with_transport(&self, addr: SocketAddr, transport_type: TransportType) -> Result<PeerId> {
+    pub async fn connect_with_transport(&self, addr: NetworkAddress, transport_type: TransportType) -> Result<PeerId> {
         let transport = self.transports.get(&transport_type)
             .ok_or_else(|| P2PError::Transport(format!("Transport {:?} not available", transport_type)))?;
         
-        let connection = transport.connect_with_options(addr, self.options.clone()).await?;
+        let connection = transport.connect_with_options(addr.clone(), self.options.clone()).await?;
         let peer_id = format!("peer_from_{}_{}", addr.ip(), addr.port());
         
         self.add_connection(peer_id.clone(), connection).await?;
@@ -344,53 +336,32 @@ impl TransportManager {
         Ok(())
     }
     
-    /// Select best transport for an address
-    async fn select_transport(&self, addr: SocketAddr) -> Result<TransportType> {
+    /// Select transport for an address (always QUIC)
+    async fn select_transport(&self, addr: &NetworkAddress) -> Result<TransportType> {
         match &self.selection {
-            TransportSelection::Force(transport_type) => {
-                if self.transports.contains_key(transport_type) {
-                    Ok(*transport_type)
+            TransportSelection::QUIC => {
+                if self.transports.contains_key(&TransportType::QUIC) {
+                    Ok(TransportType::QUIC)
                 } else {
-                    Err(P2PError::Transport(format!("Forced transport {:?} not available", transport_type)))
+                    Err(P2PError::Transport("QUIC transport not available".to_string()))
                 }
-            }
-            TransportSelection::Prefer(preferred) => {
-                if self.transports.contains_key(preferred) {
-                    Ok(*preferred)
-                } else {
-                    // Fall back to any available transport
-                    self.auto_select_transport(addr).await
-                }
-            }
-            TransportSelection::Auto => {
-                self.auto_select_transport(addr).await
             }
         }
     }
     
-    /// Auto-select best transport based on address and conditions
-    async fn auto_select_transport(&self, addr: SocketAddr) -> Result<TransportType> {
-        // Strongly prefer QUIC if available (better performance, 0-RTT, multiplexing)
+    /// Auto-select transport (always QUIC in this implementation)
+    async fn auto_select_transport(&self, addr: &NetworkAddress) -> Result<TransportType> {
+        // Always use QUIC as it's the only transport protocol
         if self.transports.contains_key(&TransportType::QUIC) {
             if let Some(transport) = self.transports.get(&TransportType::QUIC) {
                 if transport.supports_address(addr) {
-                    debug!("Selected QUIC transport for {} (preferred for P2P)", addr);
+                    debug!("Using QUIC transport for {} (only available transport)", addr);
                     return Ok(TransportType::QUIC);
                 }
             }
         }
         
-        // Fall back to TCP only as last resort
-        if self.transports.contains_key(&TransportType::TCP) {
-            if let Some(transport) = self.transports.get(&TransportType::TCP) {
-                if transport.supports_address(addr) {
-                    warn!("Falling back to TCP transport for {}. QUIC would provide better performance.", addr);
-                    return Ok(TransportType::TCP);
-                }
-            }
-        }
-        
-        Err(P2PError::Transport("No suitable transport available. Consider using QUIC-compatible addresses.".to_string()))
+        Err(P2PError::Transport("QUIC transport not available or address not supported".to_string()))
     }
     
     /// Add connection to pool
@@ -463,15 +434,14 @@ impl fmt::Display for TransportType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TransportType::QUIC => write!(f, "quic"),
-            TransportType::TCP => write!(f, "tcp"),
         }
     }
 }
 
 impl Default for TransportSelection {
     fn default() -> Self {
-        // Default to preferring QUIC with TCP fallback
-        TransportSelection::Prefer(TransportType::QUIC)
+        // Default to QUIC (only option)
+        TransportSelection::QUIC
     }
 }
 
@@ -503,8 +473,7 @@ pub mod transport_types {
     pub use super::TransportType;
 }
 
-// Re-export transport implementations
-pub use tcp::TcpTransport;
+// Re-export transport implementation
 pub use quic::QuicTransport;
 
 #[cfg(test)]
@@ -543,21 +512,21 @@ mod tests {
 
     #[async_trait]
     impl Transport for MockTransport {
-        async fn listen(&self, addr: SocketAddr) -> Result<SocketAddr> {
+        async fn listen(&self, addr: NetworkAddress) -> Result<NetworkAddress> {
             if self.should_fail {
                 return Err(P2PError::Transport("Listen failed".to_string()));
             }
             Ok(addr)
         }
 
-        async fn connect(&self, addr: SocketAddr) -> Result<Box<dyn Connection>> {
+        async fn connect(&self, addr: NetworkAddress) -> Result<Box<dyn Connection>> {
             if self.should_fail {
                 return Err(P2PError::Transport("Connection failed".to_string()));
             }
             Ok(Box::new(MockConnection::new(addr)))
         }
 
-        async fn connect_with_options(&self, addr: SocketAddr, _options: TransportOptions) -> Result<Box<dyn Connection>> {
+        async fn connect_with_options(&self, addr: NetworkAddress, _options: TransportOptions) -> Result<Box<dyn Connection>> {
             self.connect(addr).await
         }
 
@@ -565,35 +534,33 @@ mod tests {
             if self.should_fail {
                 return Err(P2PError::Transport("Accept failed".to_string()));
             }
-            Ok(Box::new(MockConnection::new("127.0.0.1:9000".parse().unwrap())))
+            Ok(Box::new(MockConnection::new(NetworkAddress::from_str("127.0.0.1:9000").unwrap())))
         }
 
         fn supports_ipv6(&self) -> bool {
-            self.supports_all
+            false // IPv4-only focus
         }
 
         fn transport_type(&self) -> TransportType {
             self.transport_type
         }
 
-        fn supports_address(&self, addr: SocketAddr) -> bool {
-            if !self.supports_all && addr.is_ipv6() {
-                return false;
-            }
-            true
+        fn supports_address(&self, addr: &NetworkAddress) -> bool {
+            // IPv4-only support
+            addr.is_ipv4()
         }
     }
 
     /// Mock connection implementation for testing
     struct MockConnection {
-        remote_addr: SocketAddr,
+        remote_addr: NetworkAddress,
         is_alive: bool,
         bytes_sent: AtomicUsize,
         bytes_received: AtomicUsize,
     }
 
     impl MockConnection {
-        fn new(remote_addr: SocketAddr) -> Self {
+        fn new(remote_addr: NetworkAddress) -> Self {
             Self {
                 remote_addr,
                 is_alive: true,
@@ -625,8 +592,8 @@ mod tests {
         async fn info(&self) -> ConnectionInfo {
             ConnectionInfo {
                 transport_type: TransportType::QUIC,
-                local_addr: "127.0.0.1:9000".parse().unwrap(),
-                remote_addr: self.remote_addr,
+                local_addr: NetworkAddress::from_str("127.0.0.1:9000").unwrap(),
+                remote_addr: self.remote_addr.clone(),
                 is_encrypted: true,
                 cipher_suite: "TLS_AES_256_GCM_SHA384".to_string(),
                 used_0rtt: false,
@@ -654,12 +621,12 @@ mod tests {
             })
         }
 
-        fn local_addr(&self) -> SocketAddr {
-            "127.0.0.1:9000".parse().unwrap()
+        fn local_addr(&self) -> NetworkAddress {
+            NetworkAddress::from_str("127.0.0.1:9000").unwrap()
         }
 
-        fn remote_addr(&self) -> SocketAddr {
-            self.remote_addr
+        fn remote_addr(&self) -> NetworkAddress {
+            self.remote_addr.clone()
         }
     }
 
@@ -671,34 +638,26 @@ mod tests {
     #[test]
     fn test_transport_type_display() {
         assert_eq!(format!("{}", TransportType::QUIC), "quic");
-        assert_eq!(format!("{}", TransportType::TCP), "tcp");
     }
 
     #[test]
     fn test_transport_type_serialization() {
         let quic_type = TransportType::QUIC;
-        let tcp_type = TransportType::TCP;
 
         assert_eq!(quic_type, TransportType::QUIC);
-        assert_eq!(tcp_type, TransportType::TCP);
-        assert_ne!(quic_type, tcp_type);
     }
 
     #[test]
     fn test_transport_selection_variants() {
-        let auto = TransportSelection::Auto;
-        let prefer_quic = TransportSelection::Prefer(TransportType::QUIC);
-        let force_tcp = TransportSelection::Force(TransportType::TCP);
+        let quic_selection = TransportSelection::QUIC;
 
-        assert!(matches!(auto, TransportSelection::Auto));
-        assert!(matches!(prefer_quic, TransportSelection::Prefer(TransportType::QUIC)));
-        assert!(matches!(force_tcp, TransportSelection::Force(TransportType::TCP)));
+        assert!(matches!(quic_selection, TransportSelection::QUIC));
     }
 
     #[test]
     fn test_transport_selection_default() {
         let default = TransportSelection::default();
-        assert!(matches!(default, TransportSelection::Prefer(TransportType::QUIC)));
+        assert!(matches!(default, TransportSelection::QUIC));
     }
 
     #[test]
@@ -733,14 +692,11 @@ mod tests {
     async fn test_transport_registration() {
         let mut manager = create_test_transport_manager();
         let quic_transport = Arc::new(MockTransport::new(TransportType::QUIC));
-        let tcp_transport = Arc::new(MockTransport::new(TransportType::TCP));
 
         manager.register_transport(quic_transport.clone());
-        manager.register_transport(tcp_transport.clone());
 
-        assert_eq!(manager.transports.len(), 2);
+        assert_eq!(manager.transports.len(), 1);
         assert!(manager.transports.contains_key(&TransportType::QUIC));
-        assert!(manager.transports.contains_key(&TransportType::TCP));
     }
 
     #[tokio::test]
@@ -749,7 +705,7 @@ mod tests {
         let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
-        let peer_id = manager.connect("127.0.0.1:9001".parse().unwrap()).await?;
+        let peer_id = manager.connect(NetworkAddress::from_str("127.0.0.1:9001")?).await?;
         assert_eq!(peer_id, "peer_from_127.0.0.1_9001");
 
         let connections = manager.connections.read().await;
@@ -761,12 +717,12 @@ mod tests {
     #[tokio::test]
     async fn test_connection_with_specific_transport() -> Result<()> {
         let mut manager = create_test_transport_manager();
-        let transport = Arc::new(MockTransport::new(TransportType::TCP));
+        let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
         let peer_id = manager.connect_with_transport(
-            "127.0.0.1:9002".parse().unwrap(),
-            TransportType::TCP
+            NetworkAddress::from_str("127.0.0.1:9002")?,
+            TransportType::QUIC
         ).await?;
 
         assert_eq!(peer_id, "peer_from_127.0.0.1_9002");
@@ -774,14 +730,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_connection_failure_handling() {
+    async fn test_connection_failure_handling() -> Result<()> {
         let mut manager = create_test_transport_manager();
         let failing_transport = Arc::new(MockTransport::new(TransportType::QUIC).with_failure());
         manager.register_transport(failing_transport);
 
-        let result = manager.connect("127.0.0.1:9003".parse().unwrap()).await;
+        let result = manager.connect(NetworkAddress::from_str("127.0.0.1:9003")?).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Connection failed"));
+        Ok(())
     }
 
     #[tokio::test]
@@ -790,7 +747,7 @@ mod tests {
         let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
-        let peer_id = manager.connect("127.0.0.1:9004".parse().unwrap()).await?;
+        let peer_id = manager.connect(NetworkAddress::from_str("127.0.0.1:9004")?).await?;
         let message = b"Hello, transport!".to_vec();
         
         manager.send_message(&peer_id, message.clone()).await?;
@@ -817,11 +774,11 @@ mod tests {
         let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
-        let peer_id = manager.connect("127.0.0.1:9005".parse().unwrap()).await?;
+        let peer_id = manager.connect(NetworkAddress::from_str("127.0.0.1:9005")?).await?;
         let info = manager.get_connection_info(&peer_id).await?;
 
         assert_eq!(info.transport_type, TransportType::QUIC);
-        assert_eq!(info.remote_addr, "127.0.0.1:9005".parse().unwrap());
+        assert_eq!(info.remote_addr, NetworkAddress::from_str("127.0.0.1:9005")?);
         assert!(info.is_encrypted);
         assert_eq!(info.cipher_suite, "TLS_AES_256_GCM_SHA384");
 
@@ -834,7 +791,7 @@ mod tests {
         let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
-        let peer_id = manager.connect("127.0.0.1:9006".parse().unwrap()).await?;
+        let peer_id = manager.connect(NetworkAddress::from_str("127.0.0.1:9006")?).await?;
         let pool_info = manager.get_connection_pool_info(&peer_id).await?;
 
         assert_eq!(pool_info.active_connections, 1);
@@ -850,7 +807,7 @@ mod tests {
         let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
-        let peer_id = manager.connect("127.0.0.1:9007".parse().unwrap()).await?;
+        let peer_id = manager.connect(NetworkAddress::from_str("127.0.0.1:9007")?).await?;
         let stats = manager.get_connection_pool_stats(&peer_id).await?;
 
         assert_eq!(stats.messages_per_connection.len(), 1);
@@ -866,7 +823,7 @@ mod tests {
         let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
-        let peer_id = manager.connect("127.0.0.1:9008".parse().unwrap()).await?;
+        let peer_id = manager.connect(NetworkAddress::from_str("127.0.0.1:9008")?).await?;
         let quality = manager.measure_connection_quality(&peer_id).await?;
 
         assert_eq!(quality.latency, Duration::from_millis(10));
@@ -883,73 +840,70 @@ mod tests {
         let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
-        let peer_id = manager.connect("127.0.0.1:9009".parse().unwrap()).await?;
+        let peer_id = manager.connect(NetworkAddress::from_str("127.0.0.1:9009")?).await?;
         
         // Transport switching is not fully implemented, but should not error
-        let result = manager.switch_transport(&peer_id, TransportType::TCP).await;
+        let result = manager.switch_transport(&peer_id, TransportType::QUIC).await;
         assert!(result.is_ok());
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_auto_transport_selection_prefer_quic() -> Result<()> {
+    async fn test_auto_transport_selection_quic() -> Result<()> {
         let mut manager = create_test_transport_manager();
         let quic_transport = Arc::new(MockTransport::new(TransportType::QUIC));
-        let tcp_transport = Arc::new(MockTransport::new(TransportType::TCP));
         
         manager.register_transport(quic_transport);
-        manager.register_transport(tcp_transport);
 
-        let addr = "127.0.0.1:9010".parse().unwrap();
-        let selected = manager.auto_select_transport(addr).await?;
+        let addr = NetworkAddress::from_str("127.0.0.1:9010")?;
+        let selected = manager.auto_select_transport(&addr).await?;
         
-        // Should prefer QUIC when available
+        // Should use QUIC when available
         assert_eq!(selected, TransportType::QUIC);
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_transport_selection_fallback_to_tcp() -> Result<()> {
-        let mut manager = create_test_transport_manager();
-        let tcp_transport = Arc::new(MockTransport::new(TransportType::TCP));
-        
-        manager.register_transport(tcp_transport);
+    async fn test_transport_selection_no_quic() -> Result<()> {
+        let manager = create_test_transport_manager();
+        // No transports registered
 
-        let addr = "127.0.0.1:9011".parse().unwrap();
-        let selected = manager.auto_select_transport(addr).await?;
+        let addr = NetworkAddress::from_str("127.0.0.1:9011")?;
+        let selected = manager.auto_select_transport(&addr).await;
         
-        // Should fall back to TCP when QUIC not available
-        assert_eq!(selected, TransportType::TCP);
+        // Should fail when QUIC not available
+        assert!(selected.is_err());
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_transport_selection_no_suitable_transport() {
+    async fn test_transport_selection_no_suitable_transport() -> Result<()> {
         let manager = create_test_transport_manager();
-        let addr = "127.0.0.1:9012".parse().unwrap();
+        let addr = NetworkAddress::from_str("127.0.0.1:9012")?;
         
-        let result = manager.auto_select_transport(addr).await;
+        let result = manager.auto_select_transport(&addr).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No suitable transport available"));
+        assert!(result.unwrap_err().to_string().contains("QUIC transport not available"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_forced_transport_selection() -> Result<()> {
+    async fn test_quic_transport_selection() -> Result<()> {
         let mut manager = TransportManager::new(
-            TransportSelection::Force(TransportType::TCP),
+            TransportSelection::QUIC,
             TransportOptions::default()
         );
-        let tcp_transport = Arc::new(MockTransport::new(TransportType::TCP));
+        let quic_transport = Arc::new(MockTransport::new(TransportType::QUIC));
         
-        manager.register_transport(tcp_transport);
+        manager.register_transport(quic_transport);
 
-        let addr = "127.0.0.1:9013".parse().unwrap();
-        let selected = manager.select_transport(addr).await?;
+        let addr = NetworkAddress::from_str("127.0.0.1:9013")?;
+        let selected = manager.select_transport(&addr).await?;
         
-        assert_eq!(selected, TransportType::TCP);
+        assert_eq!(selected, TransportType::QUIC);
 
         Ok(())
     }
@@ -961,35 +915,35 @@ mod tests {
             TransportOptions::default()
         );
 
-        let addr = "127.0.0.1:9014".parse().unwrap();
-        let result = manager.select_transport(addr).await;
+        let addr = NetworkAddress::from_str("127.0.0.1:9014")?;
+        let result = manager.select_transport(&addr).await;
         
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Forced transport QUIC not available"));
     }
 
     #[tokio::test]
-    async fn test_preferred_transport_with_fallback() -> Result<()> {
+    async fn test_quic_transport_with_registration() -> Result<()> {
         let mut manager = TransportManager::new(
-            TransportSelection::Prefer(TransportType::QUIC),
+            TransportSelection::QUIC,
             TransportOptions::default()
         );
-        let tcp_transport = Arc::new(MockTransport::new(TransportType::TCP));
+        let quic_transport = Arc::new(MockTransport::new(TransportType::QUIC));
         
-        manager.register_transport(tcp_transport);
+        manager.register_transport(quic_transport);
 
-        let addr = "127.0.0.1:9015".parse().unwrap();
-        let selected = manager.select_transport(addr).await?;
+        let addr = NetworkAddress::from_str("127.0.0.1:9015")?;
+        let selected = manager.select_transport(&addr).await?;
         
-        // Should fall back to TCP when preferred QUIC is not available
-        assert_eq!(selected, TransportType::TCP);
+        // Should use QUIC when available
+        assert_eq!(selected, TransportType::QUIC);
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_mock_connection_lifecycle() -> Result<()> {
-        let mut conn = MockConnection::new("127.0.0.1:9016".parse().unwrap());
+        let mut conn = MockConnection::new(NetworkAddress::from_str("127.0.0.1:9016")?);
 
         assert!(conn.is_alive().await);
 
@@ -1027,17 +981,17 @@ mod tests {
         let mut pool = ConnectionPool::new(2); // Max 2 connections
 
         // Add first connection
-        let conn1 = Box::new(MockConnection::new("127.0.0.1:9017".parse().unwrap()));
+        let conn1 = Box::new(MockConnection::new(NetworkAddress::from_str("127.0.0.1:9017")?));
         pool.add_connection(conn1).await?;
         assert_eq!(pool.connections.len(), 1);
 
         // Add second connection
-        let conn2 = Box::new(MockConnection::new("127.0.0.1:9018".parse().unwrap()));
+        let conn2 = Box::new(MockConnection::new(NetworkAddress::from_str("127.0.0.1:9018")?));
         pool.add_connection(conn2).await?;
         assert_eq!(pool.connections.len(), 2);
 
         // Add third connection (should remove first)
-        let conn3 = Box::new(MockConnection::new("127.0.0.1:9019".parse().unwrap()));
+        let conn3 = Box::new(MockConnection::new(NetworkAddress::from_str("127.0.0.1:9019")?));
         pool.add_connection(conn3).await?;
         assert_eq!(pool.connections.len(), 2);
 
@@ -1095,35 +1049,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mock_transport_address_support() {
+    async fn test_mock_transport_address_support() -> Result<()> {
         let transport = MockTransport::new(TransportType::QUIC);
         
-        assert!(transport.supports_address("127.0.0.1:9000".parse().unwrap()));
-        assert!(transport.supports_address("[::1]:9000".parse().unwrap()));
-        assert!(transport.supports_address("127.0.0.1:9000".parse().unwrap())); // UDP test removed as SocketAddr doesn't distinguish protocol
+        let addr1 = NetworkAddress::from_str("127.0.0.1:9000")?;
+        let addr2 = NetworkAddress::from_str("[::1]:9000")?;
+        
+        assert!(transport.supports_address(&addr1)); // IPv4 supported
+        assert!(!transport.supports_address(&addr2)); // IPv6 not supported
+        assert!(transport.supports_address(&addr1)); // IPv4 supported
 
         let limited_transport = MockTransport::new(TransportType::QUIC).with_limited_support();
-        assert!(limited_transport.supports_address("127.0.0.1:9000".parse().unwrap()));
-        assert!(!limited_transport.supports_address("[::1]:9000".parse().unwrap()));
+        assert!(limited_transport.supports_address(&addr1)); // IPv4 supported
+        assert!(!limited_transport.supports_address(&addr2)); // IPv6 not supported
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_mock_transport_supported_addresses() {
+    async fn test_mock_transport_supported_addresses() -> Result<()> {
         let transport = MockTransport::new(TransportType::QUIC);
         let supports_ipv6 = transport.supports_ipv6();
         
-        // Transport supports both IPv4 and IPv6
-        assert!(supports_ipv6);
+        // Transport now focuses on IPv4 only
+        assert!(!supports_ipv6);
 
         let limited_transport = MockTransport::new(TransportType::QUIC).with_limited_support();
         let limited_supports_ipv6 = limited_transport.supports_ipv6();
         
-        // Limited transport only supports IPv4
+        // All transports are IPv4-only now
         assert!(!limited_supports_ipv6);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_transport_options_configuration() {
+    async fn test_transport_options_configuration() -> Result<()> {
         let options = TransportOptions {
             enable_0rtt: false,
             require_encryption: false,
@@ -1137,5 +1096,6 @@ mod tests {
         assert_eq!(options.connect_timeout, Duration::from_secs(10));
         assert_eq!(options.keep_alive, Duration::from_secs(30));
         assert_eq!(options.max_message_size, 1024);
+        Ok(())
     }
 }
