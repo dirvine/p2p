@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use ed25519_dalek::{PublicKey, Signature, Verifier};
+use ed25519_dalek::{ExpandedSecretKey, PublicKey, SecretKey, Signature, Verifier};
 use blake3::Hash;
 use uuid::Uuid;
 
@@ -289,7 +289,7 @@ impl PeerDHTRecord {
         ttl: u32,
     ) -> Result<()> {
         // Validate name length
-        if let Some(ref name) = name {
+        if let Some(name) = name {
             if name.len() > 255 {
                 return Err(P2PError::InvalidInput("Name too long".to_string()));
             }
@@ -318,7 +318,7 @@ impl PeerDHTRecord {
     }
 
     /// Create the canonical message for signing
-    fn create_signable_message(&self) -> Vec<u8> {
+    pub fn create_signable_message(&self) -> Vec<u8> {
         let mut message = Vec::new();
         
         // Version
@@ -359,8 +359,10 @@ impl PeerDHTRecord {
     /// Sign the record with the given private key
     pub fn sign(&mut self, private_key: &ed25519_dalek::SecretKey) -> Result<()> {
         let message = self.create_signable_message();
-        let keypair = ed25519_dalek::Keypair::from(private_key.clone());
-        self.signature = keypair.sign(&message);
+        // Convert SecretKey to ExpandedSecretKey for signing
+        let expanded_key = ExpandedSecretKey::from(private_key);
+        let public_key = PublicKey::from(private_key);
+        self.signature = expanded_key.sign(&message, &public_key);
         Ok(())
     }
 
@@ -368,7 +370,7 @@ impl PeerDHTRecord {
     pub fn verify_signature(&self) -> Result<()> {
         let message = self.create_signable_message();
         self.public_key.verify(&message, &self.signature)
-            .map_err(|_| P2PError::InvalidSignature("Signature verification failed".to_string()))?;
+            .map_err(|_| P2PError::Security("Signature verification failed".to_string()))?;
         Ok(())
     }
 
@@ -391,7 +393,7 @@ impl PeerDHTRecord {
     /// Serialize the record using bincode for efficiency
     pub fn serialize(&self) -> Result<Vec<u8>> {
         let serialized = bincode::serialize(self)
-            .map_err(|e| P2PError::SerializationError(format!("Failed to serialize record: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Failed to serialize record: {}", e)))?;
         
         // Enforce size limits
         if serialized.len() > MAX_DHT_RECORD_SIZE {
@@ -409,11 +411,11 @@ impl PeerDHTRecord {
         }
         
         let record: PeerDHTRecord = bincode::deserialize(data)
-            .map_err(|e| P2PError::SerializationError(format!("Failed to deserialize record: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Failed to deserialize record: {}", e)))?;
         
         // Validate version
         if record.version > Self::CURRENT_VERSION {
-            return Err(P2PError::UnsupportedVersion(record.version));
+            return Err(P2PError::InvalidInput(format!("Unsupported record version: {}", record.version)));
         }
         
         // Validate basic constraints
@@ -467,7 +469,7 @@ impl SignatureCache {
             return if result {
                 Ok(())
             } else {
-                Err(P2PError::InvalidSignature("Cached signature verification failed".to_string()))
+                Err(P2PError::Security("Cached signature verification failed".to_string()))
             };
         }
         

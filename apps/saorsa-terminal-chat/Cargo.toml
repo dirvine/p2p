@@ -1,7 +1,7 @@
 [package]
 name = "saorsa-terminal-chat"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
 authors = ["P2P Foundation Team"]
 description = "Real P2P terminal chat with IPv6/IPv4 detection and automatic tunneling"
 

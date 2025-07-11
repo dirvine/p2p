@@ -26,7 +26,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 // TODO: Remove when real ant-quic is available
 /// Placeholder for NatTraversalEndpoint
@@ -221,7 +221,7 @@ impl Transport for QuicTransport {
         let quic_connection = QuicConnection {
             connection,
             local_addr,
-            remote_addr,
+            remote_addr: remote_addr.clone(),
             info: connection_info,
             active_streams: Arc::new(Mutex::new(HashMap::new())),
             stream_counter: Arc::new(Mutex::new(0)),

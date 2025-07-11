@@ -37,7 +37,7 @@ use crate::encrypted_key_storage::{EncryptedKeyStorageManager, SecurityLevel};
 use crate::peer_record::{PeerDHTRecord, PeerEndpoint, UserId};
 use crate::crypto_verify::EnhancedSignatureVerifier;
 use crate::monotonic_counter::MonotonicCounterSystem;
-use ed25519_dalek::{PublicKey as Ed25519PublicKey, SecretKey as Ed25519SecretKey, Signature, Signer, Verifier};
+use ed25519_dalek::{ExpandedSecretKey, PublicKey as Ed25519PublicKey, SecretKey as Ed25519SecretKey, Signature, Verifier};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -75,7 +75,7 @@ pub enum IdentityState {
 }
 
 /// Identity key pair containing both Ed25519 and X25519 keys
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct IdentityKeyPair {
     /// Ed25519 key pair for signatures
     pub ed25519_secret: Ed25519SecretKey,
@@ -91,13 +91,31 @@ pub struct IdentityKeyPair {
     pub version: u32,
 }
 
+impl Clone for IdentityKeyPair {
+    fn clone(&self) -> Self {
+        // SecretKey doesn't implement Clone, so we need to recreate it from bytes
+        let secret_bytes = self.ed25519_secret.to_bytes();
+        let ed25519_secret = Ed25519SecretKey::from_bytes(&secret_bytes).expect("Valid secret key");
+        
+        Self {
+            ed25519_secret,
+            ed25519_public: self.ed25519_public.clone(),
+            x25519_secret: self.x25519_secret,
+            x25519_public: self.x25519_public,
+            created_at: self.created_at,
+            expires_at: self.expires_at,
+            version: self.version,
+        }
+    }
+}
+
 /// Complete identity including keys and metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Identity {
     /// Unique identity ID (derived from public key)
     pub id: UserId,
-    /// Four-word human-readable address
-    pub four_word_address: String,
+    /// Three-word human-readable address
+    pub three_word_address: String,
     /// Current state in lifecycle
     pub state: IdentityState,
     /// Display name (optional)
@@ -284,7 +302,8 @@ impl IdentityKeyPair {
     
     /// Sign data with Ed25519 key
     pub fn sign(&self, data: &[u8]) -> Result<Signature> {
-        Ok(self.ed25519_secret.sign(data))
+        let expanded_key = ExpandedSecretKey::from(&self.ed25519_secret);
+        Ok(expanded_key.sign(data, &self.ed25519_public))
     }
     
     /// Verify signature with Ed25519 public key
@@ -298,7 +317,7 @@ impl Identity {
     /// Create identity from key pair
     pub fn from_key_pair(
         key_pair: &IdentityKeyPair,
-        four_word_address: String,
+        three_word_address: String,
         params: IdentityCreationParams,
     ) -> Result<Self> {
         // Derive user ID from public key
@@ -320,7 +339,7 @@ impl Identity {
         
         Ok(Self {
             id,
-            four_word_address,
+            three_word_address,
             state: IdentityState::Active,
             display_name: params.display_name,
             avatar_url: params.avatar_url,
@@ -444,7 +463,7 @@ impl IdentityManager {
         params: IdentityCreationParams,
     ) -> Result<Identity> {
         // Generate four-word address
-        let four_word_address = self.generate_four_word_address().await?;
+        let three_word_address = self.generate_three_word_address().await?;
         
         // Derive key pair
         let derivation_path = params.derivation_path.as_deref()
@@ -460,7 +479,7 @@ impl IdentityManager {
         let key_pair = IdentityKeyPair::from_derived_key(&derived_key, lifetime)?;
         
         // Create identity
-        let identity = Identity::from_key_pair(&key_pair, four_word_address, params)?;
+        let identity = Identity::from_key_pair(&key_pair, three_word_address, params)?;
         
         // Store in encrypted storage
         // Note: We need to create a new master seed for this identity
@@ -639,7 +658,7 @@ impl IdentityManager {
         new_key_pair.version = new_version;
         
         // Add old key hash to previous keys
-        let old_key_hash = blake3::hash(identity.id.as_bytes()).as_bytes().try_into().unwrap();
+        let old_key_hash = *blake3::hash(identity.id.as_bytes()).as_bytes();
         identity.previous_keys.push(old_key_hash);
         
         // Update identity
@@ -826,10 +845,10 @@ impl IdentityManager {
     
     // Helper methods
     
-    /// Generate a four-word address
-    async fn generate_four_word_address(&self) -> Result<String> {
-        // TODO: Integrate with four-word-networking crate
-        Ok("example-word-address-here".to_string())
+    /// Generate a three-word address
+    async fn generate_three_word_address(&self) -> Result<String> {
+        // TODO: Integrate with three-word-networking crate
+        Ok("alpha.bravo.charlie".to_string())
     }
     
     /// Get key pair from cache

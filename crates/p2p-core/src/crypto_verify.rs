@@ -197,12 +197,12 @@ impl EnhancedSignatureVerifier {
         let age = now.saturating_sub(record.timestamp);
         
         if age > SIGNATURE_FRESHNESS_WINDOW.as_secs() {
-            return Err(P2PError::InvalidSignature("Signature too old".to_string()));
+            return Err(P2PError::Security("Signature too old".to_string()));
         }
         
         // Also check for future timestamps (clock skew protection)
         if record.timestamp > now + 60 {
-            return Err(P2PError::InvalidSignature("Signature from future".to_string()));
+            return Err(P2PError::Security("Signature from future".to_string()));
         }
         
         Ok(())
@@ -247,7 +247,7 @@ impl EnhancedSignatureVerifier {
         
         // Check for low-order points and other curve attacks
         if self.is_low_order_point(key_bytes) {
-            return Err(P2PError::InvalidSignature("Invalid curve point".to_string()));
+            return Err(P2PError::Security("Invalid curve point".to_string()));
         }
         
         // For ed25519_dalek 1.0, we just return the public key as-is
@@ -279,7 +279,7 @@ impl EnhancedSignatureVerifier {
     ) -> Result<()> {
         // Use constant-time verification
         verifying_key.verify(message, signature)
-            .map_err(|_| P2PError::InvalidSignature("Signature verification failed".to_string()))
+            .map_err(|_| P2PError::Security("Signature verification failed".to_string()))
     }
 
     /// Evict the least recently used key from cache
@@ -361,7 +361,7 @@ mod tests {
     use super::*;
     use crate::peer_record::{PeerDHTRecord, UserId, PeerEndpoint, EndpointId, NatType};
     use crate::NetworkAddress;
-    use ed25519_dalek::{SecretKey, PublicKey};
+    use ed25519_dalek::{ExpandedSecretKey, SecretKey, PublicKey};
     use rand::rngs::OsRng;
     use std::str::FromStr;
 
@@ -424,8 +424,8 @@ mod tests {
         for i in 0..5 {
             let (secret_key, public_key) = create_test_keypair();
             let message = format!("test message {}", i).into_bytes();
-            let keypair = ed25519_dalek::Keypair::from(&secret_key);
-            let signature = keypair.sign(&message);
+            let expanded_key = ExpandedSecretKey::from(&secret_key);
+            let signature = expanded_key.sign(&message, &public_key);
             
             requests.push(BatchVerificationRequest {
                 message,
@@ -485,7 +485,7 @@ mod tests {
         assert!(verifier.cache_utilization() <= 100.0);
         
         let stats = verifier.get_stats();
-        assert_eq!(stats.total_verified, VERIFICATION_CACHE_SIZE + 10);
+        assert_eq!(stats.total_verified, (VERIFICATION_CACHE_SIZE + 10) as u64);
     }
 
     #[test]

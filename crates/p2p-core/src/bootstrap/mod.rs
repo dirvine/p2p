@@ -35,6 +35,33 @@ pub use merge::{MergeCoordinator, MergeResult};
 #[derive(Debug, Clone)]
 pub struct ThreeWordAddress(pub String);
 
+impl ThreeWordAddress {
+    /// Create from a string
+    pub fn from_string(s: &str) -> Result<Self> {
+        // Simple validation: ensure it has exactly 3 words separated by dots or hyphens
+        let parts: Vec<&str> = s.split(|c| c == '.' || c == '-').collect();
+        if parts.len() != 3 {
+            return Err(P2PError::InvalidInput("Three-word address must have exactly 3 words".to_string()));
+        }
+        
+        // Basic validation: each word should be non-empty and contain only letters
+        for part in &parts {
+            if part.is_empty() || !part.chars().all(|c| c.is_alphabetic()) {
+                return Err(P2PError::InvalidInput("Invalid word in three-word address".to_string()));
+            }
+        }
+        
+        Ok(ThreeWordAddress(s.to_string()))
+    }
+    
+    /// Validate against a word encoder
+    pub fn validate(&self, _encoder: &WordEncoder) -> bool {
+        // Placeholder validation - in real implementation would check against dictionary
+        let parts: Vec<&str> = self.0.split(|c| c == '.' || c == '-').collect();
+        parts.len() == 3 && parts.iter().all(|part| !part.is_empty())
+    }
+}
+
 /// Placeholder for WordDictionary
 #[derive(Debug, Clone)]
 pub struct WordDictionary;
@@ -46,6 +73,35 @@ pub struct WordEncoder;
 impl WordEncoder {
     pub fn new() -> Self {
         Self
+    }
+    
+    /// Encode a multiaddr string to a three-word address
+    pub fn encode_multiaddr_string(&self, multiaddr: &str) -> Result<ThreeWordAddress> {
+        // Placeholder implementation: generate deterministic words from multiaddr
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        multiaddr.hash(&mut hasher);
+        let hash = hasher.finish();
+        
+        // Simple word lists for demonstration
+        let words1 = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel"];
+        let words2 = ["red", "blue", "green", "yellow", "purple", "orange", "pink", "brown"];
+        let words3 = ["cat", "dog", "bird", "fish", "lion", "bear", "wolf", "eagle"];
+        
+        let word1 = words1[(hash % words1.len() as u64) as usize];
+        let word2 = words2[((hash >> 16) % words2.len() as u64) as usize];
+        let word3 = words3[((hash >> 32) % words3.len() as u64) as usize];
+        
+        Ok(ThreeWordAddress(format!("{}.{}.{}", word1, word2, word3)))
+    }
+    
+    /// Decode a three-word address to a multiaddr string
+    pub fn decode_to_multiaddr_string(&self, words: &ThreeWordAddress) -> Result<String> {
+        // Placeholder implementation: for now, just return a dummy multiaddr
+        // In real implementation, this would look up the actual mapping
+        Ok(format!("/ip4/127.0.0.1/tcp/9000/p2p/{}", words.0))
     }
 }
 
@@ -188,8 +244,11 @@ impl BootstrapManager {
     
     /// Validate three-word address format
     pub fn validate_words(&self, words: &ThreeWordAddress) -> Result<()> {
-        words.validate(&self.word_encoder)
-            .map_err(|e| crate::P2PError::Bootstrap(format!("Validation failed: {}", e)))
+        if words.validate(&self.word_encoder) {
+            Ok(())
+        } else {
+            Err(crate::P2PError::Bootstrap("Invalid three-word address format".to_string()))
+        }
     }
     
     /// Get the word encoder for direct access

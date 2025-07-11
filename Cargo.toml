@@ -17,7 +17,7 @@ members = [
 
 [workspace.package]
 version = "0.2.6"
-edition = "2021"
+edition = "2024"
 authors = ["David Irvine <saorsalabs@gmail.com>"]
 license = "AGPL-3.0-or-later"
 homepage = "https://github.com/dirvine/p2p"
@@ -34,17 +34,14 @@ serde-big-array = "0.5"
 anyhow = "1.0"
 thiserror = "1.0"
 tracing = "0.1"
-uuid = { version = "1.0", features = ["v4"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # P2P and networking
-quinn = "0.11"
-rustls = "0.23"
-rcgen = "0.13"
-
-# NAT traversal and networking capabilities now handled directly by quinn
+ant-quic = "0.1"
+four-word-networking = "0.1"
 
 # Cryptography  
-ed25519-dalek = { version = "1.0", features = ["rand"] }
+ed25519-dalek = { version = "1.0", features = ["rand", "serde"] }
 rand_core = "0.5"
 rand = "0.7"
 sha2 = "0.10"
@@ -65,9 +62,6 @@ chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.22"
 toml = "0.8"
 shellexpand = "3.1"
-
-# Three-word networking addresses
-three-word-networking = "0.1.0"
 
 # Workspace-level profiles
 [profile.release]

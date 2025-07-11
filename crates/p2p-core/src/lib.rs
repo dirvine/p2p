@@ -189,7 +189,7 @@ pub type PeerId = String;
 
 /// Network address used for peer-to-peer communication
 /// 
-/// Supports both traditional IP:port format and human-readable four-word format.
+/// Supports both traditional IP:port format and human-readable three-word format.
 pub type Multiaddr = NetworkAddress;
 
 /// Saorsa Core version

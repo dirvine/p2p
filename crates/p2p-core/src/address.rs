@@ -14,7 +14,7 @@
 //! # Address Types
 //!
 //! This module provides address types for the P2P network using IP:port combinations
-//! and four-word human-readable representations.
+//! and three-word human-readable representations.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::str::FromStr;
@@ -23,26 +23,26 @@ use std::fmt::{self, Display};
 use serde::{Deserialize, Serialize};
 use anyhow::{anyhow, Result};
 
-// TODO: Re-enable when four-word-networking crate is available
-// #[cfg(feature = "four-word-addresses")]
-// use four_word_networking::FourWordAdaptiveEncoder;
+// TODO: Re-enable when three-word-networking crate is available
+// #[cfg(feature = "three-word-addresses")]
+// use three_word_networking::ThreeWordAdaptiveEncoder;
 
-/// Network address that can be represented as IP:port or four-word format
+/// Network address that can be represented as IP:port or three-word format
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NetworkAddress {
     /// The socket address (IP + port)
     pub socket_addr: SocketAddr,
-    /// Optional four-word representation
-    pub four_words: Option<String>,
+    /// Optional three-word representation
+    pub three_words: Option<String>,
 }
 
 impl NetworkAddress {
     /// Create a new NetworkAddress from a SocketAddr
     pub fn new(socket_addr: SocketAddr) -> Self {
-        let four_words = Self::encode_four_words(&socket_addr);
+        let three_words = Self::encode_three_words(&socket_addr);
         Self {
             socket_addr,
-            four_words,
+            three_words,
         }
     }
 
@@ -77,48 +77,47 @@ impl NetworkAddress {
         self.socket_addr
     }
 
-    /// Get the four-word representation if available
-    pub fn four_words(&self) -> Option<&str> {
-        self.four_words.as_deref()
+    /// Get the three-word representation if available
+    pub fn three_words(&self) -> Option<&str> {
+        self.three_words.as_deref()
     }
 
-    /// Force regeneration of four-word representation
-    pub fn regenerate_four_words(&mut self) {
-        self.four_words = Self::encode_four_words(&self.socket_addr);
+    /// Force regeneration of three-word representation
+    pub fn regenerate_three_words(&mut self) {
+        self.three_words = Self::encode_three_words(&self.socket_addr);
     }
 
-    /// Encode a SocketAddr to four-word format
-    #[cfg(feature = "four-word-addresses")]
-    fn encode_four_words(addr: &SocketAddr) -> Option<String> {
-        // TODO: Implement when four-word-networking crate is available
-        // Generate a placeholder four-word representation
+    /// Encode a SocketAddr to three-word format
+    #[cfg(feature = "three-word-addresses")]
+    fn encode_three_words(addr: &SocketAddr) -> Option<String> {
+        // TODO: Implement when three-word-networking crate is available
+        // Generate a placeholder three-word representation
         let ip_bytes = match addr.ip() {
             std::net::IpAddr::V4(ip) => ip.octets().to_vec(),
             std::net::IpAddr::V6(ip) => ip.octets().to_vec(),
         };
         
         // Simple placeholder: convert IP and port to words
-        let words = ["alpha", "beta", "gamma", "delta"]; // placeholder
-        let word_combo = format!("{}-{}-{}-{}", 
+        let words = ["alpha", "beta", "gamma", "delta", "echo", "foxtrot", "golf", "hotel"]; // placeholder
+        let word_combo = format!("{}-{}-{}", 
             words[ip_bytes[0] as usize % words.len()],
             words[ip_bytes[1] as usize % words.len()],
-            words[ip_bytes.get(2).unwrap_or(&0) as usize % words.len()],
             words[(addr.port() % words.len() as u16) as usize]
         );
         
         Some(word_combo)
     }
 
-    /// Encode a SocketAddr to four-word format (feature disabled)
-    #[cfg(not(feature = "four-word-addresses"))]
-    fn encode_four_words(_addr: &SocketAddr) -> Option<String> {
+    /// Encode a SocketAddr to three-word format (feature disabled)
+    #[cfg(not(feature = "three-word-addresses"))]
+    fn encode_three_words(_addr: &SocketAddr) -> Option<String> {
         None
     }
 
-    /// Decode four-word format to NetworkAddress
-    #[cfg(feature = "four-word-addresses")]
-    pub fn from_four_words(words: &str) -> Result<Self> {
-        // TODO: Implement when four-word-networking crate is available
+    /// Decode three-word format to NetworkAddress
+    #[cfg(feature = "three-word-addresses")]
+    pub fn from_three_words(words: &str) -> Result<Self> {
+        // TODO: Implement when three-word-networking crate is available
         // For now, return a placeholder implementation
         // This is a very basic reverse mapping - in real implementation would be more sophisticated
         
@@ -130,16 +129,16 @@ impl NetworkAddress {
             
             Ok(Self {
                 socket_addr,
-                four_words: Some(words.to_string()),
+                three_words: Some(words.to_string()),
             })
         } else {
-            Err(anyhow!("Invalid four-word format: {}", words))
+            Err(anyhow!("Invalid three-word format: {}", words))
         }
     }
 
-    /// Decode four-word format to NetworkAddress (feature disabled)
-    #[cfg(not(feature = "four-word-addresses"))]
-    pub fn from_four_words(_words: &str) -> Result<Self> {
+    /// Decode three-word format to NetworkAddress (feature disabled)
+    #[cfg(not(feature = "three-word-addresses"))]
+    pub fn from_three_words(_words: &str) -> Result<Self> {
         Err(anyhow!("Four-word addresses feature not enabled"))
     }
 
@@ -173,7 +172,7 @@ impl NetworkAddress {
 
 impl Display for NetworkAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(ref words) = self.four_words {
+        if let Some(ref words) = self.three_words {
             write!(f, "{} ({})", self.socket_addr, words)
         } else {
             write!(f, "{}", self.socket_addr)
@@ -190,10 +189,10 @@ impl FromStr for NetworkAddress {
             return Ok(Self::new(socket_addr));
         }
 
-        // Then try to parse as four-word format
-        #[cfg(feature = "four-word-addresses")]
+        // Then try to parse as three-word format
+        #[cfg(feature = "three-word-addresses")]
         {
-            if let Ok(addr) = Self::from_four_words(s) {
+            if let Ok(addr) = Self::from_three_words(s) {
                 return Ok(addr);
             }
         }

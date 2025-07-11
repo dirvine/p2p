@@ -2073,7 +2073,7 @@ async fn handle_mcp_message_standalone(
     peer_id: &PeerId,
     mcp_server: &Option<Arc<crate::mcp::MCPServer>>
 ) -> Result<()> {
-    if let Some(ref mcp_server) = mcp_server {
+    if let Some(mcp_server) = mcp_server {
         // Deserialize the MCP message
         match serde_json::from_slice::<crate::mcp::P2PMCPMessage>(&message_data) {
             Ok(_p2p_mcp_message) => {

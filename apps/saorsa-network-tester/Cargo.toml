@@ -1,7 +1,7 @@
 [package]
 name = "saorsa-network-tester"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
 authors = ["P2P Foundation Team"]
 description = "Network testing tool with port conflict handling and IPv6 detection"
 

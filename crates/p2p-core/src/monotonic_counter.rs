@@ -37,7 +37,6 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 use tokio::time::interval;
-use blake3::Hash;
 
 /// Maximum number of sequence numbers to remember per peer
 const MAX_SEQUENCE_HISTORY: usize = 1000;
@@ -87,7 +86,7 @@ pub struct SequenceEntry {
     /// Timestamp when received
     pub timestamp: u64,
     /// Hash of the message for deduplication
-    pub message_hash: Hash,
+    pub message_hash: [u8; 32],
 }
 
 /// Statistics for monitoring counter system performance
@@ -133,7 +132,7 @@ pub struct BatchUpdateRequest {
     /// Sequence number
     pub sequence: u64,
     /// Message hash for deduplication
-    pub message_hash: Hash,
+    pub message_hash: [u8; 32],
     /// Timestamp
     pub timestamp: u64,
 }
@@ -217,7 +216,7 @@ impl MonotonicCounterSystem {
         &self,
         user_id: &UserId,
         sequence: u64,
-        message_hash: Hash,
+        message_hash: [u8; 32],
     ) -> Result<SequenceValidationResult> {
         let start_time = Instant::now();
         let timestamp = current_timestamp();
@@ -257,7 +256,7 @@ impl MonotonicCounterSystem {
         &self,
         peer_counter: &PeerCounter,
         sequence: u64,
-        message_hash: Hash,
+        message_hash: [u8; 32],
         timestamp: u64,
     ) -> SequenceValidationResult {
         // Check if timestamp is too far in the future (clock skew protection)
@@ -465,14 +464,14 @@ impl PeerCounter {
     }
 
     /// Check if we've seen this sequence number before
-    pub fn has_seen_sequence(&self, sequence: u64, message_hash: Hash) -> bool {
+    pub fn has_seen_sequence(&self, sequence: u64, message_hash: [u8; 32]) -> bool {
         self.sequence_history.iter().any(|entry| {
             entry.sequence == sequence && entry.message_hash == message_hash
         })
     }
 
     /// Apply a sequence update
-    pub fn apply_sequence_update(&mut self, sequence: u64, message_hash: Hash, timestamp: u64) {
+    pub fn apply_sequence_update(&mut self, sequence: u64, message_hash: [u8; 32], timestamp: u64) {
         // Update current sequence
         self.current_sequence = sequence;
         self.last_valid_sequence = sequence;
@@ -529,7 +528,7 @@ mod tests {
         let system = MonotonicCounterSystem::new(storage_path).await.unwrap();
 
         let user_id = UserId::from_bytes([1; 32]);
-        let message_hash = blake3::hash(b"test message");
+        let message_hash = *blake3::hash(b"test message").as_bytes();
 
         // First sequence should be valid
         let result = system.validate_sequence(&user_id, 1, message_hash).await.unwrap();
@@ -556,7 +555,7 @@ mod tests {
 
         let user_id1 = UserId::from_bytes([1; 32]);
         let user_id2 = UserId::from_bytes([2; 32]);
-        let message_hash = blake3::hash(b"test message");
+        let message_hash = *blake3::hash(b"test message").as_bytes();
 
         let requests = vec![
             BatchUpdateRequest {
@@ -588,7 +587,7 @@ mod tests {
         {
             let system = MonotonicCounterSystem::new(storage_path.clone()).await.unwrap();
             let user_id = UserId::from_bytes([1; 32]);
-            let message_hash = blake3::hash(b"test message");
+            let message_hash = *blake3::hash(b"test message").as_bytes();
 
             system.validate_sequence(&user_id, 1, message_hash).await.unwrap();
             system.validate_sequence(&user_id, 2, message_hash).await.unwrap();
@@ -619,7 +618,7 @@ mod tests {
         let system = MonotonicCounterSystem::new(storage_path).await.unwrap();
 
         let user_id = UserId::from_bytes([1; 32]);
-        let message_hash = blake3::hash(b"test message");
+        let message_hash = *blake3::hash(b"test message").as_bytes();
 
         // Add some sequences
         for i in 1..=10 {
@@ -643,7 +642,7 @@ mod tests {
         let system = MonotonicCounterSystem::new(storage_path).await.unwrap();
 
         let user_id = UserId::from_bytes([1; 32]);
-        let message_hash = blake3::hash(b"test message");
+        let message_hash = *blake3::hash(b"test message").as_bytes();
 
         // Process some sequences
         system.validate_sequence(&user_id, 1, message_hash).await.unwrap();
