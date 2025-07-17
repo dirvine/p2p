@@ -1,4 +1,4 @@
-![P2P Foundation - Privacy, Security & Freedom](./docs/images/p2p-banner.jpg)
+![P2P Foundation - Privacy, Security & Freedom](./docs/images/p2p-banner.jpeg)
 
 # P2P Foundation
 
