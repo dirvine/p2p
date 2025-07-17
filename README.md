@@ -2,6 +2,10 @@
 
 A next-generation peer-to-peer networking foundation built in Rust, featuring QUIC transport, privacy-first identity system, and fully integrated AI capabilities through Model Context Protocol (MCP) servers at each node.
 
+## Link to the autonomi network
+
+This network is a suppliment to the autonomi network and also a testground for new techologies that will benefit the autonomi network. Here we will share much of the tech stack and economies. The strong foundation belief is that "a rising tide lifts all boats" and from this testground we belive that we give humanity hte best chance we can hope for. This is not a maidsafe project, however, this is a personal project that is developed in out of hours time only. 
+
 ## 🌟 What's Unique About This Network and the Saorsa App
 
 The P2P Foundation represents a paradigm shift in decentralized networking, combining cutting-edge cryptography, innovative addressing, and AI-native design to create something truly revolutionary. Here's what sets us apart:
