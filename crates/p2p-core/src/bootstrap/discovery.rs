@@ -16,22 +16,23 @@
 //! 
 //! Provides multiple mechanisms for discovering bootstrap nodes:
 //! 1. Hardcoded well-known bootstrap nodes
-//! 2. Three-word address resolution
+//! 2. Four-word address resolution
 //! 3. DNS-based discovery (future)
 //! 4. Peer exchange from connected nodes
 
-use crate::bootstrap::{WordEncoder, ThreeWordAddress};
-use crate::Multiaddr;
+use crate::bootstrap::{WordEncoder, FourWordAddress};
+use crate::address::NetworkAddress;
 use anyhow::{Result, Context};
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use tracing::{info, warn, debug};
 
 /// Well-known bootstrap nodes for the P2P Foundation network
 #[derive(Debug, Clone)]
 pub struct BootstrapDiscovery {
     word_encoder: WordEncoder,
-    hardcoded_nodes: HashMap<String, Multiaddr>,
-    custom_nodes: Vec<Multiaddr>,
+    hardcoded_nodes: HashMap<String, NetworkAddress>,
+    custom_nodes: Vec<NetworkAddress>,
 }
 
 impl BootstrapDiscovery {
@@ -42,24 +43,24 @@ impl BootstrapDiscovery {
         // Digital Ocean bootstrap nodes (will be updated with real addresses)
         hardcoded_nodes.insert(
             "foundation.main.bootstrap".to_string(),
-            "/dns4/bootstrap.p2pfoundation.org/udp/9000/quic".parse().unwrap()
+            NetworkAddress::from_ipv4(std::net::Ipv4Addr::new(147, 182, 203, 123), 9000)
         );
         
         hardcoded_nodes.insert(
             "foundation.backup.lighthouse".to_string(),
-            "/dns4/bootstrap2.p2pfoundation.org/udp/9000/quic".parse().unwrap()
+            NetworkAddress::from_ipv4(std::net::Ipv4Addr::new(147, 182, 203, 124), 9000)
         );
         
         // IPv6 primary bootstrap (Digital Ocean IPv6)
         hardcoded_nodes.insert(
             "global.fast.eagle".to_string(),
-            "/ip6/2604:a880:400:d1:0:2:40d7:9001/udp/9000/quic".parse().unwrap()
+            NetworkAddress::from_ipv6("2604:a880:400:d1:0:2:40d7:9001".parse().unwrap(), 9000)
         );
         
         // IPv4 fallback bootstrap
         hardcoded_nodes.insert(
             "reliable.sturdy.anchor".to_string(),
-            "/ip4/147.182.203.123/udp/9000/quic".parse().unwrap()
+            NetworkAddress::from_ipv4(std::net::Ipv4Addr::new(8, 8, 8, 8), 9000)
         );
 
         Self {
@@ -70,30 +71,32 @@ impl BootstrapDiscovery {
     }
 
     /// Add a custom bootstrap node
-    pub fn add_bootstrap(&mut self, addr: Multiaddr) {
+    pub fn add_bootstrap(&mut self, addr: NetworkAddress) {
         self.custom_nodes.push(addr);
     }
 
-    /// Resolve a three-word address to a multiaddr
-    pub fn resolve_three_words(&self, three_words: &str) -> Result<Multiaddr> {
+    /// Resolve a four-word address to a socket address  
+    pub fn resolve_four_words(&self, four_words: &str) -> Result<std::net::SocketAddr> {
         // First check if it's a hardcoded well-known address
-        if let Some(addr) = self.hardcoded_nodes.get(three_words) {
-            debug!("Resolved hardcoded three-word address: {} -> {}", three_words, addr);
-            return Ok(addr.clone());
+        if let Some(addr) = self.hardcoded_nodes.get(four_words) {
+            debug!("Resolved hardcoded four-word address: {} -> {}", four_words, addr);
+            // Convert from NetworkAddress to SocketAddr
+            return Ok(addr.socket_addr());
         }
 
-        // Try to decode as a generated three-word address
-        // For now, parse as ThreeWordAddress and attempt resolution
-        let word_address = ThreeWordAddress::from_string(three_words)
-            .map_err(|e| anyhow::anyhow!("Invalid three-word address format: {}", e))?;
-        let multiaddr_str = self.word_encoder.decode_to_multiaddr_string(&word_address)
-            .map_err(|e| anyhow::anyhow!("Failed to decode three-word address: {}", e))?;
-        multiaddr_str.parse()
-            .with_context(|| format!("Invalid multiaddr from three-word address: {}", three_words))
+        // Try to decode as a generated four-word address
+        let word_address = FourWordAddress::from_string(four_words)
+            .map_err(|e| anyhow::anyhow!("Invalid four-word address format: {}", e))?;
+        
+        // Decode four-word address to IP+port
+        let socket_addr = self.word_encoder.decode_to_socket_addr(&word_address)
+            .map_err(|e| anyhow::anyhow!("Failed to decode four-word address: {}", e))?;
+        
+        Ok(socket_addr)
     }
 
     /// Get all available bootstrap addresses
-    pub fn get_bootstrap_addresses(&self) -> Vec<Multiaddr> {
+    pub fn get_bootstrap_addresses(&self) -> Vec<NetworkAddress> {
         let mut addresses = Vec::new();
         
         // Add hardcoded nodes
@@ -105,13 +108,13 @@ impl BootstrapDiscovery {
         addresses
     }
 
-    /// Get well-known three-word addresses
-    pub fn get_well_known_three_words(&self) -> Vec<String> {
+    /// Get well-known four-word addresses
+    pub fn get_well_known_four_words(&self) -> Vec<String> {
         self.hardcoded_nodes.keys().cloned().collect()
     }
 
     /// Discover bootstrap nodes using multiple methods
-    pub async fn discover_bootstraps(&self) -> Result<Vec<Multiaddr>> {
+    pub async fn discover_bootstraps(&self) -> Result<Vec<NetworkAddress>> {
         let mut discovered = Vec::new();
         
         info!("🔍 Discovering bootstrap nodes...");
@@ -135,7 +138,7 @@ impl BootstrapDiscovery {
     }
 
     /// Test connectivity to bootstrap nodes
-    pub async fn test_bootstrap_connectivity(&self) -> Result<Vec<(Multiaddr, bool)>> {
+    pub async fn test_bootstrap_connectivity(&self) -> Result<Vec<(NetworkAddress, bool)>> {
         let bootstraps = self.get_bootstrap_addresses();
         let mut results = Vec::new();
         
@@ -159,7 +162,7 @@ impl BootstrapDiscovery {
     }
 
     /// Test connectivity to a single bootstrap node
-    async fn test_single_bootstrap(&self, _addr: &Multiaddr) -> bool {
+    async fn test_single_bootstrap(&self, _addr: &NetworkAddress) -> bool {
         // TODO: Implement actual connectivity test
         // This would attempt to establish a connection to the bootstrap node
         // For now, return true as a placeholder
@@ -167,7 +170,7 @@ impl BootstrapDiscovery {
     }
 
     /// Update the hardcoded bootstrap list (for dynamic updates)
-    pub fn update_hardcoded_bootstraps(&mut self, new_bootstraps: HashMap<String, Multiaddr>) {
+    pub fn update_hardcoded_bootstraps(&mut self, new_bootstraps: HashMap<String, NetworkAddress>) {
         info!("🔄 Updating hardcoded bootstrap list with {} entries", new_bootstraps.len());
         self.hardcoded_nodes = new_bootstraps;
     }
@@ -184,12 +187,12 @@ impl Default for BootstrapDiscovery {
 pub struct BootstrapConfig {
     /// Enable hardcoded bootstrap discovery
     pub enable_hardcoded: bool,
-    /// Enable three-word address resolution
-    pub enable_three_words: bool,
+    /// Enable four-word address resolution
+    pub enable_four_words: bool,
     /// Enable DNS-based discovery
     pub enable_dns: bool,
     /// Custom bootstrap addresses
-    pub custom_bootstraps: Vec<Multiaddr>,
+    pub custom_bootstraps: Vec<NetworkAddress>,
     /// Fallback behavior when no bootstraps are available
     pub fallback_behavior: FallbackBehavior,
 }
@@ -208,7 +211,7 @@ impl Default for BootstrapConfig {
     fn default() -> Self {
         Self {
             enable_hardcoded: true,
-            enable_three_words: true,
+            enable_four_words: true,
             enable_dns: true,
             custom_bootstraps: Vec::new(),
             fallback_behavior: FallbackBehavior::RetryAfterDelay(
@@ -238,12 +241,12 @@ impl ConfigurableBootstrapDiscovery {
     }
 
     /// Discover bootstrap nodes with configuration options
-    pub async fn discover(&self) -> Result<Vec<Multiaddr>> {
+    pub async fn discover(&self) -> Result<Vec<NetworkAddress>> {
         self.discover_internal(0).await
     }
 
     /// Internal discovery with retry limit to prevent infinite recursion
-    async fn discover_internal(&self, retry_count: u32) -> Result<Vec<Multiaddr>> {
+    async fn discover_internal(&self, retry_count: u32) -> Result<Vec<NetworkAddress>> {
         let mut addresses = Vec::new();
         
         if self.config.enable_hardcoded {
@@ -273,13 +276,13 @@ impl ConfigurableBootstrapDiscovery {
         Ok(addresses)
     }
 
-    /// Resolve three-word address if enabled
-    pub fn resolve_three_words(&self, three_words: &str) -> Result<Multiaddr> {
-        if !self.config.enable_three_words {
-            return Err(anyhow::anyhow!("Three-word address resolution disabled"));
+    /// Resolve four-word address if enabled
+    pub fn resolve_four_words(&self, four_words: &str) -> Result<SocketAddr> {
+        if !self.config.enable_four_words {
+            return Err(anyhow::anyhow!("Four-word address resolution disabled"));
         }
         
-        self.discovery.resolve_three_words(three_words)
+        self.discovery.resolve_four_words(four_words)
     }
 }
 
@@ -295,18 +298,18 @@ mod tests {
     }
 
     #[test]
-    fn test_three_word_resolution() {
+    fn test_four_word_resolution() {
         let discovery = BootstrapDiscovery::new();
         
-        // Test hardcoded three-word addresses
-        let result = discovery.resolve_three_words("foundation.main.bootstrap");
-        assert!(result.is_ok(), "Should resolve hardcoded three-word address");
+        // Test hardcoded four-word addresses
+        let result = discovery.resolve_four_words("foundation.main.bootstrap");
+        assert!(result.is_ok(), "Should resolve hardcoded four-word address");
     }
 
     #[test]
     fn test_custom_bootstrap_addition() {
         let mut discovery = BootstrapDiscovery::new();
-        let custom_addr: Multiaddr = "/ip4/192.168.1.100/udp/9000/quic".parse().unwrap();
+        let custom_addr = NetworkAddress::from_ipv4(std::net::Ipv4Addr::new(192, 168, 1, 100), 9000);
         
         let initial_count = discovery.get_bootstrap_addresses().len();
         discovery.add_bootstrap(custom_addr.clone());
@@ -328,9 +331,9 @@ mod tests {
     #[test]
     fn test_well_known_addresses() {
         let discovery = BootstrapDiscovery::new();
-        let three_words = discovery.get_well_known_three_words();
+        let four_words = discovery.get_well_known_four_words();
         
-        assert!(three_words.contains(&"foundation.main.bootstrap".to_string()));
-        assert!(three_words.contains(&"global.fast.eagle".to_string()));
+        assert!(four_words.contains(&"foundation.main.bootstrap".to_string()));
+        assert!(four_words.contains(&"global.fast.eagle".to_string()));
     }
 }

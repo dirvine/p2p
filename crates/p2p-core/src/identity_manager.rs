@@ -114,8 +114,8 @@ impl Clone for IdentityKeyPair {
 pub struct Identity {
     /// Unique identity ID (derived from public key)
     pub id: UserId,
-    /// Three-word human-readable address
-    pub three_word_address: String,
+    /// Four-word human-readable address
+    pub four_word_address: String,
     /// Current state in lifecycle
     pub state: IdentityState,
     /// Display name (optional)
@@ -317,7 +317,7 @@ impl Identity {
     /// Create identity from key pair
     pub fn from_key_pair(
         key_pair: &IdentityKeyPair,
-        three_word_address: String,
+        four_word_address: String,
         params: IdentityCreationParams,
     ) -> Result<Self> {
         // Derive user ID from public key
@@ -339,7 +339,7 @@ impl Identity {
         
         Ok(Self {
             id,
-            three_word_address,
+            four_word_address,
             state: IdentityState::Active,
             display_name: params.display_name,
             avatar_url: params.avatar_url,
@@ -463,7 +463,7 @@ impl IdentityManager {
         params: IdentityCreationParams,
     ) -> Result<Identity> {
         // Generate four-word address
-        let three_word_address = self.generate_three_word_address().await?;
+        let four_word_address = self.generate_four_word_address().await?;
         
         // Derive key pair
         let derivation_path = params.derivation_path.as_deref()
@@ -479,7 +479,7 @@ impl IdentityManager {
         let key_pair = IdentityKeyPair::from_derived_key(&derived_key, lifetime)?;
         
         // Create identity
-        let identity = Identity::from_key_pair(&key_pair, three_word_address, params)?;
+        let identity = Identity::from_key_pair(&key_pair, four_word_address, params)?;
         
         // Store in encrypted storage
         // Note: We need to create a new master seed for this identity
@@ -845,10 +845,10 @@ impl IdentityManager {
     
     // Helper methods
     
-    /// Generate a three-word address
-    async fn generate_three_word_address(&self) -> Result<String> {
-        // TODO: Integrate with three-word-networking crate
-        Ok("alpha.bravo.charlie".to_string())
+    /// Generate a four-word address
+    async fn generate_four_word_address(&self) -> Result<String> {
+        // TODO: Integrate with four-word-networking crate
+        Ok("alpha.bravo.charlie.delta".to_string())
     }
     
     /// Get key pair from cache

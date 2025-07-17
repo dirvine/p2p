@@ -1,3 +1,5 @@
+![P2P Foundation - Privacy, Security & Freedom](./docs/images/p2p-banner.jpg)
+
 # P2P Foundation
 
 A next-generation peer-to-peer networking foundation built in Rust, featuring QUIC transport, privacy-first identity system, and fully integrated AI capabilities through Model Context Protocol (MCP) servers at each node.

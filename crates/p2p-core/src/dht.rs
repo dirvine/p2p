@@ -1760,15 +1760,15 @@ impl DHT {
         
         let inbox_info = InboxInfo {
             inbox_id: inbox_id.to_string(),
-            three_word_address: self.generate_three_word_address(inbox_id),
+            four_word_address: self.generate_four_word_address(inbox_id),
             owner: owner_peer_id,
             created_at: SystemTime::now(),
             message_count: 0,
             is_accessible: true,
         };
         
-        info!("Successfully created inbox {} with three-word address: {}", 
-              inbox_id, inbox_info.three_word_address);
+        info!("Successfully created inbox {} with four-word address: {}", 
+              inbox_id, inbox_info.four_word_address);
         
         Ok(inbox_info)
     }
@@ -1902,7 +1902,7 @@ impl DHT {
             
             let inbox_info = InboxInfo {
                 inbox_id: inbox_id.to_string(),
-                three_word_address: self.generate_three_word_address(inbox_id),
+                four_word_address: self.generate_four_word_address(inbox_id),
                 owner: metadata.owner,
                 created_at: metadata.created_at,
                 message_count: metadata.message_count,
@@ -1935,9 +1935,9 @@ impl DHT {
         Ok(())
     }
     
-    /// Generate a three-word address for an inbox
-    fn generate_three_word_address(&self, inbox_id: &str) -> String {
-        // TODO: Replace with real three_word_networking when available
+    /// Generate a four-word address for an inbox
+    fn generate_four_word_address(&self, inbox_id: &str) -> String {
+        // TODO: Replace with real four_word_networking when available
         // For now, use a simple placeholder implementation
         let words = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"];
         let mut hash = 0u32;
@@ -2121,7 +2121,7 @@ pub struct MessageRef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InboxInfo {
     pub inbox_id: String,
-    pub three_word_address: String,
+    pub four_word_address: String,
     pub owner: PeerId,
     pub created_at: SystemTime,
     pub message_count: usize,
