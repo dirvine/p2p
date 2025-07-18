@@ -63,9 +63,9 @@ impl TestDataGenerator {
 
     /// Generate a realistic user profile
     pub fn generate_user_profile(&mut self) -> UserProfile {
-        let display_name: String = format!("User{}", self.rng.gen::<u32>());
+        let display_name: String = format!("User{}", self.rng.r#gen::<u32>());
         let bio: Option<String> = if self.rng.gen_bool(0.7) {
-            Some(format!("Test bio for user {}", self.rng.gen::<u16>()))
+            Some(format!("Test bio for user {}", self.rng.r#gen::<u16>()))
         } else {
             None
         };
@@ -76,14 +76,14 @@ impl TestDataGenerator {
         if self.rng.gen_bool(0.5) {
             custom_fields.insert(
                 "location".to_string(),
-                serde_json::Value::String(format!("City{}", self.rng.gen::<u16>()))
+                serde_json::Value::String(format!("City{}", self.rng.r#gen::<u16>()))
             );
         }
         
         if self.rng.gen_bool(0.3) {
             custom_fields.insert(
                 "website".to_string(),
-                serde_json::Value::String(format!("https://{}.com", format!("user{}", self.rng.gen::<u16>())))
+                serde_json::Value::String(format!("https://{}.com", format!("user{}", self.rng.r#gen::<u16>())))
             );
         }
 
@@ -97,12 +97,12 @@ impl TestDataGenerator {
                 None
             },
             avatar_hash: if self.rng.gen_bool(0.6) {
-                Some(format!("{:x}", self.rng.gen::<u64>()))
+                Some(format!("{:x}", self.rng.r#gen::<u64>()))
             } else {
                 None
             },
             status_message: if self.rng.gen_bool(0.4) {
-                Some(format!("Status message {}", self.rng.gen::<u16>()))
+                Some(format!("Status message {}", self.rng.r#gen::<u16>()))
             } else {
                 None
             },
@@ -175,11 +175,11 @@ impl TestDataGenerator {
         let message_type = message_types[self.rng.gen_range(0, message_types.len())];
         
         let content = match message_type {
-            "text" => format!("Test message {}", self.rng.gen::<u16>()),
-            "emoji" => format!("😀 {} 🎉", format!("word{}", self.rng.gen::<u16>())),
-            "code" => format!("```rust\nfn main() {{ println!(\"{}!\"); }}\n```", format!("word{}", self.rng.gen::<u16>())),
-            "quote" => format!("> {}\n\n{}", format!("Test content {}", self.rng.gen::<u16>()), format!("Brief text {}", self.rng.gen::<u16>())),
-            _ => format!("Test content {}", self.rng.gen::<u16>()),
+            "text" => format!("Test message {}", self.rng.r#gen::<u16>()),
+            "emoji" => format!("😀 {} 🎉", format!("word{}", self.rng.r#gen::<u16>())),
+            "code" => format!("```rust\nfn main() {{ println!(\"{}!\"); }}\n```", format!("word{}", self.rng.r#gen::<u16>())),
+            "quote" => format!("> {}\n\n{}", format!("Test content {}", self.rng.r#gen::<u16>()), format!("Brief text {}", self.rng.r#gen::<u16>())),
+            _ => format!("Test content {}", self.rng.r#gen::<u16>()),
         };
 
         TestChatMessage {
@@ -214,7 +214,7 @@ impl TestDataGenerator {
         ];
         
         let (category, extension, mime_type) = file_types[self.rng.gen_range(0, file_types.len())];
-        let filename = format!("{}.{}", format!("word{}", self.rng.gen::<u16>()), extension);
+        let filename = format!("{}.{}", format!("word{}", self.rng.r#gen::<u16>()), extension);
         let size = match category {
             "image" => self.rng.gen_range(1024, 1024 * 1024 * 5), // 1KB - 5MB
             "document" => self.rng.gen_range(1024, 1024 * 1024), // 1KB - 1MB
@@ -241,13 +241,13 @@ impl TestDataGenerator {
             "code" => self.generate_code_content(),
             "design" => self.generate_design_content(),
             "specification" => self.generate_specification_content(),
-            _ => format!("Long content document {}", self.rng.gen::<u16>()),
+            _ => format!("Long content document {}", self.rng.r#gen::<u16>()),
         };
 
         TestProjectDocument {
             id: DocumentId::new(),
             project_id: ProjectId::new(),
-            title: format!("Title {}", self.rng.gen::<u16>()),
+            title: format!("Title {}", self.rng.r#gen::<u16>()),
             content,
             doc_type: doc_type.to_string(),
             version: self.rng.gen_range(1, 10),
@@ -263,8 +263,8 @@ impl TestDataGenerator {
         TestDiscussionTopic {
             id: TopicId::new(),
             category_id: CategoryId::new(),
-            title: format!("Topic Title {}", self.rng.gen::<u16>()),
-            content: format!("Discussion content {}", self.rng.gen::<u16>()),
+            title: format!("Topic Title {}", self.rng.r#gen::<u16>()),
+            content: format!("Discussion content {}", self.rng.r#gen::<u16>()),
             author_id: Uuid::new_v4().to_string(),
             created_at: self.generate_past_time(Duration::from_secs(86400 * 7)),
             updated_at: self.generate_recent_time(Duration::from_secs(86400)),
@@ -288,16 +288,16 @@ impl TestDataGenerator {
     pub fn generate_structured_data(&mut self) -> TestStructuredData {
         TestStructuredData {
             id: Uuid::new_v4(),
-            name: format!("word{}", self.rng.gen::<u16>()),
-            description: format!("Test bio for user {}", self.rng.gen::<u16>()),
+            name: format!("word{}", self.rng.r#gen::<u16>()),
+            description: format!("Test bio for user {}", self.rng.r#gen::<u16>()),
             metadata: self.generate_metadata_map(),
             nested_data: TestNestedData {
-                numbers: (0..self.rng.gen_range(5, 20)).map(|_| self.rng.gen::<f64>()).collect(),
-                flags: (0..self.rng.gen_range(3, 10)).map(|_| self.rng.gen::<bool>()).collect(),
+                numbers: (0..self.rng.gen_range(5, 20)).map(|_| self.rng.r#gen::<f64>()).collect(),
+                flags: (0..self.rng.gen_range(3, 10)).map(|_| self.rng.r#gen::<bool>()).collect(),
                 timestamp: SystemTime::now(),
             },
             optional_field: if self.rng.gen_bool(0.6) {
-                Some(format!("Brief text {}", self.rng.gen::<u16>()))
+                Some(format!("Brief text {}", self.rng.r#gen::<u16>()))
             } else {
                 None
             },
@@ -315,8 +315,8 @@ impl TestDataGenerator {
             participants: (0..participant_count)
                 .map(|i| ParticipantId(i as u16))
                 .collect(),
-            group_name: format!("word{}", self.rng.gen::<u16>()),
-            description: format!("Group description {}", self.rng.gen::<u16>()),
+            group_name: format!("word{}", self.rng.r#gen::<u16>()),
+            description: format!("Group description {}", self.rng.r#gen::<u16>()),
             created_at: self.generate_past_time(Duration::from_secs(86400 * 30)),
             is_active: self.rng.gen_bool(0.8),
         }
@@ -348,7 +348,7 @@ impl TestDataGenerator {
     fn generate_tags(&mut self, range: std::ops::Range<usize>) -> Vec<String> {
         let tag_count = self.rng.gen_range(range.start, range.end);
         (0..tag_count)
-            .map(|_| format!("word{}", self.rng.gen::<u16>()))
+            .map(|_| format!("word{}", self.rng.r#gen::<u16>()))
             .collect()
     }
 
@@ -357,12 +357,12 @@ impl TestDataGenerator {
         let field_count = self.rng.gen_range(2, 8);
         
         for _ in 0..field_count {
-            let key: String = format!("word{}", self.rng.gen::<u16>());
+            let key: String = format!("word{}", self.rng.r#gen::<u16>());
             let value = match self.rng.gen_range(0, 4) {
-                0 => serde_json::Value::String(format!("word{}", self.rng.gen::<u16>())),
-                1 => serde_json::Value::Number(serde_json::Number::from(self.rng.gen::<i32>())),
-                2 => serde_json::Value::Bool(self.rng.gen::<bool>()),
-                _ => serde_json::Value::String(format!("Brief text {}", self.rng.gen::<u16>())),
+                0 => serde_json::Value::String(format!("word{}", self.rng.r#gen::<u16>())),
+                1 => serde_json::Value::Number(serde_json::Number::from(self.rng.r#gen::<i32>())),
+                2 => serde_json::Value::Bool(self.rng.r#gen::<bool>()),
+                _ => serde_json::Value::String(format!("Brief text {}", self.rng.r#gen::<u16>())),
             };
             map.insert(key, value);
         }
@@ -373,13 +373,13 @@ impl TestDataGenerator {
     fn generate_markdown_content(&mut self) -> String {
         format!(
             "# {}\n\n{}\n\n## {}\n\n{}\n\n- {}\n- {}\n- {}\n\n```rust\n{}\n```",
-            format!("word{}", self.rng.gen::<u16>()),
-            format!("Paragraph content {}", self.rng.gen::<u16>()),
-            format!("word{}", self.rng.gen::<u16>()),
-            format!("Description {}", self.rng.gen::<u16>()),
-            format!("Item {}", self.rng.gen::<u16>()),
-            format!("Item {}", self.rng.gen::<u16>()),
-            format!("Item {}", self.rng.gen::<u16>()),
+            format!("word{}", self.rng.r#gen::<u16>()),
+            format!("Paragraph content {}", self.rng.r#gen::<u16>()),
+            format!("word{}", self.rng.r#gen::<u16>()),
+            format!("Description {}", self.rng.r#gen::<u16>()),
+            format!("Item {}", self.rng.r#gen::<u16>()),
+            format!("Item {}", self.rng.r#gen::<u16>()),
+            format!("Item {}", self.rng.r#gen::<u16>()),
             "fn example() { println!(\"Hello, world!\"); }"
         )
     }
@@ -387,32 +387,32 @@ impl TestDataGenerator {
     fn generate_code_content(&mut self) -> String {
         format!(
             "fn {}() -> Result<(), Error> {{\n    // {}\n    let {} = {};\n    Ok(())\n}}",
-            format!("word{}", self.rng.gen::<u16>()),
-            format!("Status message {}", self.rng.gen::<u16>()),
-            format!("word{}", self.rng.gen::<u16>()),
-            self.rng.gen::<u32>()
+            format!("word{}", self.rng.r#gen::<u16>()),
+            format!("Status message {}", self.rng.r#gen::<u16>()),
+            format!("word{}", self.rng.r#gen::<u16>()),
+            self.rng.r#gen::<u32>()
         )
     }
 
     fn generate_design_content(&mut self) -> String {
         format!(
             "Design Document: {}\n\nObjective: {}\n\nRequirements:\n{}\n\nConstraints:\n{}",
-            format!("Design title {}", self.rng.gen::<u16>()),
-            format!("Design objective {}", self.rng.gen::<u16>()),
-            format!("Requirements {}", self.rng.gen::<u16>()),
-            format!("Constraints {}", self.rng.gen::<u16>())
+            format!("Design title {}", self.rng.r#gen::<u16>()),
+            format!("Design objective {}", self.rng.r#gen::<u16>()),
+            format!("Requirements {}", self.rng.r#gen::<u16>()),
+            format!("Constraints {}", self.rng.r#gen::<u16>())
         )
     }
 
     fn generate_specification_content(&mut self) -> String {
         format!(
             "Specification: {}\n\nVersion: {}.{}.{}\n\nDescription:\n{}\n\nAPI:\n{}",
-            format!("word{}", self.rng.gen::<u16>()),
+            format!("word{}", self.rng.r#gen::<u16>()),
             self.rng.gen_range(0, 5),
             self.rng.gen_range(0, 10),
             self.rng.gen_range(0, 20),
-            format!("API description {}", self.rng.gen::<u16>()),
-            format!("Requirements {}", self.rng.gen::<u16>())
+            format!("API description {}", self.rng.r#gen::<u16>()),
+            format!("Requirements {}", self.rng.r#gen::<u16>())
         )
     }
 }

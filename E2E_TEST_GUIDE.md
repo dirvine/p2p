@@ -119,32 +119,32 @@ On other machines:
   --name "TestMachine1"
 ```
 
-## CLI Binary (ant-connect)
+## CLI Binary (saorsa)
 
 ### Build and Install
 
 ```bash
 # Build the CLI
-cargo build --release --bin ant-connect
+cargo build --release --bin saorsa
 
 # Or install it
 cargo install --path crates/p2p-cli
 
 # The binary will be at:
-# ./target/release/ant-connect
+# ./target/release/saorsa
 ```
 
 ### Usage
 
 ```bash
 # Quick network status
-ant-connect --status
+saorsa --status
 
 # List bootstrap nodes
-ant-connect --bootstrap-nodes
+saorsa --bootstrap-nodes
 
 # Full connectivity test
-ant-connect --test-connectivity
+saorsa --test-connectivity
 ```
 
 ## Creating a Distribution Package
@@ -161,7 +161,7 @@ mkdir -p p2p-distribution/{bin,docs}
 # Copy binaries
 cp target/release/examples/chat p2p-distribution/bin/p2p-chat
 cp target/release/saorsa-test-suite p2p-distribution/bin/
-cp target/release/ant-connect p2p-distribution/bin/
+cp target/release/saorsa p2p-distribution/bin/
 
 # Create simple wrapper scripts
 cat > p2p-distribution/start-chat.sh << 'EOF'
@@ -196,7 +196,7 @@ QUICK START:
 
 ADVANCED:
 - Run specific tests: ./bin/saorsa-test-suite --help
-- Network status: ./bin/ant-connect --status
+- Network status: ./bin/saorsa --status
 
 Your three-word address will be displayed when you start.
 Share it with friends so they can connect to you!
@@ -237,7 +237,7 @@ pause
 
 ```bash
 # Check if you can reach bootstrap nodes
-./target/release/ant-connect --test-connectivity
+./target/release/saorsa --test-connectivity
 
 # This will show:
 # - IPv6 support status

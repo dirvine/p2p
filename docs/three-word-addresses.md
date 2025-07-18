@@ -115,9 +115,9 @@ cargo run --example chat -- --bootstrap '/ip6/::1/tcp/9000'
 cargo run --example chat -- --bootstrap-words 'global.fast.eagle'
 ```
 
-### Flutter App Integration
+### Tauri App Integration
 
-The Flutter app now features:
+The Saorsa app now features:
 - **Three-word input fields** instead of complex multiaddr entry
 - **QR code generation** with three-word addresses
 - **Voice-friendly sharing** with copy/paste support
@@ -230,9 +230,9 @@ p2p-foundation = "0.1.0"
 use p2p_foundation::bootstrap::WordEncoder;
 ```
 
-### Flutter Integration
-The Ant Connect app demonstrates complete three-word integration:
-- Launch app: `cd apps/ant-connect && flutter run`
+### Tauri Integration
+The Saorsa app demonstrates complete three-word integration:
+- Launch app: `cd apps/saorsa && cargo tauri dev`
 - Use three-word inputs instead of complex multiaddrs
 - Share your address with the copy/QR buttons
 
@@ -240,7 +240,7 @@ The Ant Connect app demonstrates complete three-word integration:
 
 - **Examples**: See `examples/three_word_demo.rs` and `examples/chat.rs`
 - **API Documentation**: `src/bootstrap/words.rs`
-- **Flutter Demo**: `apps/ant-connect/`
+- **Tauri Demo**: `apps/saorsa/`
 - **Tests**: Run `cargo test bootstrap::words`
 
 ---

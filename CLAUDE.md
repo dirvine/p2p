@@ -9,7 +9,7 @@ The P2P Foundation is a fully decentralized networking platform built in Rust, f
 - **Quantum-resistant cryptography** (ML-KEM/ML-DSA)
 - **Git-like DHT** for universal version control
 - **MCP integration** for AI-native capabilities
-- **Cross-platform applications** via Tauri (desktop) and Flutter (mobile)
+- **Cross-platform applications** via Tauri (desktop, mobile, and web)
 
 ## Build & Development Commands
 
@@ -63,12 +63,12 @@ cargo doc --no-deps --open
 p2p/
 ├── crates/                 # Core Rust libraries
 │   ├── p2p-core/          # Main P2P library (published as saorsa-core)
-│   ├── p2p-ffi/           # Flutter bindings
 │   ├── p2p-cli/           # Command-line tools
 │   └── ant-test-suite/    # Comprehensive testing framework
 ├── apps/
-│   ├── saorsa/            # Tauri desktop app (flagship)
-│   └── ant-connect/       # Flutter mobile/web app
+│   ├── saorsa/            # Tauri cross-platform app (desktop, mobile, web)
+│   ├── saorsa-terminal-chat/    # Terminal chat application
+│   └── saorsa-network-tester/   # Network testing utility
 └── docs/                  # Comprehensive documentation
 ```
 

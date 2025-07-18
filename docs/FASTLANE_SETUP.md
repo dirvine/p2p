@@ -26,7 +26,7 @@ I've created a comprehensive Fastlane automation setup for your P2P monorepo. He
 ## 🎯 Key Features
 
 ### ✅ **Monorepo Support**
-- Handles multiple Flutter apps in one repository
+- Handles multiple Tauri apps in one repository
 - Shared Rust backend compilation
 - Smart change detection (only builds what changed)
 - Parallel deployments across platforms
@@ -62,7 +62,7 @@ This will:
 - Check all prerequisites
 - Install required Rust targets
 - Install Ruby dependencies
-- Setup Flutter apps
+- Setup Tauri apps
 - Test Rust compilation
 
 ### 3. Configure Your Accounts

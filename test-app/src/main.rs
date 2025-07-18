@@ -10,8 +10,6 @@
 // Unless required by applicable law or agreed to in writing, software
 // distributed under these licenses is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-
-#!/usr/bin/env rust-script
 //! Quick test application for P2P communication and identity system
 //! 
 //! Run this with: `cargo run --bin test_p2p_app`

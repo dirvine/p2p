@@ -106,7 +106,7 @@ Built with Tauri (`apps/saorsa`) - the flagship P2P application featuring:
 
 ### 🔧 Developer Tools
 - **CLI Tools** (`crates/p2p-cli`): Command-line utilities for network management
-- **FFI Bindings** (`crates/p2p-ffi`): Enable Flutter and other language integration
+- **Terminal Applications**: Native CLI tools for testing and development
 
 ## 🚀 Quick Start
 
@@ -153,7 +153,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Using Saorsa Desktop App
+### Using Saorsa Desktop App (Tauri)
 
 1. **Build from source**:
    ```bash
@@ -162,14 +162,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    cargo build --release
    ```
 
-2. **Run the desktop app**:
+2. **Run the Tauri desktop app**:
    ```bash
    cd apps/saorsa
-   cargo tauri dev  # Development mode
-   cargo tauri build  # Production build
+   cargo tauri dev  # Development mode with hot reload
+   cargo tauri build  # Production build for distribution
    ```
 
-3. **Test the network**:
+3. **Cross-platform development**:
+   ```bash
+   # Build for specific platforms
+   cargo tauri build --target x86_64-apple-darwin  # macOS
+   cargo tauri build --target x86_64-pc-windows-msvc  # Windows
+   cargo tauri build --target x86_64-unknown-linux-gnu  # Linux
+   ```
+
+4. **Test the network**:
    ```bash
    # Run integration tests
    cargo test --test dht_network_integration_test
@@ -211,7 +219,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### 🎯 **Developer Experience**
 - **Human-readable four-word addresses**: (`forest.lightning.compass.river`)
 - **Comprehensive Rust APIs**: Full async/await support with strong type safety
-- **Cross-platform FFI bindings**: Mobile development with Flutter integration
+- **Tauri cross-platform development**: Native desktop, mobile, and web applications
 - **Extensive testing framework**: 1000+ integration tests with real P2P operations
 - **Production-ready monitoring**: Performance benchmarking and crash recovery validation
 
@@ -294,10 +302,10 @@ The P2P Foundation implements comprehensive **defense-in-depth** security with *
 - **Windows**: Native .exe with MSI installer
 - **Linux**: Native binary with AppImage
 
-### Mobile/Web (Flutter via FFI)
-- **iOS**: Native performance through FFI bindings
-- **Android**: Native performance through FFI bindings  
-- **Web**: WebAssembly compilation for browser deployment
+### Mobile/Web (Tauri)
+- **iOS**: Native mobile apps via Tauri mobile capabilities
+- **Android**: Native mobile apps via Tauri mobile capabilities  
+- **Web**: WebAssembly compilation and Tauri web targets
 
 ### Server/CLI
 - **Linux**: Optimized for edge deployment
@@ -309,7 +317,6 @@ The P2P Foundation implements comprehensive **defense-in-depth** security with *
 
 - Rust 1.75 or later
 - Node.js 18+ (for Tauri development)
-- IPv6 connectivity (native or tunneled)
 
 ### Building
 
@@ -670,7 +677,7 @@ See the [`tests/`](tests/) directory for comprehensive integration tests coverin
 
 ### 🔄 In Progress
 - [ ] **Final quantum cryptography integration** (ML-KEM, ML-DSA activation)
-- [ ] **Mobile app development** (Flutter with FFI bindings)
+- [ ] **Mobile app development** (Tauri mobile capabilities)
 - [ ] **Advanced MCP orchestration** for multi-node AI workflows
 - [ ] **Enhanced NAT traversal** with additional protocols
 - [ ] **Performance tuning** for high-scale deployments

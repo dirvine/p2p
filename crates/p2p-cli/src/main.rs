@@ -10,8 +10,6 @@
 // Unless required by applicable law or agreed to in writing, software
 // distributed under these licenses is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-
-#!/usr/bin/env rust
 //! # Ant Connect - P2P Foundation Flutter App Launcher
 //!
 //! A Rust binary wrapper that provides easy installation and launching of the
@@ -281,7 +279,7 @@ impl AntConnectLauncher {
         if bootstraps.is_empty() {
             warn!("⚠️  No bootstrap nodes discovered");
             info!("💡 Available three-word addresses:");
-            for addr in self.bootstrap_discovery.get_well_known_three_words() {
+            for addr in self.bootstrap_discovery.get_well_known_four_words() {
                 info!("   📍 {}", addr);
             }
         } else {
@@ -467,9 +465,9 @@ impl AntConnectLauncher {
         info!("📋 Available Bootstrap Nodes:");
         info!("");
         
-        let well_known = self.bootstrap_discovery.get_well_known_three_words();
+        let well_known = self.bootstrap_discovery.get_well_known_four_words();
         for addr in well_known {
-            if let Ok(resolved) = self.bootstrap_discovery.resolve_three_words(&addr) {
+            if let Ok(resolved) = self.bootstrap_discovery.resolve_four_words(&addr) {
                 info!("  🔤 {} → {}", addr, resolved);
             }
         }
@@ -559,9 +557,9 @@ Examples:
             info!("📋 Available Bootstrap Nodes:");
             info!("");
             
-            let well_known = discovery.get_well_known_three_words();
+            let well_known = discovery.get_well_known_four_words();
             for addr in well_known {
-                if let Ok(resolved) = discovery.resolve_three_words(&addr) {
+                if let Ok(resolved) = discovery.resolve_four_words(&addr) {
                     info!("  🔤 {} → {}", addr, resolved);
                 }
             }
@@ -604,7 +602,7 @@ async fn perform_comprehensive_connectivity_test(discovery: BootstrapDiscovery) 
         warn!("❌ No bootstrap nodes found");
         
         info!("💡 Available three-word addresses:");
-        for addr in discovery.get_well_known_three_words() {
+        for addr in discovery.get_well_known_four_words() {
             info!("   📍 {}", addr);
         }
     } else {
@@ -764,7 +762,7 @@ async fn perform_quick_status_check(discovery: BootstrapDiscovery) -> Result<()>
     info!("🔒 Network: {}", nat_type);
     
     // Quick bootstrap discovery
-    let bootstraps = discovery.get_well_known_three_words();
+    let bootstraps = discovery.get_well_known_four_words();
     info!("📡 Known Bootstraps: {} addresses", bootstraps.len());
     
     for addr in &bootstraps {
@@ -841,7 +839,7 @@ async fn serve_flutter_assets(port: u16) -> Result<()> {
 }
 
 /// Serve an individual embedded file
-async fn serve_embedded_file(path: &str) -> Result<impl warp::Reply, Infallible> {
+async fn serve_embedded_file(path: &str) -> Result<impl warp::Reply + use<>, Infallible> {
     use warp::http::{StatusCode, HeaderValue};
     use warp::reply;
     

@@ -6,7 +6,7 @@ authors.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
-description = "FFI bindings for P2P Foundation - enables Flutter and other language integration"
+description = "DEPRECATED: FFI bindings for P2P Foundation - superseded by Tauri integration"
 keywords = ["p2p", "ffi", "flutter", "dart", "bindings"]
 categories = ["api-bindings", "network-programming"]
 

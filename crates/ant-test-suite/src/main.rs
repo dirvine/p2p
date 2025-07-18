@@ -10,8 +10,6 @@
 // Unless required by applicable law or agreed to in writing, software
 // distributed under these licenses is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-
-#!/usr/bin/env rust
 //! # Ant Test Suite - Comprehensive P2P Foundation Testing
 //!
 //! A comprehensive CLI test suite that exercises every aspect of the ant-core API

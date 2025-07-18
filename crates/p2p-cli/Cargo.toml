@@ -6,8 +6,8 @@ authors.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
-description = "CLI tools and Flutter web app wrapper for P2P Foundation"
-keywords = ["p2p", "cli", "flutter", "web"]
+description = "CLI tools and utilities for P2P Foundation"
+keywords = ["p2p", "cli", "networking", "web"]
 categories = ["command-line-utilities", "network-programming"]
 
 [[bin]]

@@ -85,7 +85,7 @@ async fn create_chat_room() -> Result<()> {
     println!("{}", "║                                                                      ║".cyan());
     
     // Show network info
-    if addresses.iter().any(|a| a.contains("ip6")) {
+    if addresses.iter().any(|a| a.to_string().contains("ip6")) {
         println!("{}", "║  Transport: QUIC over IPv6 (native)                                 ║".cyan());
     } else {
         println!("{}", "║  Transport: QUIC with automatic tunneling                           ║".cyan());

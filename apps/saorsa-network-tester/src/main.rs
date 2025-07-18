@@ -149,7 +149,7 @@ async fn run_quick_test() -> Result<()> {
         println!("  {} Listening on {} addresses:", "✅".green(), addresses.len());
         for addr in &addresses {
             println!("     • {}", addr);
-            if addr.contains("ip6") {
+            if addr.to_string().contains("ip6") {
                 println!("       {} Native IPv6 support", "ℹ️".blue());
             }
         }
@@ -374,7 +374,7 @@ async fn run_address_test() -> Result<()> {
     
     println!("  Attempting to connect Node 2 → Node 1...");
     if let Some(addr) = addrs1.first() {
-        match node2.connect_peer(addr).await {
+        match node2.connect_peer(&addr.to_string()).await {
             Ok(connected_peer_id) => {
                 println!("  {} Connected successfully!", "✅".green());
                 println!("     Connected to peer: {}", connected_peer_id);
@@ -448,10 +448,10 @@ async fn run_network_info() -> Result<()> {
     
     for addr in &addresses {
         println!("  • {}", addr);
-        if addr.contains("ip6") {
+        if addr.to_string().contains("ip6") {
             has_ipv6 = true;
         }
-        if addr.contains("ip4") {
+        if addr.to_string().contains("ip4") {
             has_ipv4 = true;
         }
     }

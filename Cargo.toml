@@ -1,11 +1,10 @@
 # P2P Foundation Workspace
-# Hybrid Architecture: Tauri Desktop + Flutter Mobile/Web + Shared Rust Core
+# Unified Tauri Cross-Platform Architecture + Shared Rust Core
 
 [workspace]
 resolver = "2"
 members = [
     "crates/p2p-core",           # Core P2P library (publishable to crates.io)
-    "crates/p2p-ffi",            # FFI bindings for Flutter
     "crates/p2p-cli",            # CLI tools and utilities
     "crates/ant-test-suite",     # Comprehensive test suite with data integrity verification
     "apps/saorsa/src-tauri",     # Tauri desktop application

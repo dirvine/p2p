@@ -206,8 +206,8 @@ impl LocalAIWallet {
 
 ### Platform Support
 - **Desktop**: macOS (Apple Silicon + Intel), Windows 10+, Linux
-- **Mobile**: iOS/Android via Flutter FFI bindings (roadmap)
-- **Web**: WebAssembly compilation for browser deployment (roadmap)
+- **Mobile**: iOS/Android via Tauri mobile capabilities (roadmap)
+- **Web**: WebAssembly compilation and Tauri web targets (roadmap)
 
 ### Data Structures
 
@@ -287,9 +287,9 @@ if let Some(data) = node.dht_get(key).await? {
 }
 ```
 
-### Saorsa Application Integration
+### Saorsa Application Integration (Tauri)
 ```rust
-// Tauri commands for frontend
+// Tauri commands for cross-platform frontend integration
 #[tauri::command]
 async fn create_profile(name: String, address: String) -> Result<UserProfile, String> {
     // AI wallet automatically created behind the scenes
@@ -307,6 +307,77 @@ async fn send_message(friend_id: String, message: String) -> Result<(), String> 
     // AI automatically handles token spending for message storage
     MESSAGE_HANDLER.send_encrypted_message(friend_id, message).await?;
     Ok(())
+}
+
+#[tauri::command]
+async fn get_network_status() -> Result<NetworkStatus, String> {
+    // Tauri-specific network monitoring for cross-platform apps
+    let status = NETWORK_MANAGER.get_status().await?;
+    Ok(status)
+}
+
+// Tauri event system for real-time updates
+#[tauri::command]
+async fn subscribe_to_messages(app_handle: tauri::AppHandle) -> Result<(), String> {
+    MESSAGE_HANDLER.on_message_received(move |message| {
+        app_handle.emit_all("new-message", &message).unwrap();
+    }).await?;
+    Ok(())
+}
+```
+
+### Frontend Integration (JavaScript/TypeScript)
+```javascript
+// Tauri API integration for cross-platform development
+import { invoke } from '@tauri-apps/api/tauri';
+import { listen } from '@tauri-apps/api/event';
+
+// Create user profile
+async function createProfile(name, address) {
+    try {
+        const profile = await invoke('create_profile', { name, address });
+        console.log('Profile created:', profile);
+        return profile;
+    } catch (error) {
+        console.error('Failed to create profile:', error);
+        throw error;
+    }
+}
+
+// Send encrypted message
+async function sendMessage(friendId, message) {
+    try {
+        await invoke('send_message', { 
+            friend_id: friendId, 
+            message: message 
+        });
+        console.log('Message sent successfully');
+    } catch (error) {
+        console.error('Failed to send message:', error);
+        throw error;
+    }
+}
+
+// Listen for real-time message updates
+async function setupMessageListener() {
+    const unlisten = await listen('new-message', (event) => {
+        console.log('New message received:', event.payload);
+        // Update UI with new message
+        updateMessageUI(event.payload);
+    });
+    
+    return unlisten; // Call this to stop listening
+}
+
+// Cross-platform network status monitoring
+async function getNetworkStatus() {
+    try {
+        const status = await invoke('get_network_status');
+        return status;
+    } catch (error) {
+        console.error('Failed to get network status:', error);
+        throw error;
+    }
 }
 ```
 
@@ -330,7 +401,7 @@ async fn send_message(friend_id: String, message: String) -> Result<(), String> 
 - 🔄 Enhanced DHT storage capabilities
 
 ### Planned (v0.3.0+) - Q2 2025
-- 📋 Mobile applications (iOS/Android via Flutter)
+- 📋 Mobile applications (iOS/Android via Tauri mobile)
 - 📋 Voice/video calling capabilities
 - 📋 File sharing and synchronization
 - 📋 Advanced AI model hosting

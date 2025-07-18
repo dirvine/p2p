@@ -1,5 +1,9 @@
 # GitHub Workflow Deployment Fixes
 
+> **⚠️ DEPRECATED**: This document describes Flutter deployment fixes that are no longer relevant. The project has migrated to Tauri for cross-platform applications. See the updated deployment workflow in `.github/workflows/deploy.yml` for current Tauri-based deployment processes.
+
+---
+
 ## Issues Fixed
 
 ### 1. Missing Android Project Structure

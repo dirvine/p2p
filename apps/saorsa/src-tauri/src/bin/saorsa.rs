@@ -23,7 +23,9 @@ fn main() -> Result<()> {
     let frontend_dir = get_frontend_dir()?;
     
     // Set the TAURI_FRONTEND_DIR environment variable
-    env::set_var("TAURI_FRONTEND_DIR", &frontend_dir);
+    unsafe {
+        env::set_var("TAURI_FRONTEND_DIR", &frontend_dir);
+    }
     
     // Run the actual Tauri app
     saorsa_lib::run_desktop_app()

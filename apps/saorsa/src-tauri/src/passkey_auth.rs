@@ -244,7 +244,7 @@ impl PasskeyAuthManager {
     fn generate_credential_id(&self) -> String {
         use rand::{thread_rng, Rng};
         let mut rng = thread_rng();
-        let bytes: [u8; 32] = rng.gen();
+        let bytes: [u8; 32] = rng.r#gen();
         general_purpose::URL_SAFE_NO_PAD.encode(&bytes)
     }
     

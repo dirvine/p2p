@@ -47,7 +47,7 @@ CORE_FILES=(
     "crates/p2p-core/src/production.rs"
     "crates/p2p-core/src/security.rs"
     "crates/p2p-core/src/error.rs"
-    "crates/p2p-ffi/src/lib.rs"
+    "crates/p2p-ffi/src/lib.rs"  # DEPRECATED: FFI bindings
 )
 
 echo "Adding license headers to core files..."

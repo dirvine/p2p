@@ -12,12 +12,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 
 
-//! # P2P Foundation FFI Bindings
+//! # P2P Foundation FFI Bindings (DEPRECATED)
 //!
-//! Foreign Function Interface bindings for the P2P Foundation library,
-//! enabling integration with Flutter/Dart and other programming languages.
+//! **⚠️ DEPRECATED: This crate is deprecated and no longer maintained.**
+//! 
+//! The P2P Foundation has moved to a unified Tauri-based cross-platform architecture.
+//! Flutter integration is no longer supported. Please use the Tauri desktop application
+//! or the core Rust library directly.
 //!
-//! ## Features
+//! For current development, see:
+//! - `apps/saorsa/` - Tauri desktop application
+//! - `crates/p2p-core/` - Core P2P library
+//!
+//! ## Legacy Features (No longer maintained)
 //!
 //! - C-compatible API for cross-language integration
 //! - Async operation support via callback patterns

@@ -213,7 +213,7 @@ Users should never need to understand cryptocurrency to benefit from decentraliz
 - Voice and video calling with automatic token management
 - File sharing and synchronization
 - Group chat functionality
-- Mobile applications (iOS/Android via Flutter)
+- Mobile applications (iOS/Android via Tauri)
 - Advanced AI model hosting and distribution
 
 **Success Metrics**:
@@ -336,7 +336,7 @@ Users should never need to understand cryptocurrency to benefit from decentraliz
 ### Development Team (Year 1)
 - **2 Senior Rust Engineers**: Ant Core library and Saorsa backend
 - **1 AI/ML Engineer**: Local AI model optimization and integration
-- **1 Mobile Developer**: Flutter application development
+- **1 Mobile Developer**: Tauri mobile application development
 - **1 Frontend Developer**: Saorsa UI/UX implementation
 - **1 DevOps Engineer**: Infrastructure, testing, and deployment
 - **1 Security Engineer**: Cryptography, privacy, and security auditing

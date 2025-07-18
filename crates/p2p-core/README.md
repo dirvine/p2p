@@ -195,8 +195,8 @@ Check out the [examples](https://github.com/dirvine/p2p/tree/main/examples) dire
 
 Ant Core powers:
 
-- **Saorsa**: Desktop P2P application built with Tauri
-- **Flutter Integration**: Mobile and web applications via FFI
+- **Saorsa**: Cross-platform P2P application built with Tauri (desktop, mobile, web)
+- **Terminal Apps**: Command-line chat and network testing utilities
 - **CLI Tools**: Command-line utilities for network management
 
 ## Roadmap

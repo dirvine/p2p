@@ -107,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - ✅ **macOS**: Native Apple Silicon and Intel support
 - 🔄 **Windows**: Coming in v0.2.0
 - 🔄 **Linux**: Coming in v0.2.0
-- 🔄 **Mobile**: iOS/Android via Flutter (roadmap)
+- 🔄 **Mobile**: iOS/Android via Tauri (roadmap)
 
 ## 🧪 Testing & Validation
 
@@ -126,7 +126,7 @@ p2p-foundation/
 ├── crates/
 │   ├── p2p-core/          # Ant Core library (published)
 │   ├── p2p-cli/           # CLI tools
-│   └── p2p-ffi/           # FFI bindings for mobile
+│   └── p2p-ffi/           # DEPRECATED: FFI bindings (superseded by Tauri)
 ├── apps/
 │   └── desktop-tauri/     # Saorsa desktop app
 ├── assets/                # App binaries and assets
@@ -154,7 +154,7 @@ p2p-foundation/
 - [ ] Voice/video calling capabilities
 
 ### 📋 Future Releases
-- [ ] Mobile applications (iOS/Android via Flutter)
+- [ ] Mobile applications (iOS/Android via Tauri)
 - [ ] File sharing and synchronization
 - [ ] Plugin system for extensibility
 - [ ] Advanced security features

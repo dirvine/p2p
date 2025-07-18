@@ -214,7 +214,7 @@ async fn init_network(
     .parse()
     .map_err(|e| format!("Invalid listen address: {}", e))?;
     
-    let bootstrap_peers: Vec<Multiaddr> = bootstrap_nodes
+    let bootstrap_peers: Vec<std::net::SocketAddr> = bootstrap_nodes
         .into_iter()
         .filter_map(|addr| addr.parse().ok())
         .collect();
