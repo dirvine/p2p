@@ -138,7 +138,7 @@ impl Default for NodeConfig {
             listen_addr: "127.0.0.1:9000".parse().unwrap(),
             bootstrap_peers: Vec::new(),
             bootstrap_peers_str: Vec::new(),
-            enable_ipv6: true,
+            enable_ipv6: false, // Default to IPv4 as requested
             enable_mcp_server: true,
             mcp_server_config: None, // Use default config if None
             connection_timeout: Duration::from_secs(30),
@@ -633,11 +633,15 @@ impl P2PNode {
         
         // If no specific addresses configured, listen on default addresses
         if self.config.listen_addrs.is_empty() {
-            // Listen on IPv4 and IPv6 default addresses
-            let default_addrs = vec![
+            // Listen on IPv4 by default (IPv6 can be enabled later)
+            let mut default_addrs = vec![
                 "0.0.0.0:9000".parse::<std::net::SocketAddr>().unwrap(),
-                "[::]:9000".parse::<std::net::SocketAddr>().unwrap(),
             ];
+            
+            // Only add IPv6 if explicitly enabled
+            if self.config.enable_ipv6 {
+                default_addrs.push("[::]:9000".parse::<std::net::SocketAddr>().unwrap());
+            }
             
             for addr in default_addrs {
                 if let Err(e) = self.start_listener_on_address(addr).await {

@@ -17,6 +17,7 @@
 //! Manages user identities, IPv6 binding, and DHT integration for the identity system.
 
 use crate::{P2PError, Result, dht::Key, security::IPv6NodeID};
+use ant_quic::crypto::raw_public_keys::key_utils::{generate_ed25519_keypair, derive_peer_id_from_public_key};
 use ed25519_dalek::{PublicKey as Ed25519PublicKey, Keypair, Signer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -230,14 +231,23 @@ impl UserIdentity {
     /// # Errors
     /// Returns error if cryptographic key generation fails
     pub fn new(display_name: String, three_word_address: String) -> Result<(Self, Keypair)> {
-        use rand_core::OsRng;
+        // Using ant-quic's key generation now
         
-        // Generate new keypair
-        let mut csprng = OsRng;
-        let keypair = Keypair::generate(&mut csprng);
+        // Generate new keypair using ant-quic
+        let (ant_secret_key, ant_public_key) = generate_ed25519_keypair();
         
-        // Derive user ID from public key
-        let user_id = Self::derive_user_id(&keypair.public);
+        // Convert ant-quic keys to ed25519-dalek v1 format
+        // ant-quic uses ed25519-dalek v2 SigningKey, we need v1 Keypair
+        let secret_bytes = ant_secret_key.to_bytes();
+        let public_bytes = ant_public_key.to_bytes();
+        let mut keypair_bytes = [0u8; 64];
+        keypair_bytes[..32].copy_from_slice(&secret_bytes);
+        keypair_bytes[32..].copy_from_slice(&public_bytes);
+        let keypair = Keypair::from_bytes(&keypair_bytes).map_err(|e| P2PError::Cryptography(e.to_string()))?;
+        
+        // Derive user ID from public key using ant-quic's method
+        let peer_id = derive_peer_id_from_public_key(&ant_public_key);
+        let user_id = peer_id.to_string();
         
         // Create display name hint
         let display_name_hint = Self::create_display_name_hint(&display_name);

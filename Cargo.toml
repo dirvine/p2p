@@ -36,7 +36,7 @@ tracing = "0.1"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # P2P and networking
-ant-quic = "0.1"
+ant-quic = "0.4.4"
 four-word-networking = "0.1"
 
 # Cryptography  
