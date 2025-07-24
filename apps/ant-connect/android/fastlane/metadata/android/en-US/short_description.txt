@@ -1,1 +1,0 @@
-Connect to decentralized networks using human-friendly three-word addresses

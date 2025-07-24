@@ -1,9 +1,0 @@
-# Gemfile for Fastlane and Ruby dependencies
-source "https://rubygems.org"
-
-gem "fastlane", ">= 2.220.0"
-gem "cocoapods", ">= 1.13.0"
-
-# Fastlane plugins
-plugins_path = File.join(File.dirname(__FILE__), 'fastlane', 'Pluginfile')
-eval_gemfile(plugins_path) if File.exist?(plugins_path)

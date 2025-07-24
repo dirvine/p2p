@@ -2,80 +2,75 @@
 
 # P2P Foundation
 
-A next-generation peer-to-peer networking foundation built in Rust, featuring QUIC transport, privacy-first identity system, and fully integrated AI capabilities through Model Context Protocol (MCP) servers at each node.
+An experimental peer-to-peer networking research project built in Rust, exploring adaptive network topologies, quantum-resistant cryptography, and AI integration through Model Context Protocol (MCP).
 
 ## Link to the autonomi network
 
-This network is a suppliment to the autonomi network and also a testground for new techologies that will benefit the autonomi network. Here we will share much of the tech stack and economies. The strong foundation belief is that "a rising tide lifts all boats" and from this testground we belive that we give humanity hte best chance we can hope for. This is not a maidsafe project, however, this is a personal project that is developed in out of hours time only. 
+This network serves as a research testbed for exploring new technologies that may benefit the Autonomi network. It shares aspects of the technology stack and economic models. This is a personal research project developed outside of working hours, not an official MaidSafe project. 
 
-## 🌟 What's Unique About This Network and the Saorsa App
+## 🔬 Research Focus Areas
 
-The P2P Foundation represents a paradigm shift in decentralized networking, combining cutting-edge cryptography, innovative addressing, and AI-native design to create something truly revolutionary. Here's what sets us apart:
+This project investigates several key areas in decentralized networking:
 
-### 🎭 **Four-Word Network Addresses**
-- **Human-readable networking**: Share connections with memorable phrases like `forest.lightning.compass.river` instead of complex technical addresses
-- **Voice-friendly**: Actually shareable over phone calls and voice chat
-- **Massive address space**: Billions of combinations ensuring uniqueness and collision resistance
-- **Zero friction onboarding**: Eliminates the biggest barrier to P2P adoption
-- **Integrated with DHT**: Four-word addresses resolve to cryptographic identities in the distributed hash table
+### Human-Readable Network Addresses
+- Exploring four-word address schemes for improved usability
+- Investigating voice-friendly network identifiers
+- Researching address space optimization and collision resistance
+- Studying DHT integration for address resolution
 
-### 🛡️ **Quantum-Resistant Security Architecture**
-- **Future-proof cryptography**: ML-KEM-768 and ML-DSA-65 (FIPS 203/204) protect against quantum threats
-- **Hybrid transition**: Support both classical and post-quantum algorithms during migration
-- **Algorithm agility**: Easy upgrade path as quantum-resistant standards evolve
-- **Military-grade protection**: Defense against threats that don't even exist yet
+### Post-Quantum Cryptography Research
+- Implementing ML-KEM-768 and ML-DSA-65 (FIPS 203/204) for quantum resistance
+- Developing hybrid cryptographic approaches for transition periods
+- Researching algorithm agility for future standard updates
 
-### 👥 **Revolutionary Threshold Cryptography**
-- **FROST protocol**: Threshold signatures enable true multi-party authorization
-- **Dynamic membership**: Add/remove people from groups without regenerating keys
-- **Hierarchical authority**: Cryptographically enforced organizational structures
-- **Byzantine fault tolerance**: Secure consensus even with malicious participants
-- **Seamless personnel changes**: Swap out team members while maintaining security continuity
+### Threshold Cryptography Experiments
+- Implementing FROST protocol for multi-party signatures
+- Researching dynamic group membership protocols
+- Exploring cryptographically enforced hierarchies
+- Studying Byzantine fault tolerance in P2P contexts
 
-### 🏢 **Cryptographically Enforced Organizations**
-- **Verifiable hierarchies**: Team leaders and structures backed by mathematics, not trust
-- **Granular permissions**: Different access levels for different organizational roles
-- **Threshold governance**: Require multiple approvals for sensitive operations
-- **Audit trails**: Cryptographic proof of who authorized what and when
-- **Enterprise-ready**: Built for real organizational security needs
+### Organizational Cryptography Studies
+- Researching verifiable organizational hierarchies
+- Developing granular permission systems
+- Exploring threshold-based governance models
+- Investigating cryptographic audit trail mechanisms
 
-### 📚 **Git-Like DHT with Universal Version Control**
-- **Content-addressed everything**: BLAKE3 hashing provides integrity for all data
-- **Universal version control**: Chat messages, documents, forum posts - everything is versioned
-- **Git semantics**: Branches, commits, tags, and merges for any type of content
-- **Network-wide deduplication**: Identical content stored once across the entire network
-- **Collaborative workflows**: Distributed editing with conflict resolution and merge capabilities
+### Content-Addressed Storage Research
+- Implementing BLAKE3-based content addressing
+- Exploring git-like semantics for distributed data
+- Researching network-wide deduplication strategies
+- Developing distributed conflict resolution mechanisms
 
-### 🔒 **True Peer-to-Peer Communication**
-- **No signaling servers**: Direct computer-to-computer communication without intermediaries
-- **Ultimate privacy**: Your conversations don't touch anyone else's servers
-- **QUIC transport**: Modern, encrypted networking with built-in DoS protection
-- **Universal connectivity**: Works across any network topology with automatic tunneling
-- **Enterprise-grade**: ISATAP tunneling for corporate IPv6 deployment
+### Direct P2P Communication Protocols
+- Researching serverless connection establishment
+- Implementing QUIC transport experiments
+- Developing automatic tunneling strategies
+- Testing ISATAP for enterprise IPv6 scenarios
 
-### 🤖 **AI-Native from the Ground Up**
-- **MCP everywhere**: Model Context Protocol server built into every node
-- **Distributed AI**: AI agents discover and collaborate across the network
-- **Tool orchestration**: Automatically find and execute AI tools on remote nodes
-- **Service discovery**: AI services announce themselves and are automatically discovered
-- **Threshold AI governance**: Cryptographic authorization for AI resource access
-- **Health monitoring**: Enterprise-grade service health monitoring with automatic failover
+### AI Integration Research
+- Implementing Model Context Protocol (MCP) at network nodes
+- Exploring distributed AI agent coordination
+- Researching P2P service discovery mechanisms
+- Developing cryptographic authorization for AI resources
 
-### 🌐 **Universal Network Connectivity**
-- **Intelligent protocol selection**: Automatically chooses best tunneling method (6to4, Teredo, 6in4, DS-Lite, ISATAP)
-- **Enterprise tunneling**: Built-in ISATAP support for corporate IPv6 networks
-- **Zero configuration**: Works out of the box on any network setup
-- **IPv6-first design**: Future-ready with comprehensive IPv4 backward compatibility
-- **Automatic NAT traversal**: Connects through any firewall or router configuration
+### Network Connectivity Studies
+- Researching adaptive tunneling protocol selection
+- Testing various IPv6 transition mechanisms
+- Developing automatic NAT traversal techniques
+- Exploring zero-configuration networking approaches
 
-### 🚀 **Revolutionary User Experience**
-- **Voice shareable**: "Connect to forest lightning compass river" actually works
-- **Zero technical knowledge**: Share network access like sharing a WiFi password
-- **Cross-platform**: Native performance on desktop, mobile, and web
-- **Progressive enhancement**: Advanced features for power users, simple for everyone else
-- **Developer friendly**: Build on our foundation with minimal learning curve
+### User Experience Research
+- Investigating voice-shareable network identifiers
+- Developing simplified connection workflows
+- Testing cross-platform compatibility approaches
+- Creating progressive enhancement strategies
 
-This isn't just another P2P network - it's a complete reimagining of how decentralized systems should work. We've solved the fundamental problems that have kept P2P networks from mainstream adoption while building in future-proof security and AI-native capabilities that will matter for decades to come.
+### Adaptive Network Architecture Research
+- **Multi-layer topology**: Combining Kademlia DHT with hyperbolic routing and self-organizing maps
+- **Machine learning integration**: Thompson sampling for routing optimization, Q-learning for caching
+- **Churn prediction**: LSTM models for predicting node departures and proactive replication
+- **Trust systems**: EigenTrust++ implementation for reputation management
+- **Bio-inspired adaptation**: Self-healing and self-organizing network behaviors
 
 ## 🏗️ Project Structure
 
@@ -85,7 +80,7 @@ This is a Cargo workspace containing multiple interconnected components:
 [![Crates.io](https://img.shields.io/crates/v/saorsa-core)](https://crates.io/crates/saorsa-core)
 [![Documentation](https://docs.rs/saorsa-core/badge.svg)](https://docs.rs/saorsa-core)
 
-The foundational P2P networking library (`crates/p2p-core`) providing:
+The experimental P2P networking library (`crates/p2p-core`) exploring:
 - **QUIC/TCP Transport**: Modern, efficient networking with built-in encryption and automatic fallback
 - **Kademlia DHT**: Complete distributed hash table with K=8 replication and network integration
 - **Git Content Addressing**: Universal version control with BLAKE3 hashing and DHT storage
@@ -95,8 +90,8 @@ The foundational P2P networking library (`crates/p2p-core`) providing:
 - **DHT-Based Identity Management**: Network-wide identity persistence with four-word address resolution
 - **Privacy-First Identity**: Encrypted profiles with organizational support
 
-### 🕊️ Desktop Application: Saorsa
-Built with Tauri (`apps/saorsa`) - the flagship P2P application featuring:
+### Desktop Application: Saorsa (Experimental)
+Built with Tauri (`apps/saorsa`) - a test application demonstrating:
 - Real-time encrypted messaging with git-like version control
 - Decentralized contact management with threshold groups
 - Profile sharing with granular privacy controls
@@ -108,9 +103,9 @@ Built with Tauri (`apps/saorsa`) - the flagship P2P application featuring:
 - **CLI Tools** (`crates/p2p-cli`): Command-line utilities for network management
 - **Terminal Applications**: Native CLI tools for testing and development
 
-## 🚀 Quick Start
+## Getting Started
 
-### Using Saorsa Core Library
+### Using the Research Library
 
 Add to your `Cargo.toml`:
 ```toml
@@ -166,7 +161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    ```bash
    cd apps/saorsa
    cargo tauri dev  # Development mode with hot reload
-   cargo tauri build  # Production build for distribution
+   cargo tauri build  # Build for testing
    ```
 
 3. **Cross-platform development**:
@@ -187,7 +182,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## ✨ Key Features
 
-### 🔒 **Production-Ready Security**
+### Security Testing
 - **Quantum-resistant cryptography**: ML-KEM/ML-DSA foundation with Ed25519/X25519 key pairs
 - **Secure identity management**: Complete lifecycle with key rotation and revocation
 - **Encrypted key storage**: Argon2id password derivation with AES-256-GCM encryption
@@ -221,7 +216,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **Comprehensive Rust APIs**: Full async/await support with strong type safety
 - **Tauri cross-platform development**: Native desktop, mobile, and web applications
 - **Extensive testing framework**: 1000+ integration tests with real P2P operations
-- **Production-ready monitoring**: Performance benchmarking and crash recovery validation
+- **Performance monitoring**: Benchmarking and recovery testing
 
 
 ## 🏛️ Architecture
@@ -615,7 +610,7 @@ The test suite provides:
 - **Performance benchmarking** across all subsystems
 - **Cross-platform compatibility** testing
 
-### 🚀 **Continuous Integration**
+### Continuous Integration
 
 Tests run automatically on:
 
@@ -624,9 +619,9 @@ Tests run automatically on:
 - **Nightly builds** - Extended stress testing
 - **Release candidates** - Comprehensive validation
 
-The test suite ensures the P2P Foundation maintains production-ready quality across all features and platforms.
+The test suite validates the research implementations across various scenarios.
 
-## 📊 Performance
+## Performance Metrics (Experimental)
 
 - **Connection establishment**: < 100ms (LAN), < 1s (Internet) via QUIC with NAT traversal
 - **Throughput**: > 100 Mbps per connection via optimized QUIC transport
@@ -639,12 +634,16 @@ The test suite ensures the P2P Foundation maintains production-ready quality acr
 
 ## 📚 Documentation
 
+See [docs/README.md](docs/README.md) for the complete documentation index.
+
+### Quick Links
 - **[Saorsa Core Documentation](https://docs.rs/saorsa-core)** - API reference
-- **[Technical Specification](SPECIFICATION.md)** - Detailed technical design
-- **[Four-Word Addresses](docs/four-word-addresses.md)** - Human-readable network addressing
-- **[Security Architecture](docs/security-architecture.md)** - Comprehensive security design
+- **[Technical Specification](docs/architecture/SPECIFICATION.md)** - Detailed technical design
+- **[Four-Word Addresses](docs/architecture/three-word-addresses.md)** - Human-readable network addressing
+- **[Security Architecture](docs/security/)** - Comprehensive security design
 - **[Development Guidelines](CLAUDE.md)** - AI assistant development guide
-- **[Examples](examples/)** - Working code examples
+- **[Network Overview](docs/network/overview.md)** - Network architecture
+- **[API Reference](docs/api/API.md)** - Complete API documentation
 
 ## 🗂️ Examples
 
@@ -659,9 +658,9 @@ See the [`examples/`](examples/) directory for:
 
 See the [`tests/`](tests/) directory for comprehensive integration tests covering all functionality.
 
-## 🚧 Roadmap
+## Research Roadmap
 
-### ✅ Completed (v0.2.6)
+### Implemented Components (v0.2.6)
 - [x] **Simplified QUIC-only transport** with ant-quic NAT traversal (removed TCP/IPv6 complexity)
 - [x] **Complete security infrastructure** with quantum-resistant cryptography foundation
 - [x] **Identity lifecycle management** with Ed25519/X25519 key pairs and secure storage
@@ -672,10 +671,10 @@ See the [`tests/`](tests/) directory for comprehensive integration tests coverin
 - [x] **Enhanced signature verification** with constant-time operations and caching
 - [x] **Encrypted key storage** using Argon2id password derivation and AES-256-GCM
 - [x] **Comprehensive DHT integration** with Kademlia routing and K=8 replication
-- [x] **Production-ready testing** with 1000+ integration tests and security validation
+- [x] **Comprehensive testing** with integration tests and security validation
 - [x] **Desktop application (Saorsa)** with full UI and security features
 
-### 🔄 In Progress
+### Current Research
 - [ ] **Final quantum cryptography integration** (ML-KEM, ML-DSA activation)
 - [ ] **Mobile app development** (Tauri mobile capabilities)
 - [ ] **Advanced MCP orchestration** for multi-node AI workflows
@@ -683,7 +682,7 @@ See the [`tests/`](tests/) directory for comprehensive integration tests coverin
 - [ ] **Performance tuning** for high-scale deployments
 - [ ] **Advanced bootstrap strategies** for network resilience
 
-### 📋 Planned (v0.3.0+)
+### Future Research Areas (v0.3.0+)
 - [ ] **Voice/video calling** capabilities with WebRTC integration
 - [ ] **File sharing and synchronization** with git-like workflows
 - [ ] **Advanced threshold governance** with hierarchical authority

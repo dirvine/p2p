@@ -37,7 +37,7 @@ cd apps/saorsa
 # Development mode with hot reload
 cargo tauri dev
 
-# Production build
+# Build for testing
 cargo tauri build
 
 # Quick start (Python server + Tauri)
@@ -133,7 +133,7 @@ The project is actively developing:
 - **Test Coverage**: 1400+ lines of comprehensive tests - always run tests before commits
 - **Dual Licensing**: AGPL-3.0 for open source, commercial license available
 - **Security First**: All data encrypted by default, quantum-resistant cryptography throughout
-- **Production Ready**: Not just research - includes connection pooling, load balancing, fault tolerance
+- **Comprehensive Implementation**: Includes connection pooling, load balancing, fault tolerance
 
 ## Common Tasks
 

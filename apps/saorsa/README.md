@@ -5,7 +5,7 @@
 [![Rust](https://img.shields.io/badge/Rust-1.75+-orange)](https://www.rust-lang.org)
 [![Test Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)](./test-runner.sh)
 
-**🕊️ The flagship P2P messaging application powered by the P2P Foundation**
+**An experimental P2P messaging application for testing the P2P Foundation research**
 
 Saorsa (pronounced "SEER-sha", Irish for "freedom") is a fully decentralized, quantum-resistant P2P communication application. It provides secure messaging, voice/video calls, and identity management without relying on any central servers.
 
@@ -100,7 +100,7 @@ npm install
 # Run in development mode
 npm run tauri dev
 
-# Build for production
+# Build for testing
 npm run tauri build
 ```
 
