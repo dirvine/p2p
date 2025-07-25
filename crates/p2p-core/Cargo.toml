@@ -44,6 +44,10 @@ hex.workspace = true
 chrono.workspace = true
 base64.workspace = true
 
+# Performance optimization dependencies
+parking_lot = "0.12"
+flate2 = "1.0"
+
 # Direct quinn networking - iroh removed for simplification
 
 # Core-specific dependencies
@@ -63,6 +67,12 @@ hmac = "0.12"
 # Git content addressing dependencies
 bincode = "1.3"
 lru = "0.12"
+
+# Monitoring dependencies
+prometheus = "0.13"
+
+# Client dependencies
+tokio-stream = "0.1"
 
 # Post-quantum cryptography (temporarily disabled)
 # ml-kem.workspace = true

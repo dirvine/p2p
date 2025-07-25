@@ -410,7 +410,7 @@ async function getNetworkStatus() {
 ## Testing Strategy
 
 ### Multi-Node Testing
-- **Local Networks**: Docker-based test environments with 5-100 nodes
+- **Local Networks**: Process-based test environments with 5-100 nodes
 - **Geographic Distribution**: Global test network with real latency
 - **Network Conditions**: Various NAT types, bandwidth limits, packet loss
 - **Cross-Platform**: macOS, Windows, Linux compatibility testing

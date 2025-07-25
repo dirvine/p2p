@@ -304,7 +304,7 @@ The P2P Foundation implements comprehensive **defense-in-depth** security with *
 
 ### Server/CLI
 - **Linux**: Optimized for edge deployment
-- **Docker**: Containerized deployment options
+- **Cross-platform**: Direct binary deployment on all major platforms
 
 ## 🛠️ Development
 

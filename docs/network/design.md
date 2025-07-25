@@ -1144,33 +1144,6 @@ monitoring:
   enable_tracing: true
 ```
 
-#### 8.2 Docker Deployment
-
-```dockerfile
-# Dockerfile
-FROM rust:1.70 as builder
-
-WORKDIR /app
-COPY Cargo.toml Cargo.lock ./
-COPY src ./src
-
-RUN cargo build --release
-
-FROM debian:bullseye-slim
-
-RUN apt-get update && apt-get install -y \
-    libssl1.1 \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /app/target/release/adaptive-p2p /usr/local/bin/
-COPY config.yaml /etc/adaptive-p2p/
-
-EXPOSE 4001 4002 9090
-
-CMD ["adaptive-p2p", "--config", "/etc/adaptive-p2p/config.yaml"]
-```
-
 ### 9. API Design
 
 #### 9.1 Client API

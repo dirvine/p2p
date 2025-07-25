@@ -125,6 +125,9 @@ pub mod persistent_state;
 /// Identity management system with Ed25519/X25519 key pairs
 pub mod identity_manager;
 
+/// Adaptive P2P network implementation
+pub mod adaptive;
+
 // Re-export main types
 pub use address::{NetworkAddress, AddressBook};
 pub use network::{P2PNode, NodeConfig, NodeBuilder, P2PEvent};

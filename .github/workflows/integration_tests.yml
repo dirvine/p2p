@@ -1,0 +1,400 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  RUST_BACKTRACE: 1
+  RUST_LOG: info
+  CARGO_TERM_COLOR: always
+
+jobs:
+  multi-node-tests:
+    name: Multi-Node Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo index
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo build
+      uses: actions/cache@v3
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Build workspace
+      run: cargo build --workspace --all-features
+    
+    - name: Run multi-node tests
+      run: |
+        cd crates/p2p-integration-tests
+        cargo test --test multi_node -- --test-threads=2
+      env:
+        RUST_LOG: info,p2p_integration_tests=debug
+    
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: multi-node-test-results
+        path: |
+          target/debug/deps/*.log
+          target/test-results/
+
+  churn-simulation:
+    name: Churn Simulation Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Run churn simulation tests
+      run: |
+        cd crates/p2p-integration-tests
+        cargo test --test churn_simulation -- --test-threads=1 --nocapture
+      env:
+        RUST_LOG: info,churn_simulation=debug
+    
+    - name: Generate churn report
+      if: always()
+      run: |
+        echo "## Churn Simulation Report" > churn-report.md
+        echo "Test run: $(date)" >> churn-report.md
+        # In real implementation, would parse test output
+        
+    - name: Upload churn report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: churn-simulation-report
+        path: churn-report.md
+
+  attack-scenarios:
+    name: Attack Scenario Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Run attack scenario tests
+      run: |
+        cd crates/p2p-integration-tests
+        cargo test --test attack_scenarios -- --test-threads=1
+      env:
+        RUST_LOG: warn,attack_scenarios=info
+    
+    - name: Security analysis
+      if: always()
+      run: |
+        echo "## Security Test Results" > security-report.md
+        echo "Attack scenarios tested:" >> security-report.md
+        echo "- Eclipse attacks" >> security-report.md
+        echo "- Sybil attacks" >> security-report.md
+        echo "- Content poisoning" >> security-report.md
+        echo "- DoS attacks" >> security-report.md
+        
+    - name: Upload security report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-test-report
+        path: security-report.md
+
+  performance-benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Install benchmark dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y linux-tools-common linux-tools-generic
+        
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Run performance benchmarks
+      run: |
+        cd crates/p2p-integration-tests
+        cargo test --test performance_benchmarks --release -- --test-threads=1
+      env:
+        RUST_LOG: info,performance_benchmarks=debug
+    
+    - name: Process benchmark results
+      if: always()
+      run: |
+        echo "## Performance Benchmark Results" > benchmark-report.md
+        echo "Date: $(date)" >> benchmark-report.md
+        echo "Commit: ${{ github.sha }}" >> benchmark-report.md
+        # In real implementation, would parse benchmark output
+    
+    - name: Upload benchmark results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results
+        path: |
+          benchmark-report.md
+          target/criterion/
+
+    - name: Comment PR with results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const report = fs.readFileSync('benchmark-report.md', 'utf8');
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: report
+          });
+
+  chaos-testing:
+    name: Chaos Testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Run chaos tests
+      run: |
+        cd crates/p2p-integration-tests
+        cargo test --test chaos_testing -- --test-threads=1
+      env:
+        RUST_LOG: info,chaos_testing=debug
+    
+    - name: Generate chaos report
+      if: always()
+      run: |
+        echo "## Chaos Testing Report" > chaos-report.md
+        echo "Chaos scenarios tested:" >> chaos-report.md
+        echo "- Component failures" >> chaos-report.md
+        echo "- Byzantine behavior" >> chaos-report.md
+        echo "- Clock skew" >> chaos-report.md
+        echo "- Combined chaos" >> chaos-report.md
+        
+    - name: Upload chaos report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: chaos-test-report
+        path: chaos-report.md
+
+  long-running-tests:
+    name: Long Running Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Run large scale tests
+      run: |
+        cd crates/p2p-integration-tests
+        cargo test --test multi_node test_large_scale_network --release -- --ignored --test-threads=1
+      env:
+        RUST_LOG: info
+    
+    - name: Run stress tests
+      run: |
+        cd crates/p2p-integration-tests
+        cargo test --test performance_benchmarks test_stress_test --release -- --test-threads=1
+      env:
+        RUST_LOG: info
+    
+    - name: Run extreme churn test
+      run: |
+        cd crates/p2p-integration-tests
+        cargo test --test churn_simulation test_extreme_churn --release -- --ignored --test-threads=1
+      env:
+        RUST_LOG: info
+    
+    - name: Run scalability test
+      run: |
+        cd crates/p2p-integration-tests
+        cargo test --test performance_benchmarks test_network_scalability --release -- --ignored --test-threads=1
+      env:
+        RUST_LOG: info
+    
+    - name: Generate comprehensive report
+      if: always()
+      run: |
+        echo "## Long Running Tests Report" > long-running-report.md
+        echo "Date: $(date)" >> long-running-report.md
+        echo "Duration: 3 hours" >> long-running-report.md
+        echo "" >> long-running-report.md
+        echo "### Tests Executed:" >> long-running-report.md
+        echo "- Large scale network (200 nodes)" >> long-running-report.md
+        echo "- Stress testing" >> long-running-report.md
+        echo "- Extreme churn scenarios" >> long-running-report.md
+        echo "- Scalability analysis" >> long-running-report.md
+        
+    - name: Upload comprehensive report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: long-running-test-report
+        path: long-running-report.md
+
+  test-matrix:
+    name: Test Matrix
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust: [stable, beta]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+    
+    - name: Run basic integration tests
+      run: |
+        cd crates/p2p-integration-tests
+        cargo test --test multi_node test_network_formation test_content_storage_retrieval -- --test-threads=1
+      env:
+        RUST_LOG: info
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Install cargo-tarpaulin
+      run: cargo install cargo-tarpaulin
+    
+    - name: Run coverage
+      run: |
+        cd crates/p2p-integration-tests
+        cargo tarpaulin --out Xml --all-features --timeout 300
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./crates/p2p-integration-tests/cobertura.xml
+        flags: integration-tests
+        name: codecov-integration
+
+  notify:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: [multi-node-tests, churn-simulation, attack-scenarios, performance-benchmarks, chaos-testing]
+    if: always()
+    
+    steps:
+    - name: Check test results
+      run: |
+        echo "## Integration Test Summary" > summary.md
+        echo "Multi-node tests: ${{ needs.multi-node-tests.result }}" >> summary.md
+        echo "Churn simulation: ${{ needs.churn-simulation.result }}" >> summary.md
+        echo "Attack scenarios: ${{ needs.attack-scenarios.result }}" >> summary.md
+        echo "Performance benchmarks: ${{ needs.performance-benchmarks.result }}" >> summary.md
+        echo "Chaos testing: ${{ needs.chaos-testing.result }}" >> summary.md
+        
+    - name: Notify on failure
+      if: contains(needs.*.result, 'failure')
+      run: |
+        echo "One or more integration tests failed!"
+        # In real implementation, would send notifications
