@@ -879,6 +879,8 @@ pub struct MCPServer {
     /// Health event receiver (for monitoring)
     #[allow(dead_code)]
     health_event_rx: Arc<RwLock<mpsc::UnboundedReceiver<HealthEvent>>>,
+    /// Node ID for this MCP server
+    node_id: Option<PeerId>,
 }
 
 /// MCP session information
@@ -984,6 +986,7 @@ impl MCPServer {
             service_health: Arc::new(RwLock::new(HashMap::new())),
             health_event_tx,
             health_event_rx: Arc::new(RwLock::new(health_event_rx)),
+            node_id: None,
         };
         
         server
@@ -996,7 +999,9 @@ impl MCPServer {
     }
     
     /// Set the network sender for P2P communication
-    pub async fn with_network_sender(self, sender: Arc<dyn NetworkSender>) -> Self {
+    pub async fn with_network_sender(mut self, sender: Arc<dyn NetworkSender>) -> Self {
+        let peer_id = sender.local_peer_id().clone();
+        self.node_id = Some(peer_id);
         *self.network_sender.write().await = Some(sender);
         self
     }
@@ -1006,6 +1011,13 @@ impl MCPServer {
         let peer_id = sender.local_peer_id().clone();
         *self.network_sender.write().await = Some(sender);
         info!("MCP server network sender configured for peer {}", peer_id);
+    }
+    
+    /// Get the node ID as a string
+    fn get_node_id_string(&self) -> String {
+        self.node_id.as_ref()
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "unknown".to_string())
     }
     
     /// Start the MCP server
@@ -1086,7 +1098,7 @@ impl MCPServer {
         let key = Key::new(format!("mcp:tool:{}", tool_name).as_bytes());
         let service_info = json!({
             "tool_name": tool_name,
-            "node_id": "local_node", // TODO: Get actual node ID
+            "node_id": self.get_node_id_string(),
             "registered_at": SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| P2PError::Network(format!("Time error: {}", e)))?.as_secs(),
             "capabilities": self.get_server_capabilities().await
         });
@@ -1195,7 +1207,8 @@ impl MCPServer {
         // Validate arguments and get requirements
         let requirements = {
             let tools = self.tools.read().await;
-            let tool = tools.get(tool_name).unwrap(); // Safe because we checked exists above
+            let tool = tools.get(tool_name)
+                .ok_or_else(|| P2PError::MCP(format!("Tool not found: {}", tool_name)))?;
             
             // Validate arguments
             if let Err(e) = tool.handler.validate(&arguments) {
@@ -1216,7 +1229,8 @@ impl MCPServer {
         
         let result = timeout(execution_timeout, async move {
             let tools = tools_clone.read().await;
-            let tool = tools.get(&tool_name_owned).unwrap(); // Safe because we checked exists above
+            let tool = tools.get(&tool_name_owned)
+                .ok_or_else(|| P2PError::MCP(format!("Tool not found: {}", tool_name_owned)))?;
             tool.handler.execute(arguments).await
         }).await
         .map_err(|_| P2PError::MCP("Tool execution timeout".to_string()))?
@@ -1503,7 +1517,10 @@ impl MCPServer {
             name: "health_check".to_string(),
             arguments: json!({
                 "service_id": service_id,
-                "timestamp": SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
+                "timestamp": SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap_or_else(|_| std::time::Duration::from_secs(0))
+                    .as_secs()
             }),
         };
         
@@ -1522,7 +1539,7 @@ impl MCPServer {
         };
         
         let response_time = start_time.elapsed();
-        let success = result.is_ok() && result.unwrap().is_ok();
+        let success = result.as_ref().map(|r| r.is_ok()).unwrap_or(false);
         
         // Update service health
         let mut health_guard = service_health.write().await;
@@ -1911,7 +1928,10 @@ impl MCPServer {
                     message_id: p2p_message.message_id.clone(),
                     source_peer: source_peer.clone(),
                     target_peer: Some(p2p_message.source_peer.clone()),
-                    timestamp: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+                    timestamp: SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap_or_else(|_| std::time::Duration::from_secs(0))
+                        .as_secs(),
                     payload: health_response,
                     ttl: 3,
                 };
@@ -1977,7 +1997,7 @@ impl MCPServer {
                 let response_message = P2PMCPMessage {
                     message_type: P2PMCPMessageType::Response,
                     message_id: message.message_id,
-                    source_peer: "local".to_string(), // TODO: Get actual local peer ID
+                    source_peer: self.get_node_id_string(),
                     target_peer: Some(message.source_peer),
                     timestamp: SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -2004,7 +2024,7 @@ impl MCPServer {
                 let response_message = P2PMCPMessage {
                     message_type: P2PMCPMessageType::Response,
                     message_id: message.message_id,
-                    source_peer: "local".to_string(), // TODO: Get actual local peer ID
+                    source_peer: self.get_node_id_string(),
                     target_peer: Some(message.source_peer),
                     timestamp: SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -2024,7 +2044,7 @@ impl MCPServer {
                 let error_response = P2PMCPMessage {
                     message_type: P2PMCPMessageType::Response,
                     message_id: message.message_id,
-                    source_peer: "local".to_string(), // TODO: Get actual local peer ID
+                    source_peer: self.get_node_id_string(),
                     target_peer: Some(message.source_peer),
                     timestamp: SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -2623,7 +2643,7 @@ impl MCPServer {
             let advertisement = P2PMCPMessage {
                 message_type: P2PMCPMessageType::ServiceAdvertisement,
                 message_id: uuid::Uuid::new_v4().to_string(),
-                source_peer: "local".to_string(), // TODO: Get actual local peer ID
+                source_peer: self.get_node_id_string(),
                 target_peer: Some(message.source_peer),
                 timestamp: SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)

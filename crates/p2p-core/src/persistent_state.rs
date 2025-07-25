@@ -684,7 +684,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
         let crashed = lock_path.exists();
         
         if crashed {
-            eprintln!("Detected unclean shutdown, performing recovery...");
+            tracing::error!("Detected unclean shutdown, performing recovery...");
         }
         
         // Create lock file
@@ -776,7 +776,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
                     stats.entries_recovered += entries;
                 }
                 Err(e) => {
-                    eprintln!("Failed to replay WAL file {:?}: {}", wal_path, e);
+                    tracing::error!("Failed to replay WAL file {:?}: {}", wal_path, e);
                     stats.data_loss_detected = true;
                 }
             }
@@ -1108,7 +1108,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
                 interval.tick().await;
                 
                 if let Err(e) = state_manager.checkpoint().await {
-                    eprintln!("Checkpoint failed: {}", e);
+                    tracing::error!("Checkpoint failed: {}", e);
                 }
             }
         });

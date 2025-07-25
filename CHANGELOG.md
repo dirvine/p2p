@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Critical unwrap() calls in MCP module that could cause panics in production
+- Hardcoded node IDs replaced with actual peer identities in MCP server
+- Debug print statements replaced with proper tracing logs in persistent_state.rs
+- Missing Content Security Policy (CSP) configuration in Tauri application
+
+### Security
+- Added comprehensive CSP headers to Tauri configuration for enhanced security
+- Configured strict security policies including frame-ancestors and upgrade-insecure-requests
+
+### Changed
+- MCP server now properly tracks and uses actual node IDs instead of placeholders
+- Error handling improved throughout MCP module with descriptive error messages
+- Logging infrastructure standardized to use tracing instead of println!/eprintln!
+
 ### Added
 - Banner image to README.md for enhanced visual appeal
 - Comprehensive secure user authentication documentation (SECURE_USER_AUTH.md)
