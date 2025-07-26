@@ -177,22 +177,24 @@ pub async fn generate_keypair(capabilities: &CryptoCapabilities) -> Result<KeyPa
     // Generate ML-DSA keys if supported
     if capabilities.supports_ml_dsa {
         let (pub_key, priv_key) = ml_dsa::generate_keypair()?;
-        public.ml_dsa = Some(pub_key);
-        private.ml_dsa = Some(priv_key);
+        public.ml_dsa = Some(MlDsaPublicKey(pub_key));
+        private.ml_dsa = Some(MlDsaPrivateKey(priv_key));
     }
     
     // Generate ML-KEM keys if supported
     if capabilities.supports_ml_kem {
         let (pub_key, priv_key) = ml_kem::generate_keypair()?;
-        public.ml_kem = Some(pub_key);
-        private.ml_kem = Some(priv_key);
+        public.ml_kem = Some(MlKemPublicKey(pub_key));
+        private.ml_kem = Some(MlKemPrivateKey(priv_key));
     }
     
     // Generate Ed25519 keys for backward compatibility
     if capabilities.supports_hybrid {
         let (pub_key, priv_key) = generate_ed25519_keypair()?;
-        public.ed25519 = Some(pub_key);
-        private.ed25519 = Some(priv_key);
+        public.ed25519 = Some(Ed25519PublicKey(pub_key.try_into().map_err(|_| 
+            QuantumCryptoError::InvalidKeyError("Invalid Ed25519 public key length".to_string()))?));
+        private.ed25519 = Some(Ed25519PrivateKey(priv_key.try_into().map_err(|_| 
+            QuantumCryptoError::InvalidKeyError("Invalid Ed25519 private key length".to_string()))?));
     }
     
     Ok(KeyPair { public, private })

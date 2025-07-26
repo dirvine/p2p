@@ -296,11 +296,7 @@ impl EnhancedIdentityManager {
             ml_kem_public_key: keypair.public.ml_kem.clone()
                 .unwrap_or_else(|| crate::quantum_crypto::types::MlKemPublicKey(vec![0u8; 32])),
             frost_public_key: keypair.public.frost.clone(),
-            legacy_key: keypair.public.ed25519.clone().map(|k|
-                crate::quantum_crypto::types::Ed25519PublicKey(
-                    k.try_into().unwrap_or([0; 32])
-                )
-            ),
+            legacy_key: keypair.public.ed25519.clone(),
             capabilities,
             created_at: SystemTime::now(),
         };
@@ -318,7 +314,9 @@ impl EnhancedIdentityManager {
             device_type,
             last_seen: SystemTime::now(),
             added_at: SystemTime::now(),
-            public_key: keypair.public.ed25519.unwrap_or_default(),
+            public_key: keypair.public.ed25519
+                .map(|k| k.0.to_vec())
+                .unwrap_or_else(|| vec![0u8; 32]),
         };
         
         let mut devices = HashMap::new();
