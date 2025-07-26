@@ -59,7 +59,12 @@ jobs:
           pkg-config \
           libssl-dev \
           net-tools \
-          iproute2
+          iproute2 \
+          libgtk-3-dev \
+          libwebkit2gtk-4.1-dev \
+          libayatana-appindicator3-dev \
+          librsvg2-dev \
+          patchelf
     
     - name: Check available ports
       run: |
@@ -209,6 +214,11 @@ jobs:
           libssl-dev \
           net-tools \
           iproute2 \
+          libgtk-3-dev \
+          libwebkit2gtk-4.1-dev \
+          libayatana-appindicator3-dev \
+          librsvg2-dev \
+          patchelf \
           valgrind
     
     - name: Run comprehensive test suite

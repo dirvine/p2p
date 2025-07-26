@@ -61,7 +61,7 @@ notice = "warn"
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
-    #"RUSTSEC-0000-0000",
+    "RUSTSEC-2024-0413", # atk vulnerability - This is a transitive dependency from gtk/tauri that we can't control
 ]
 
 # This section is considered when running `cargo deny check licenses`
