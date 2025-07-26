@@ -185,7 +185,7 @@ fn benchmark_routing(c: &mut Criterion) {
         b.iter(|| {
             let node = NodeDescriptor {
                 id: NodeId { hash: rand::random() },
-                public_key: ed25519_dalek::PublicKey::from_bytes(&[0u8; 32]).unwrap(),
+                public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
                 addresses: vec!["127.0.0.1:8000".to_string()],
                 hyperbolic: None,
                 som_position: None,
@@ -246,7 +246,7 @@ fn benchmark_memory(c: &mut Criterion) {
         b.iter(|| {
             let node = NodeDescriptor {
                 id: NodeId { hash: [0u8; 32] },
-                public_key: ed25519_dalek::PublicKey::from_bytes(&[0u8; 32]).unwrap(),
+                public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
                 addresses: vec!["127.0.0.1:8000".to_string(); 10],
                 hyperbolic: Some(HyperbolicCoordinate { r: 0.5, theta: 1.0 }),
                 som_position: Some([0.1, 0.2, 0.3, 0.4]),

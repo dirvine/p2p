@@ -150,34 +150,7 @@ impl SignatureScheme {
     }
 }
 
-/// Combined public key set for multiple algorithms
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PublicKeySet {
-    pub ml_dsa: Option<Vec<u8>>,
-    pub ml_kem: Option<Vec<u8>>,
-    pub ed25519: Option<Vec<u8>>,
-    pub frost: Option<Vec<u8>>,
-}
-
-/// Combined private key set for multiple algorithms
-#[derive(Clone)]
-pub struct PrivateKeySet {
-    pub ml_dsa: Option<Vec<u8>>,
-    pub ml_kem: Option<Vec<u8>>,
-    pub ed25519: Option<Vec<u8>>,
-    pub frost_share: Option<Vec<u8>>,
-}
-
-impl fmt::Debug for PrivateKeySet {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PrivateKeySet")
-            .field("ml_dsa", &self.ml_dsa.as_ref().map(|_| "***"))
-            .field("ml_kem", &self.ml_kem.as_ref().map(|_| "***"))
-            .field("ed25519", &self.ed25519.as_ref().map(|_| "***"))
-            .field("frost_share", &self.frost_share.as_ref().map(|_| "***"))
-            .finish()
-    }
-}
+// Note: PublicKeySet and PrivateKeySet are defined in types.rs and re-exported
 
 /// Key pair containing both public and private keys
 pub struct KeyPair {
@@ -198,7 +171,7 @@ pub async fn generate_keypair(capabilities: &CryptoCapabilities) -> Result<KeyPa
         ml_dsa: None,
         ml_kem: None,
         ed25519: None,
-        frost_share: None,
+        frost: None,
     };
     
     // Generate ML-DSA keys if supported
@@ -227,8 +200,18 @@ pub async fn generate_keypair(capabilities: &CryptoCapabilities) -> Result<KeyPa
 
 /// Generate Ed25519 keypair (placeholder for actual implementation)
 fn generate_ed25519_keypair() -> Result<(Vec<u8>, Vec<u8>)> {
-    // This would use the actual ed25519 crate
-    Ok((vec![0; 32], vec![0; 64]))
+    use ed25519_dalek::SigningKey;
+    use rand::rngs::OsRng;
+    
+    let signing_key = SigningKey::generate(&mut OsRng);
+    let public_key = signing_key.verifying_key().to_bytes().to_vec();
+    
+    // Create 64-byte private key (signing key + public key)
+    let mut private_key = vec![0u8; 64];
+    private_key[..32].copy_from_slice(&signing_key.to_bytes());
+    private_key[32..].copy_from_slice(&public_key);
+    
+    Ok((public_key, private_key))
 }
 
 /// Algorithm negotiation for establishing connections

@@ -17,7 +17,7 @@
 //! system designed to prevent Sybil attacks.
 
 use anyhow::Result;
-use ed25519_dalek::Keypair;
+use ed25519_dalek::SigningKey;
 use p2p_foundation::security::*;
 use std::net::Ipv6Addr;
 use std::str::FromStr;
@@ -27,7 +27,7 @@ use std::time::Duration;
 #[tokio::test]
 async fn test_ipv6_node_id_generation() -> Result<()> {
     let mut csprng = rand::rngs::OsRng {};
-    let keypair = Keypair::generate(&mut csprng);
+    let keypair = SigningKey::generate(&mut csprng);
     let ipv6_addr = Ipv6Addr::from_str("2001:0db8:85a3:0000:0000:8a2e:0370:7334")?;
     
     // Generate node ID
@@ -52,7 +52,7 @@ async fn test_ipv6_node_id_generation() -> Result<()> {
 #[tokio::test]
 async fn test_node_id_verification() -> Result<()> {
     let mut csprng = rand::rngs::OsRng {};
-    let keypair = Keypair::generate(&mut csprng);
+    let keypair = SigningKey::generate(&mut csprng);
     let ipv6_addr = Ipv6Addr::from_str("2001:0db8:85a3:0000:0000:8a2e:0370:7334")?;
     
     // Generate valid node ID
@@ -93,7 +93,7 @@ async fn test_node_id_verification() -> Result<()> {
 #[tokio::test]
 async fn test_subnet_extraction() -> Result<()> {
     let mut csprng = rand::rngs::OsRng {};
-    let keypair = Keypair::generate(&mut csprng);
+    let keypair = SigningKey::generate(&mut csprng);
     let ipv6_addr = Ipv6Addr::from_str("2001:0db8:85a3:1234:5678:8a2e:0370:7334")?;
     
     let node_id = IPv6NodeID::generate(ipv6_addr, &keypair)?;
@@ -450,7 +450,7 @@ async fn test_node_id_generation_performance() -> Result<()> {
     use rand::rngs::OsRng;
     
     let mut csprng = OsRng{};
-    let keypair = Keypair::generate(&mut csprng);
+    let keypair = SigningKey::generate(&mut csprng);
     let ipv6_addr = Ipv6Addr::from_str("2001:0db8:85a3:0000:0000:8a2e:0370:7334")?;
     
     let iterations = 1000;
@@ -480,7 +480,7 @@ async fn test_node_id_verification_performance() -> Result<()> {
     use rand::rngs::OsRng;
     
     let mut csprng = OsRng{};
-    let keypair = Keypair::generate(&mut csprng);
+    let keypair = SigningKey::generate(&mut csprng);
     let ipv6_addr = Ipv6Addr::from_str("2001:0db8:85a3:0000:0000:8a2e:0370:7334")?;
     
     // Generate node IDs to verify

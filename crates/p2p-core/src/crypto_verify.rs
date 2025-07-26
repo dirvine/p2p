@@ -424,8 +424,7 @@ mod tests {
         for i in 0..5 {
             let (secret_key, public_key) = create_test_keypair();
             let message = format!("test message {}", i).into_bytes();
-            let expanded_key = ExpandedSecretKey::from(&secret_key);
-            let signature = expanded_key.sign(&message, &public_key);
+            let signature = secret_key.sign(&message);
             
             requests.push(BatchVerificationRequest {
                 message,

@@ -34,50 +34,39 @@ pub fn generate_keypair() -> Result<(Vec<u8>, Vec<u8>)> {
 /// Sign a message with ML-DSA private key (using Ed25519 for testing)
 pub fn sign(private_key: &[u8], message: &[u8]) -> Result<Vec<u8>> {
     // Use Ed25519 for ML-DSA implementation until real ML-DSA is available
-    use ed25519_dalek::{Keypair, Signer};
+    use ed25519_dalek::{SigningKey, Signer};
     
-    // If this is already a proper 64-byte keypair, use it directly
-    let keypair = if private_key.len() == 64 {
-        Keypair::from_bytes(private_key)
-            .map_err(|e| QuantumCryptoError::MlDsaError(format!("Invalid private key: {}", e)))?
+    // If this is already a proper 32-byte signing key, use it directly
+    let signing_key = if private_key.len() == 32 {
+        SigningKey::from_bytes(private_key.try_into()
+            .map_err(|_| QuantumCryptoError::MlDsaError("Invalid key length".to_string()))?)
     } else {
-        // For shorter keys, create a deterministic keypair from the key data
+        // For other key lengths, create a deterministic signing key from the key data
         use sha2::{Sha256, Digest};
         let mut hasher = Sha256::new();
         hasher.update(private_key);
-        // Add padding to get 64 bytes
-        hasher.update(&[0u8; 32]);
-        let first_hash = hasher.finalize();
+        hasher.update(&[0u8; 32]); // Add padding for deterministic derivation
+        let key_bytes = hasher.finalize();
         
-        // Create second hash with different salt
-        let mut hasher2 = Sha256::new();
-        hasher2.update(private_key);
-        hasher2.update(&[1u8; 32]); // Different padding for second half
-        let second_hash = hasher2.finalize();
-        
-        let mut extended_key = [0u8; 64];
-        extended_key[..32].copy_from_slice(&first_hash);
-        extended_key[32..].copy_from_slice(&second_hash);
-        
-        Keypair::from_bytes(&extended_key)
-            .map_err(|e| QuantumCryptoError::MlDsaError(format!("Invalid private key: {}", e)))?
+        SigningKey::from_bytes(&key_bytes.into())
     };
     
-    let signature = keypair.sign(message);
+    let signature = signing_key.sign(message);
     Ok(signature.to_bytes().to_vec())
 }
 
 /// Verify ML-DSA signature (using Ed25519 for testing)
 pub fn verify(public_key: &[u8], message: &[u8], signature: &[u8]) -> Result<()> {
-    use ed25519_dalek::{PublicKey, Signature, Verifier};
+    use ed25519_dalek::{VerifyingKey, Signature, Verifier};
     
-    let public_key = PublicKey::from_bytes(public_key)
+    let verifying_key = VerifyingKey::from_bytes(public_key.try_into()
+        .map_err(|_| QuantumCryptoError::MlDsaError("Invalid public key length".to_string()))?)
         .map_err(|e| QuantumCryptoError::MlDsaError(format!("Invalid public key: {}", e)))?;
     
     let signature = Signature::from_bytes(signature)
         .map_err(|e| QuantumCryptoError::MlDsaError(format!("Invalid signature: {}", e)))?;
     
-    public_key.verify(message, &signature)
+    verifying_key.verify(message, &signature)
         .map_err(|_| QuantumCryptoError::MlDsaError("Signature verification failed".to_string()))?;
     
     Ok(())

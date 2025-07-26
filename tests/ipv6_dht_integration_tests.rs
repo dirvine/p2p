@@ -17,7 +17,7 @@
 //! DHT operations, S/Kademlia security extensions, and IP diversity enforcement.
 
 use anyhow::Result;
-use ed25519_dalek::Keypair;
+use ed25519_dalek::SigningKey;
 use p2p_foundation::dht::{DHT, DHTConfig, Key};
 use p2p_foundation::dht::skademlia::SKademliaConfig;
 use p2p_foundation::dht::ipv6_identity::{IPv6DHTConfig, IPv6DHTIdentityManager};
@@ -29,7 +29,7 @@ use std::time::Duration;
 /// Helper function to create test IPv6 identity
 fn create_test_ipv6_identity(ipv6_addr: Ipv6Addr) -> Result<IPv6NodeID> {
     let mut csprng = rand::rngs::OsRng {};
-    let keypair = Keypair::generate(&mut csprng);
+    let keypair = SigningKey::generate(&mut csprng);
     IPv6NodeID::generate(ipv6_addr, &keypair)
 }
 

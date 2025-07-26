@@ -17,7 +17,7 @@
 //! including edge cases, attack scenarios, performance, and integration testing.
 
 use anyhow::Result;
-use ed25519_dalek::Keypair;
+use ed25519_dalek::SigningKey;
 use p2p_foundation::security::*;
 use std::collections::HashSet;
 use std::net::Ipv6Addr;
@@ -28,7 +28,7 @@ use std::time::Duration;
 #[tokio::test]
 async fn test_ipv6_node_id_generation_comprehensive() -> Result<()> {
     let mut csprng = rand::rngs::OsRng {};
-    let keypair = Keypair::generate(&mut csprng);
+    let keypair = SigningKey::generate(&mut csprng);
     
     // Test with various IPv6 address formats
     let test_addresses = [
@@ -68,7 +68,7 @@ async fn test_ipv6_node_id_generation_comprehensive() -> Result<()> {
 #[tokio::test]
 async fn test_node_id_verification_edge_cases() -> Result<()> {
     let mut csprng = rand::rngs::OsRng {};
-    let keypair = Keypair::generate(&mut csprng);
+    let keypair = SigningKey::generate(&mut csprng);
     let ipv6_addr = Ipv6Addr::from_str("2001:0db8:85a3:1234:5678:8a2e:0370:7334")?;
     
     let node_id = IPv6NodeID::generate(ipv6_addr, &keypair)?;
@@ -450,7 +450,7 @@ async fn test_performance_benchmarks() -> Result<()> {
     
     // Test node ID generation performance
     let mut csprng = rand::rngs::OsRng {};
-    let keypair = Keypair::generate(&mut csprng);
+    let keypair = SigningKey::generate(&mut csprng);
     let ipv6_addr = Ipv6Addr::from_str("2001:0db8:85a3:1234:5678:8a2e:0370:7334")?;
     
     let iterations = 100;
@@ -580,7 +580,7 @@ async fn test_concurrent_operations() -> Result<()> {
 #[tokio::test]
 async fn test_serialization() -> Result<()> {
     let mut csprng = rand::rngs::OsRng {};
-    let keypair = Keypair::generate(&mut csprng);
+    let keypair = SigningKey::generate(&mut csprng);
     let ipv6_addr = Ipv6Addr::from_str("2001:0db8:85a3:1234:5678:8a2e:0370:7334")?;
     
     let original_node_id = IPv6NodeID::generate(ipv6_addr, &keypair)?;
@@ -661,7 +661,7 @@ async fn test_memory_management() -> Result<()> {
 #[tokio::test]
 async fn test_time_edge_cases() -> Result<()> {
     let mut csprng = rand::rngs::OsRng {};
-    let keypair = Keypair::generate(&mut csprng);
+    let keypair = SigningKey::generate(&mut csprng);
     let ipv6_addr = Ipv6Addr::from_str("2001:0db8:85a3:1234:5678:8a2e:0370:7334")?;
     
     // Generate multiple node IDs rapidly to test timestamp uniqueness

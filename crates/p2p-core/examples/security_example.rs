@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
     // Example: Validate a node join request
     let new_node = NodeDescriptor {
         id: NodeId { hash: [1u8; 32] },
-        public_key: ed25519_dalek::PublicKey::from_bytes(&[0u8; 32]).unwrap(),
+        public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
         addresses: vec!["192.168.1.10:8000".to_string()],
         hyperbolic: None,
         som_position: None,

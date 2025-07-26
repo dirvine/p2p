@@ -457,7 +457,7 @@ mod tests {
         
         let node = NodeDescriptor {
             id: node_id.clone(),
-            public_key: ed25519_dalek::PublicKey::from_bytes(&[0u8; 32]).unwrap(),
+            public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
             addresses: vec!["127.0.0.1:8080".to_string()],
             hyperbolic: None,
             som_position: None,
@@ -502,7 +502,7 @@ mod tests {
         
         let node = NodeDescriptor {
             id: node_id,
-            public_key: ed25519_dalek::PublicKey::from_bytes(&[0u8; 32]).unwrap(),
+            public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
             addresses: vec![],
             hyperbolic: None,
             som_position: None,
@@ -542,7 +542,7 @@ mod tests {
             
             let node = NodeDescriptor {
                 id: node_id,
-                public_key: ed25519_dalek::PublicKey::from_bytes(&[0u8; 32]).unwrap(),
+                public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
                 addresses: vec![],
                 hyperbolic: None,
                 som_position: None,
@@ -584,7 +584,7 @@ mod tests {
         for (id, storage) in [(local_id.clone(), 100), (target_id.clone(), 900)] {
             let node = NodeDescriptor {
                 id: id.clone(),
-                public_key: ed25519_dalek::PublicKey::from_bytes(&[0u8; 32]).unwrap(),
+                public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
                 addresses: vec![],
                 hyperbolic: None,
                 som_position: None,

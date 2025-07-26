@@ -202,7 +202,7 @@ impl AdaptiveDHT {
                 
                 NodeDescriptor {
                     id: node_id,
-                    public_key: ed25519_dalek::PublicKey::from_bytes(&[0u8; 32]).unwrap(), // TODO: Get real key
+                    public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(), // TODO: Get real key
                     addresses: node.addresses.iter().map(|a| a.to_string()).collect(),
                     hyperbolic: None,
                     som_position: None,

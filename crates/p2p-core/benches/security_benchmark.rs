@@ -20,7 +20,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, black_b
 use p2p_foundation::security::{
     IPv6NodeID, IPDiversityEnforcer, IPDiversityConfig, ReputationManager
 };
-use ed25519_dalek::Keypair;
+use ed25519_dalek::SigningKey;
 use std::net::Ipv6Addr;
 use std::time::Duration;
 
@@ -30,7 +30,7 @@ fn ipv6_identity_benchmarks(c: &mut Criterion) {
     
     // Create test data
     let mut csprng = rand::rngs::OsRng {};
-    let keypair = Keypair::generate(&mut csprng);
+    let keypair = SigningKey::generate(&mut csprng);
     let ipv6_addrs = vec![
         "2001:db8:85a3::8a2e:370:7334".parse::<Ipv6Addr>().unwrap(),
         "2001:db8:85a3:1234:5678:8a2e:370:7334".parse().unwrap(),
@@ -65,7 +65,7 @@ fn ipv6_identity_benchmarks(c: &mut Criterion) {
     });
     
     // Benchmark verification with wrong key (should fail)
-    let wrong_keypair = Keypair::generate(&mut csprng);
+    let wrong_keypair = SigningKey::generate(&mut csprng);
     group.bench_function("node_id_verification_invalid", |b| {
         b.iter(|| {
             let result = node_id.verify();
@@ -312,7 +312,7 @@ fn concurrent_security_benchmarks(c: &mut Criterion) {
                         .map(|i| {
                             thread::spawn(move || {
                                 let mut csprng = rand::rngs::OsRng {};
-                                let keypair = Keypair::generate(&mut csprng);
+                                let keypair = SigningKey::generate(&mut csprng);
                                 let addr: Ipv6Addr = format!("2001:db8:85a3::{}:7334", i).parse().unwrap();
                                 let node_id = IPv6NodeID::generate(addr, &keypair).unwrap();
                                 black_box(node_id)
@@ -396,7 +396,7 @@ fn security_crypto_benchmarks(c: &mut Criterion) {
     let mut group = c.benchmark_group("security_crypto");
     
     let mut csprng = rand::rngs::OsRng {};
-    let keypair = Keypair::generate(&mut csprng);
+    let keypair = SigningKey::generate(&mut csprng);
     
     // Benchmark IPv6 address hash computation (used in node ID generation)
     let ipv6_addresses = vec![

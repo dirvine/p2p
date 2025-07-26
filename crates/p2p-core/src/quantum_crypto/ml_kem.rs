@@ -33,8 +33,8 @@ pub fn generate_keypair() -> Result<(Vec<u8>, Vec<u8>)> {
     let mut ml_kem_private = vec![0u8; 2400]; // ML-KEM-768 private key size
     
     // Embed Ed25519 keys in the ML-KEM format with proper structure
-    ml_kem_public[0..32].copy_from_slice(&keypair.public.to_bytes());
-    ml_kem_private[0..64].copy_from_slice(&keypair.to_bytes());
+    ml_kem_public[0..32].copy_from_slice(&keypair.verifying_key().to_bytes());
+    ml_kem_private[0..32].copy_from_slice(&keypair.to_bytes());
     
     // Add format identifier for validation
     ml_kem_public[32..36].copy_from_slice(b"E25K"); // Format marker
@@ -82,17 +82,18 @@ pub fn encapsulate(public_key: &[u8]) -> Result<(Vec<u8>, SharedSecret)> {
     }
     
     // Extract Ed25519 public key
-    let their_public = PublicKey::from_bytes(&public_key[0..32])
+    let their_public = VerifyingKey::from_bytes(&public_key[0..32].try_into()
+        .map_err(|_| QuantumCryptoError::MlKemError("Invalid public key length".to_string()))?)
         .map_err(|e| QuantumCryptoError::MlKemError(format!("Invalid Ed25519 public key: {}", e)))?;
     
     // Generate ephemeral keypair for key exchange
-    let our_keypair = Keypair::generate(&mut OsRng);
+    let our_signing_key = SigningKey::generate(&mut OsRng);
     
     // Create shared secret using deterministic key derivation
     let mut hasher = Sha256::new();
     hasher.update(&their_public.to_bytes());
-    hasher.update(&our_keypair.public.to_bytes());
-    hasher.update(&our_keypair.secret.to_bytes());
+    hasher.update(&our_signing_key.verifying_key().to_bytes());
+    hasher.update(&our_signing_key.to_bytes());
     hasher.update(b"ML-KEM-768-ENCAPSULATE");
     let shared_secret_round1 = hasher.finalize();
     
@@ -106,7 +107,7 @@ pub fn encapsulate(public_key: &[u8]) -> Result<(Vec<u8>, SharedSecret)> {
     
     // Create ciphertext (our ephemeral public key + padding)
     let mut ciphertext = vec![0u8; 1088]; // ML-KEM-768 ciphertext size
-    ciphertext[0..32].copy_from_slice(&our_keypair.public.to_bytes());
+    ciphertext[0..32].copy_from_slice(&our_signing_key.verifying_key().to_bytes());
     ciphertext[32..36].copy_from_slice(b"E25C"); // Ciphertext marker
     
     // Add ciphertext integrity hash

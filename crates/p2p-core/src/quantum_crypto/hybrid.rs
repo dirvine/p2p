@@ -16,7 +16,7 @@
 use super::{QuantumCryptoError, Result};
 use crate::quantum_crypto::types::*;
 use crate::quantum_crypto::{ml_kem, ml_dsa};
-use ed25519_dalek::{Keypair as Ed25519Keypair, PublicKey, Signer, Verifier};
+use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
 use rand_core::OsRng;
 use sha2::Sha256;
 
@@ -106,8 +106,8 @@ pub struct HybridSigner {
     /// ML-DSA signing state
     pub ml_dsa_state: ml_dsa::MlDsaState,
     
-    /// Ed25519 keypair
-    pub ed25519_keypair: Option<Ed25519Keypair>,
+    /// Ed25519 signing key
+    pub ed25519_signing_key: Option<SigningKey>,
 }
 
 impl HybridSigner {
@@ -115,7 +115,7 @@ impl HybridSigner {
     pub fn new() -> Self {
         Self {
             ml_dsa_state: ml_dsa::MlDsaState::new(),
-            ed25519_keypair: None,
+            ed25519_signing_key: None,
         }
     }
     
@@ -126,16 +126,16 @@ impl HybridSigner {
         
         // Generate Ed25519 keypair
         let mut csprng = OsRng;
-        let ed25519_keypair = Ed25519Keypair::generate(&mut csprng);
-        let ed25519_public = ed25519_keypair.public.to_bytes();
-        let ed25519_secret = ed25519_keypair.secret.to_bytes();
+        let ed25519_signing_key = SigningKey::generate(&mut csprng);
+        let ed25519_public = ed25519_signing_key.verifying_key().to_bytes();
+        let ed25519_secret = ed25519_signing_key.to_bytes();
         
         // Combine secret and public key for Ed25519 (64 bytes total)
         let mut ed25519_private = [0u8; 64];
         ed25519_private[..32].copy_from_slice(&ed25519_secret);
         ed25519_private[32..].copy_from_slice(&ed25519_public);
         
-        self.ed25519_keypair = Some(ed25519_keypair);
+        self.ed25519_signing_key = Some(ed25519_signing_key);
         
         let public_keys = PublicKeySet {
             ml_dsa: Some(MlDsaPublicKey(ml_dsa_public.0)),
@@ -160,12 +160,12 @@ impl HybridSigner {
         let ml_dsa_sig = self.ml_dsa_state.sign_message(message)?;
         
         // Ed25519 signature
-        let ed25519_keypair = self.ed25519_keypair.as_ref()
+        let ed25519_signing_key = self.ed25519_signing_key.as_ref()
             .ok_or_else(|| QuantumCryptoError::InvalidKeyError(
-                "No Ed25519 keypair available".to_string()
+                "No Ed25519 signing key available".to_string()
             ))?;
         
-        let ed25519_sig = ed25519_keypair.sign(message);
+        let ed25519_sig = ed25519_signing_key.sign(message);
         
         Ok(HybridSignature {
             classical: Ed25519Signature(ed25519_sig.to_bytes()),
@@ -190,13 +190,13 @@ impl HybridSigner {
         
         // Verify Ed25519 signature
         if let Some(ed25519_key) = &public_keys.ed25519 {
-            let public_key = PublicKey::from_bytes(&ed25519_key.0)
+            let verifying_key = VerifyingKey::from_bytes(&ed25519_key.0)
                 .map_err(|e| QuantumCryptoError::InvalidKeyError(e.to_string()))?;
             
-            let signature = ed25519_dalek::Signature::from_bytes(&signature.classical.0)
+            let signature = Signature::from_bytes(&signature.classical.0)
                 .map_err(|e| QuantumCryptoError::InvalidKeyError(e.to_string()))?;
             
-            public_key.verify(message, &signature)
+            verifying_key.verify(message, &signature)
                 .map_err(|_| QuantumCryptoError::SignatureVerificationFailed)?;
         } else {
             return Err(QuantumCryptoError::InvalidKeyError(
@@ -260,12 +260,12 @@ pub mod migration {
             })
         } else {
             // Classical only
-            let ed25519_keypair = signer.ed25519_keypair.as_ref()
+            let ed25519_signing_key = signer.ed25519_signing_key.as_ref()
                 .ok_or_else(|| QuantumCryptoError::InvalidKeyError(
-                    "No Ed25519 keypair".to_string()
+                    "No Ed25519 signing key".to_string()
                 ))?;
             
-            let signature = ed25519_keypair.sign(message);
+            let signature = ed25519_signing_key.sign(message);
             Ok(crate::quantum_crypto::SignatureScheme::Classical(
                 signature.to_bytes().to_vec()
             ))

@@ -1211,7 +1211,7 @@ mod tests {
         // Test node join validation
         let node = NodeDescriptor {
             id: NodeId { hash: [3u8; 32] },
-            public_key: ed25519_dalek::PublicKey::from_bytes(&[0u8; 32]).unwrap(),
+            public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
             addresses: vec!["127.0.0.1:4001".to_string()],
             hyperbolic: None,
             som_position: None,

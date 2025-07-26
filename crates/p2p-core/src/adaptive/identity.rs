@@ -17,7 +17,7 @@
 //! as specified in the network design documentation.
 
 use super::*;
-use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature, Signer, Verifier};
+use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 use std::fmt;
@@ -28,8 +28,8 @@ const DEFAULT_POW_DIFFICULTY: u8 = 16; // Number of leading zero bits required
 
 /// Node identity with cryptographic keys and proof-of-work
 pub struct NodeIdentity {
-    /// Ed25519 keypair
-    keypair: Keypair,
+    /// Ed25519 signing key
+    signing_key: SigningKey,
     /// Node ID derived from public key
     node_id: NodeId,
     /// Proof of work for Sybil resistance
@@ -64,32 +64,32 @@ impl NodeIdentity {
     /// Generate a new node identity with proof-of-work
     pub fn generate() -> Result<Self> {
         let mut csprng = rand::thread_rng();
-        let keypair = Keypair::generate(&mut csprng);
+        let signing_key = SigningKey::generate(&mut csprng);
         
-        let node_id = Self::compute_node_id(&keypair.public);
+        let node_id = Self::compute_node_id(&signing_key.verifying_key());
         let proof_of_work = Self::solve_pow_puzzle(&node_id, DEFAULT_POW_DIFFICULTY)?;
         
         Ok(Self {
-            keypair,
+            signing_key,
             node_id,
             proof_of_work,
         })
     }
     
-    /// Create identity from existing keypair (requires proof-of-work)
-    pub fn from_keypair(keypair: Keypair) -> Result<Self> {
-        let node_id = Self::compute_node_id(&keypair.public);
+    /// Create identity from existing signing key (requires proof-of-work)
+    pub fn from_signing_key(signing_key: SigningKey) -> Result<Self> {
+        let node_id = Self::compute_node_id(&signing_key.verifying_key());
         let proof_of_work = Self::solve_pow_puzzle(&node_id, DEFAULT_POW_DIFFICULTY)?;
         
         Ok(Self {
-            keypair,
+            signing_key,
             node_id,
             proof_of_work,
         })
     }
     
     /// Compute node ID from public key (SHA-256 hash)
-    pub fn compute_node_id(public_key: &PublicKey) -> NodeId {
+    pub fn compute_node_id(public_key: &VerifyingKey) -> NodeId {
         let mut hasher = Sha256::new();
         hasher.update(public_key.as_bytes());
         let result = hasher.finalize();
@@ -205,7 +205,7 @@ impl NodeIdentity {
         bytes_to_sign.extend_from_slice(&self.node_id.hash);
         bytes_to_sign.extend_from_slice(&timestamp.to_le_bytes());
         
-        let signature = self.keypair.sign(&bytes_to_sign);
+        let signature = self.signing_key.sign(&bytes_to_sign);
         
         Ok(SignedMessage {
             payload: message.clone(),
@@ -221,8 +221,8 @@ impl NodeIdentity {
     }
     
     /// Get public key
-    pub fn public_key(&self) -> &PublicKey {
-        &self.keypair.public
+    pub fn public_key(&self) -> VerifyingKey {
+        self.signing_key.verifying_key()
     }
     
     /// Get proof of work
@@ -233,7 +233,7 @@ impl NodeIdentity {
 
 impl<T: Serialize + for<'de> Deserialize<'de>> SignedMessage<T> {
     /// Verify message signature
-    pub fn verify(&self, public_key: &PublicKey) -> Result<bool> {
+    pub fn verify(&self, public_key: &VerifyingKey) -> Result<bool> {
         let payload_bytes = bincode::serialize(&self.payload)
             .map_err(AdaptiveNetworkError::Serialization)?;
         
@@ -277,8 +277,8 @@ impl StoredIdentity {
     /// Create from NodeIdentity
     pub fn from_identity(identity: &NodeIdentity) -> Self {
         Self {
-            secret_key: identity.keypair.secret.to_bytes().to_vec(),
-            public_key: identity.keypair.public.to_bytes().to_vec(),
+            secret_key: identity.signing_key.to_bytes().to_vec(),
+            public_key: identity.signing_key.verifying_key().to_bytes().to_vec(),
             node_id: identity.node_id.clone(),
             proof_of_work: identity.proof_of_work.clone(),
         }
@@ -286,16 +286,20 @@ impl StoredIdentity {
     
     /// Restore to NodeIdentity
     pub fn to_identity(&self) -> Result<NodeIdentity> {
-        let secret_key = SecretKey::from_bytes(&self.secret_key)
+        let signing_key = SigningKey::from_bytes(&self.secret_key.try_into()
+            .map_err(|_| AdaptiveNetworkError::Other("Invalid secret key length".to_string()))?)
             .map_err(|e| AdaptiveNetworkError::Other(format!("Invalid secret key: {}", e)))?;
         
-        let public_key = PublicKey::from_bytes(&self.public_key)
+        let public_key = VerifyingKey::from_bytes(&self.public_key.try_into()
+            .map_err(|_| AdaptiveNetworkError::Other("Invalid public key length".to_string()))?)
             .map_err(|e| AdaptiveNetworkError::Other(format!("Invalid public key: {}", e)))?;
         
-        let keypair = Keypair {
-            secret: secret_key,
-            public: public_key,
-        };
+        // Verify the stored public key matches the signing key
+        if signing_key.verifying_key().to_bytes() != public_key.to_bytes() {
+            return Err(AdaptiveNetworkError::Other(
+                "Public key doesn't match signing key".to_string()
+            ));
+        }
         
         // Verify the stored node ID matches
         let computed_id = NodeIdentity::compute_node_id(&public_key);
@@ -313,7 +317,7 @@ impl StoredIdentity {
         }
         
         Ok(NodeIdentity {
-            keypair,
+            signing_key,
             node_id: self.node_id.clone(),
             proof_of_work: self.proof_of_work.clone(),
         })
@@ -329,7 +333,7 @@ mod tests {
         let identity = NodeIdentity::generate().unwrap();
         
         // Verify node ID matches public key
-        let computed_id = NodeIdentity::compute_node_id(identity.public_key());
+        let computed_id = NodeIdentity::compute_node_id(&identity.public_key());
         assert_eq!(&computed_id, identity.node_id());
         
         // Verify proof of work
@@ -358,11 +362,11 @@ mod tests {
         let signed = identity.sign_message(&message).unwrap();
         
         // Verify with correct public key
-        assert!(signed.verify(identity.public_key()).unwrap());
+        assert!(signed.verify(&identity.public_key()).unwrap());
         
         // Verify with wrong public key should fail
         let other_identity = NodeIdentity::generate().unwrap();
-        assert!(!signed.verify(other_identity.public_key()).unwrap());
+        assert!(!signed.verify(&other_identity.public_key()).unwrap());
     }
     
     #[test]
@@ -393,8 +397,8 @@ mod tests {
         // Verify they match
         assert_eq!(identity.node_id(), restored.node_id());
         assert_eq!(
-            identity.public_key().as_bytes(),
-            restored.public_key().as_bytes()
+            identity.public_key().to_bytes(),
+            restored.public_key().to_bytes()
         );
     }
 }

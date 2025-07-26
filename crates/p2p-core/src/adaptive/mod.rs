@@ -115,7 +115,7 @@ pub type NodeId = crate::peer_record::UserId;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeDescriptor {
     pub id: NodeId,
-    pub public_key: ed25519_dalek::PublicKey,
+    pub public_key: ed25519_dalek::VerifyingKey,
     pub addresses: Vec<String>,
     pub hyperbolic: Option<HyperbolicCoordinate>,
     pub som_position: Option<[f64; 4]>,
