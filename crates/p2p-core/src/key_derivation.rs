@@ -31,7 +31,7 @@
 
 use crate::{P2PError, Result};
 use crate::secure_memory::SecureMemory;
-use ed25519_dalek::{PublicKey, SecretKey};
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use hkdf::Hkdf;
 use sha2::Sha256;
 use std::collections::HashMap;
@@ -72,10 +72,10 @@ pub struct DerivationPath {
 
 /// Derived key material with metadata
 pub struct DerivedKey {
-    /// Ed25519 secret key
-    pub secret_key: SecretKey,
-    /// Ed25519 public key
-    pub public_key: PublicKey,
+    /// Ed25519 signing key
+    pub secret_key: SigningKey,
+    /// Ed25519 verifying key
+    pub public_key: VerifyingKey,
     /// X25519 secret key (for key exchange)
     pub x25519_secret: [u8; 32],
     /// X25519 public key (for key exchange)
@@ -91,8 +91,8 @@ pub struct DerivedKey {
 impl Clone for DerivedKey {
     fn clone(&self) -> Self {
         // Create new Ed25519 key from bytes
-        let secret_key = SecretKey::from_bytes(self.secret_key.as_bytes()).unwrap();
-        let public_key = PublicKey::from_bytes(self.public_key.as_bytes()).unwrap();
+        let signing_key = SigningKey::from_bytes(self.secret_key.as_bytes());
+        let verifying_key = VerifyingKey::from_bytes(self.public_key.as_bytes()).unwrap();
         
         Self {
             secret_key,
@@ -453,9 +453,9 @@ impl HierarchicalKeyDerivation {
         }
         
         // Generate Ed25519 key pair
-        let secret_key = SecretKey::from_bytes(&current_key[..32])
-            .map_err(|_| P2PError::Cryptography("Invalid Ed25519 secret key".to_string()))?;
-        let public_key = PublicKey::from(&secret_key);
+        let signing_key = SigningKey::from_bytes(&current_key[..32].try_into()
+            .map_err(|_| P2PError::Cryptography("Invalid Ed25519 secret key length".to_string()))?);
+        let verifying_key = signing_key.verifying_key();
         
         // Generate X25519 key pair for key exchange
         let x25519_secret: [u8; 32] = current_key[..32].try_into()
@@ -467,8 +467,8 @@ impl HierarchicalKeyDerivation {
         current_chaincode.zeroize();
         
         Ok(DerivedKey {
-            secret_key,
-            public_key,
+            secret_key: signing_key,
+            public_key: verifying_key,
             x25519_secret,
             x25519_public,
             path: path.clone(),
@@ -492,9 +492,10 @@ impl HierarchicalKeyDerivation {
             data.extend_from_slice(parent_key);
         } else {
             // Non-hardened derivation
-            let public_key = PublicKey::from(&SecretKey::from_bytes(&parent_key[..32])
-                .map_err(|_| P2PError::Cryptography("Invalid parent key".to_string()))?);
-            data.extend_from_slice(public_key.as_bytes());
+            let signing_key = SigningKey::from_bytes(&parent_key[..32].try_into()
+                .map_err(|_| P2PError::Cryptography("Invalid parent key length".to_string()))?);
+            let verifying_key = signing_key.verifying_key();
+            data.extend_from_slice(verifying_key.as_bytes());
         }
         
         data.extend_from_slice(&index.to_be_bytes());
@@ -581,8 +582,8 @@ impl DerivedKey {
     
     /// Get Ed25519 key pair
     pub fn ed25519_keypair(&self) -> (SecretKey, PublicKey) {
-        let secret_key = SecretKey::from_bytes(self.secret_key.as_bytes()).unwrap();
-        let public_key = PublicKey::from_bytes(self.public_key.as_bytes()).unwrap();
+        let signing_key = SigningKey::from_bytes(self.secret_key.as_bytes());
+        let verifying_key = VerifyingKey::from_bytes(self.public_key.as_bytes()).unwrap();
         (secret_key, public_key)
     }
     

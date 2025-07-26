@@ -33,7 +33,7 @@
 
 use crate::{P2PError, Result};
 use crate::peer_record::PeerDHTRecord;
-use ed25519_dalek::{PublicKey, Signature, Verifier};
+use ed25519_dalek::{VerifyingKey, Signature, Verifier};
 use sha2::Digest;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -60,7 +60,7 @@ pub struct EnhancedSignatureVerifier {
 #[derive(Clone)]
 struct CachedVerificationKey {
     /// The verifying key
-    key: PublicKey,
+    key: VerifyingKey,
     /// Precomputed point for batch verification
     precomputed_point: Option<Vec<u8>>, // Placeholder for actual precomputed data
     /// Last access timestamp
@@ -93,7 +93,7 @@ pub struct BatchVerificationRequest {
     /// Signature to verify
     pub signature: Signature,
     /// Public key for verification
-    pub public_key: PublicKey,
+    pub public_key: VerifyingKey,
     /// Optional context for error reporting
     pub context: Option<String>,
 }
@@ -209,7 +209,7 @@ impl EnhancedSignatureVerifier {
     }
 
     /// Get or create a cached verification key
-    fn get_or_create_cached_key(&mut self, public_key: &PublicKey) -> Result<CachedVerificationKey> {
+    fn get_or_create_cached_key(&mut self, public_key: &VerifyingKey) -> Result<CachedVerificationKey> {
         let key_bytes = public_key.as_bytes();
         
         // Check cache first
@@ -241,7 +241,7 @@ impl EnhancedSignatureVerifier {
     }
 
     /// Create a verifying key with enhanced validation
-    fn create_verifying_key(&self, public_key: &PublicKey) -> Result<PublicKey> {
+    fn create_verifying_key(&self, public_key: &VerifyingKey) -> Result<VerifyingKey> {
         // Validate the public key is on the Ed25519 curve
         let key_bytes = public_key.as_bytes();
         
@@ -273,7 +273,7 @@ impl EnhancedSignatureVerifier {
     /// Perform constant-time signature verification
     fn verify_signature_constant_time(
         &self,
-        verifying_key: &PublicKey,
+        verifying_key: &VerifyingKey,
         message: &[u8],
         signature: &Signature,
     ) -> Result<()> {
@@ -361,19 +361,19 @@ mod tests {
     use super::*;
     use crate::peer_record::{PeerDHTRecord, UserId, PeerEndpoint, EndpointId, NatType};
     use crate::NetworkAddress;
-    use ed25519_dalek::{ExpandedSecretKey, SecretKey, PublicKey};
+    use ed25519_dalek::{SigningKey, VerifyingKey, Signer};
     use rand::rngs::OsRng;
     use std::str::FromStr;
 
-    fn create_test_keypair() -> (SecretKey, PublicKey) {
+    fn create_test_keypair() -> (SigningKey, VerifyingKey) {
         let mut csprng = OsRng {};
-        let secret_key = SecretKey::generate(&mut csprng);
-        let public_key = PublicKey::from(&secret_key);
-        (secret_key, public_key)
+        let signing_key = SigningKey::generate(&mut csprng);
+        let verifying_key = signing_key.verifying_key().clone();
+        (signing_key, verifying_key)
     }
 
-    fn create_test_record(secret_key: &SecretKey, public_key: &PublicKey) -> PeerDHTRecord {
-        let user_id = UserId::from_public_key(public_key);
+    fn create_test_record(signing_key: &SigningKey, verifying_key: &VerifyingKey) -> PeerDHTRecord {
+        let user_id = UserId::from_public_key(verifying_key);
         let endpoint = PeerEndpoint::new(
             EndpointId::new(),
             NetworkAddress::from_str("192.168.1.1:8080").unwrap(),
@@ -384,14 +384,14 @@ mod tests {
         
         let mut record = PeerDHTRecord::new(
             user_id,
-            *public_key,
+            *verifying_key,
             1,
             Some("test-user".to_string()),
             vec![endpoint],
             300,
         ).unwrap();
         
-        record.sign(secret_key).unwrap();
+        record.sign(signing_key).unwrap();
         record
     }
 

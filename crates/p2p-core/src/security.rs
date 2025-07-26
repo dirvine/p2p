@@ -126,7 +126,7 @@ impl IPv6NodeID {
         
         let timestamp = SystemTime::now();
         let timestamp_secs = timestamp.duration_since(UNIX_EPOCH)?.as_secs();
-        let public_key = keypair.public.to_bytes().to_vec();
+        let public_key = keypair.verifying_key().to_bytes().to_vec();
         
         // Generate node ID: SHA256(ipv6_address || public_key || salt || timestamp)
         let mut hasher = Sha256::new();
@@ -180,7 +180,7 @@ impl IPv6NodeID {
         
         let mut pk_bytes = [0u8; 32];
         pk_bytes.copy_from_slice(&self.public_key);
-        let public_key = PublicKey::from_bytes(&pk_bytes)
+        let public_key = VerifyingKey::from_bytes(&pk_bytes)
             .map_err(|e| anyhow!("Invalid public key: {}", e))?;
             
         let mut sig_bytes = [0u8; 64];
@@ -549,17 +549,13 @@ pub mod security_types {
         /// Generate a new key pair
         pub fn generate() -> Self {
             // Use ant-quic's key generation
-            let (secret_key, public_key) = generate_ed25519_keypair();
+            let (secret_key, _public_key) = generate_ed25519_keypair();
             
-            // Convert to ed25519-dalek v1 format
+            // Convert to ed25519-dalek v2 format
             let secret_bytes = secret_key.to_bytes();
-            let public_bytes = public_key.to_bytes();
-            let mut keypair_bytes = [0u8; 64];
-            keypair_bytes[..32].copy_from_slice(&secret_bytes);
-            keypair_bytes[32..].copy_from_slice(&public_bytes);
-            let keypair = SigningKey::from_bytes(&keypair_bytes).expect("Valid keypair bytes");
+            let signing_key = SigningKey::from_bytes(&secret_bytes);
             
-            KeyPair { inner: keypair }
+            KeyPair { inner: signing_key }
         }
         
         /// Get the inner Ed25519 keypair
@@ -569,7 +565,7 @@ pub mod security_types {
         
         /// Get public key bytes
         pub fn public_key_bytes(&self) -> [u8; 32] {
-            self.inner.public.to_bytes()
+            self.inner.verifying_key().to_bytes()
         }
         
         /// Sign a message

@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use ed25519_dalek::{ExpandedSecretKey, PublicKey, SecretKey, Signature, Verifier};
+use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
 use blake3::Hash;
 use uuid::Uuid;
 
@@ -60,7 +60,7 @@ pub struct UserId {
 
 impl UserId {
     /// Create a new UserId from a public key
-    pub fn from_public_key(public_key: &PublicKey) -> Self {
+    pub fn from_public_key(public_key: &VerifyingKey) -> Self {
         let hash = blake3::hash(public_key.as_bytes());
         Self {
             hash: hash.into(),
@@ -232,7 +232,7 @@ pub struct PeerDHTRecord {
     pub user_id: UserId,
     
     /// User's public key for signature verification
-    pub public_key: PublicKey,
+    pub public_key: VerifyingKey,
     
     /// Monotonic counter to prevent replay attacks
     pub sequence_number: u64,
@@ -260,7 +260,7 @@ impl PeerDHTRecord {
     /// Create a new unsigned DHT record
     pub fn new(
         user_id: UserId,
-        public_key: PublicKey,
+        public_key: VerifyingKey,
         sequence_number: u64,
         name: Option<String>,
         endpoints: Vec<PeerEndpoint>,
@@ -272,7 +272,7 @@ impl PeerDHTRecord {
         Ok(Self {
             version: Self::CURRENT_VERSION,
             user_id,
-            public_key,
+            verifying_key,
             sequence_number,
             name,
             endpoints,
@@ -357,12 +357,9 @@ impl PeerDHTRecord {
     }
 
     /// Sign the record with the given private key
-    pub fn sign(&mut self, private_key: &ed25519_dalek::SecretKey) -> Result<()> {
+    pub fn sign(&mut self, signing_key: &ed25519_dalek::SigningKey) -> Result<()> {
         let message = self.create_signable_message();
-        // Convert SecretKey to ExpandedSecretKey for signing
-        let expanded_key = ExpandedSecretKey::from(private_key);
-        let public_key = PublicKey::from(private_key);
-        self.signature = expanded_key.sign(&message, &public_key);
+        self.signature = signing_key.sign(&message);
         Ok(())
     }
 
@@ -498,14 +495,14 @@ impl SignatureCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ed25519_dalek::SecretKey;
+    use ed25519_dalek::SigningKey;
     use rand::rngs::OsRng;
 
-    fn create_test_keypair() -> (SecretKey, PublicKey) {
+    fn create_test_keypair() -> (SigningKey, VerifyingKey) {
         let mut csprng = OsRng {};
-        let secret_key = SecretKey::generate(&mut csprng);
-        let public_key = PublicKey::from(&secret_key);
-        (secret_key, public_key)
+        let signing_key = SigningKey::generate(&mut csprng);
+        let verifying_key = signing_key.verifying_key().clone();
+        (signing_key, verifying_key)
     }
 
     fn create_test_endpoint() -> PeerEndpoint {
@@ -520,11 +517,11 @@ mod tests {
 
     #[test]
     fn test_user_id_generation() {
-        let (_, public_key) = create_test_keypair();
-        let user_id = UserId::from_public_key(&public_key);
+        let (_, verifying_key) = create_test_keypair();
+        let user_id = UserId::from_public_key(&verifying_key);
         
         // Should be deterministic
-        let user_id2 = UserId::from_public_key(&public_key);
+        let user_id2 = UserId::from_public_key(&verifying_key);
         assert_eq!(user_id, user_id2);
     }
 
@@ -550,13 +547,13 @@ mod tests {
 
     #[test]
     fn test_dht_record_creation_and_signing() {
-        let (secret_key, public_key) = create_test_keypair();
-        let user_id = UserId::from_public_key(&public_key);
+        let (signing_key, verifying_key) = create_test_keypair();
+        let user_id = UserId::from_public_key(&verifying_key);
         let endpoint = create_test_endpoint();
         
         let mut record = PeerDHTRecord::new(
             user_id,
-            public_key,
+            verifying_key,
             1,
             Some("test-user".to_string()),
             vec![endpoint],
@@ -564,7 +561,7 @@ mod tests {
         ).unwrap();
         
         // Sign the record
-        record.sign(&secret_key).unwrap();
+        record.sign(&signing_key).unwrap();
         
         // Verify signature
         assert!(record.verify_signature().is_ok());
@@ -576,20 +573,20 @@ mod tests {
 
     #[test]
     fn test_record_serialization() {
-        let (secret_key, public_key) = create_test_keypair();
-        let user_id = UserId::from_public_key(&public_key);
+        let (signing_key, verifying_key) = create_test_keypair();
+        let user_id = UserId::from_public_key(&verifying_key);
         let endpoint = create_test_endpoint();
         
         let mut record = PeerDHTRecord::new(
             user_id,
-            public_key,
+            verifying_key,
             1,
             Some("test-user".to_string()),
             vec![endpoint],
             DEFAULT_TTL_SECONDS,
         ).unwrap();
         
-        record.sign(&secret_key).unwrap();
+        record.sign(&signing_key).unwrap();
         
         // Serialize and deserialize
         let serialized = record.serialize().unwrap();
@@ -600,20 +597,20 @@ mod tests {
 
     #[test]
     fn test_signature_cache() {
-        let (secret_key, public_key) = create_test_keypair();
-        let user_id = UserId::from_public_key(&public_key);
+        let (signing_key, verifying_key) = create_test_keypair();
+        let user_id = UserId::from_public_key(&verifying_key);
         let endpoint = create_test_endpoint();
         
         let mut record = PeerDHTRecord::new(
             user_id,
-            public_key,
+            verifying_key,
             1,
             Some("test-user".to_string()),
             vec![endpoint],
             DEFAULT_TTL_SECONDS,
         ).unwrap();
         
-        record.sign(&secret_key).unwrap();
+        record.sign(&signing_key).unwrap();
         
         let mut cache = SignatureCache::new(100);
         
@@ -626,14 +623,14 @@ mod tests {
 
     #[test]
     fn test_validation_limits() {
-        let (_, public_key) = create_test_keypair();
-        let user_id = UserId::from_public_key(&public_key);
+        let (_, verifying_key) = create_test_keypair();
+        let user_id = UserId::from_public_key(&verifying_key);
         
         // Test name too long
         let long_name = "a".repeat(256);
         let result = PeerDHTRecord::new(
             user_id.clone(),
-            public_key,
+            verifying_key,
             1,
             Some(long_name),
             vec![create_test_endpoint()],
@@ -645,7 +642,7 @@ mod tests {
         let many_endpoints = vec![create_test_endpoint(); MAX_ENDPOINTS_PER_PEER + 1];
         let result = PeerDHTRecord::new(
             user_id.clone(),
-            public_key,
+            verifying_key,
             1,
             Some("test".to_string()),
             many_endpoints,
@@ -656,7 +653,7 @@ mod tests {
         // Test TTL too large
         let result = PeerDHTRecord::new(
             user_id,
-            public_key,
+            verifying_key,
             1,
             Some("test".to_string()),
             vec![create_test_endpoint()],
