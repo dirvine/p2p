@@ -153,7 +153,7 @@ impl AdaptiveDHT {
         let dht = self.base_dht.read().await;
         
         // Get closest nodes from DHT using find_node
-        let mut nodes = dht.find_node(&dht_key).await;
+        let nodes = dht.find_node(&dht_key).await;
         
         // Sort by trust score
         let sorted_nodes: Vec<_> = nodes.into_iter()
@@ -220,7 +220,7 @@ impl AdaptiveDHT {
     pub async fn update_routing(&self, node: NodeDescriptor) -> Result<()> {
         // Convert NodeId to PeerId (using the hash as peer ID string)
         let peer_id = PeerId::from_str(&node.id.to_string())
-            .map_err(|e| AdaptiveNetworkError::Other(format!("Invalid peer ID: {}", e)))?;
+            .map_err(|e| AdaptiveNetworkError::Other(format!("Invalid peer ID: {e}")))?;
         
         // Parse addresses to Multiaddr
         let addresses: Vec<Multiaddr> = node.addresses.iter()

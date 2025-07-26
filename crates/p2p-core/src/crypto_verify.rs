@@ -163,7 +163,7 @@ impl EnhancedSignatureVerifier {
             results.push(BatchVerificationResult {
                 index,
                 success: result.is_ok(),
-                error: result.err().map(|e| format!("Verification failed: {}", e)),
+                error: result.err().map(|e| format!("Verification failed: {e}")),
             });
         }
         
@@ -267,7 +267,7 @@ impl EnhancedSignatureVerifier {
             // Other low-order points would be listed here
         ];
         
-        LOW_ORDER_POINTS.iter().any(|&point| point == *key_bytes)
+        LOW_ORDER_POINTS.contains(key_bytes)
     }
 
     /// Perform constant-time signature verification

@@ -45,7 +45,7 @@ pub fn sign(private_key: &[u8], message: &[u8]) -> Result<Vec<u8>> {
         use sha2::{Sha256, Digest};
         let mut hasher = Sha256::new();
         hasher.update(private_key);
-        hasher.update(&[0u8; 32]); // Add padding for deterministic derivation
+        hasher.update([0u8; 32]); // Add padding for deterministic derivation
         let key_bytes = hasher.finalize();
         
         SigningKey::from_bytes(&key_bytes.into())
@@ -61,10 +61,11 @@ pub fn verify(public_key: &[u8], message: &[u8], signature: &[u8]) -> Result<()>
     
     let verifying_key = VerifyingKey::from_bytes(public_key.try_into()
         .map_err(|_| QuantumCryptoError::MlDsaError("Invalid public key length".to_string()))?)
-        .map_err(|e| QuantumCryptoError::MlDsaError(format!("Invalid public key: {}", e)))?;
+        .map_err(|e| QuantumCryptoError::MlDsaError(format!("Invalid public key: {e}")))?;
     
-    let signature = Signature::from_bytes(signature)
-        .map_err(|e| QuantumCryptoError::MlDsaError(format!("Invalid signature: {}", e)))?;
+    let signature_bytes: [u8; 64] = signature.try_into()
+        .map_err(|_| QuantumCryptoError::MlDsaError("Invalid signature length".to_string()))?;
+    let signature = Signature::from_bytes(&signature_bytes);
     
     verifying_key.verify(message, &signature)
         .map_err(|_| QuantumCryptoError::MlDsaError("Signature verification failed".to_string()))?;
@@ -87,6 +88,12 @@ pub struct CachedSignature {
     pub message_hash: [u8; 32],
     pub signature: MlDsaSignature,
     pub timestamp: std::time::SystemTime,
+}
+
+impl Default for MlDsaState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MlDsaState {
@@ -175,6 +182,12 @@ struct PendingVerification {
     signature: Vec<u8>,
 }
 
+impl Default for BatchVerifier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BatchVerifier {
     /// Create new batch verifier
     pub fn new() -> Self {
@@ -249,7 +262,7 @@ impl AggregatedSignature {
                 .find(|(id, _)| id == participant_id)
                 .map(|(_, key)| key)
                 .ok_or_else(|| QuantumCryptoError::MlDsaError(
-                    format!("No public key for participant {:?}", participant_id)
+                    format!("No public key for participant {participant_id:?}")
                 ))?;
             
             // Verify signature

@@ -82,6 +82,12 @@ enum CeremonyState {
     Failed(String),
 }
 
+impl Default for DkgCoordinator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DkgCoordinator {
     /// Create new DKG coordinator
     pub fn new() -> Self {

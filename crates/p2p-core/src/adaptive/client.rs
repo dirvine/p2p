@@ -23,16 +23,15 @@
 use super::*;
 use crate::adaptive::{
     AdaptiveRouter, AdaptiveGossipSub, ContentStore, StorageConfig,
-    RetrievalManager, ReplicationManager, ChurnHandler, MonitoringSystem,
-    NetworkStats as InternalNetworkStats, ContentHash, NodeId, NodeDescriptor,
+    RetrievalManager, ReplicationManager, ChurnHandler, MonitoringSystem, ContentHash, NodeId,
 };
-use anyhow::{Result, Context};
+use anyhow::Result;
 use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::sync::{RwLock, mpsc, oneshot};
-use futures::{Stream, StreamExt};
+use tokio::sync::{RwLock, mpsc};
+use futures::Stream;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -104,6 +103,9 @@ pub struct Client {
 
 /// Internal network components
 struct NetworkComponents {
+    /// Node ID
+    node_id: NodeId,
+    
     /// Adaptive router
     router: Arc<AdaptiveRouter>,
     
@@ -346,7 +348,7 @@ impl Client {
         
         // Create gossip protocol
         let node_id = NodeId { hash: [0u8; 32] }; // Temporary node ID
-        let gossip = Arc::new(AdaptiveGossipSub::new(node_id, trust_provider.clone()));
+        let gossip = Arc::new(AdaptiveGossipSub::new(node_id.clone(), trust_provider.clone()));
         
         // Create storage
         let storage_config = match config.profile {
@@ -382,12 +384,13 @@ impl Client {
         let retrieval = Arc::new(RetrievalManager::new(
             router.clone(),
             storage.clone(),
-            cache_manager,
+            cache_manager.clone(),
         ));
         
         let churn = Arc::new(ChurnHandler::new(
+            node_id.clone(),
             churn_predictor,
-            trust_provider,
+            trust_provider.clone(),
             replication.clone(),
             router.clone(),
             gossip.clone(),
@@ -408,6 +411,7 @@ impl Client {
         )?);
         
         Ok(NetworkComponents {
+            node_id,
             router,
             gossip,
             storage,
@@ -500,12 +504,12 @@ impl AdaptiveP2PClient for Client {
             replication_factor: 8,
         };
         
-        let hash = self.components.storage.store(data, metadata).await
+        let hash = self.components.storage.store(data.clone(), metadata.clone()).await
             .map_err(|e| ClientError::Storage(e.to_string()))?;
         
         // Trigger replication
-        self.components.replication.replicate_content(&hash, None).await
-            .map_err(|e| ClientError::Storage(format!("Replication failed: {}", e)))?;
+        self.components.replication.replicate_content(&hash, &data, metadata).await
+            .map_err(|e| ClientError::Storage(format!("Replication failed: {e}")))?;
         
         Ok(hash)
     }
@@ -573,7 +577,20 @@ impl AdaptiveP2PClient for Client {
             return Err(ClientError::NotConnected.into());
         }
         
-        self.components.gossip.publish(topic, message).await
+        use crate::adaptive::gossip::GossipMessage;
+        
+        let gossip_msg = GossipMessage {
+            topic: topic.to_string(),
+            data: message,
+            from: self.components.node_id.clone(),
+            seqno: 0, // TODO: Track sequence numbers
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        };
+        
+        self.components.gossip.publish(topic, gossip_msg).await
             .map_err(|e| ClientError::Messaging(e.to_string()).into())
     }
     

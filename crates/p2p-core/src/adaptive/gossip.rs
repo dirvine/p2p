@@ -502,9 +502,9 @@ impl AdaptiveGossipSub {
     fn compute_message_id(&self, message: &GossipMessage) -> MessageId {
         use sha2::{Sha256, Digest};
         let mut hasher = Sha256::new();
-        hasher.update(&message.topic.as_bytes());
-        hasher.update(&message.from.hash);
-        hasher.update(&message.seqno.to_le_bytes());
+        hasher.update(message.topic.as_bytes());
+        hasher.update(message.from.hash);
+        hasher.update(message.seqno.to_le_bytes());
         hasher.update(&message.data);
         
         let result = hasher.finalize();

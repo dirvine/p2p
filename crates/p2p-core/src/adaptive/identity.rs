@@ -20,7 +20,6 @@ use super::*;
 use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
-use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Difficulty target for proof-of-work
@@ -113,9 +112,9 @@ impl NodeIdentity {
         
         loop {
             let mut hasher = Sha256::new();
-            hasher.update(&node_id.hash);
-            hasher.update(&nonce.to_le_bytes());
-            hasher.update(&timestamp.to_le_bytes());
+            hasher.update(node_id.hash);
+            hasher.update(nonce.to_le_bytes());
+            hasher.update(timestamp.to_le_bytes());
             
             let result = hasher.finalize();
             
@@ -161,9 +160,9 @@ impl NodeIdentity {
     /// Verify proof-of-work for a node ID
     pub fn verify_pow(node_id: &NodeId, pow: &ProofOfWork) -> bool {
         let mut hasher = Sha256::new();
-        hasher.update(&node_id.hash);
-        hasher.update(&pow.nonce.to_le_bytes());
-        hasher.update(&pow.timestamp.to_le_bytes());
+        hasher.update(node_id.hash);
+        hasher.update(pow.nonce.to_le_bytes());
+        hasher.update(pow.timestamp.to_le_bytes());
         
         let result = hasher.finalize();
         
@@ -243,8 +242,9 @@ impl<T: Serialize + for<'de> Deserialize<'de>> SignedMessage<T> {
         bytes_to_verify.extend_from_slice(&self.sender_id.hash);
         bytes_to_verify.extend_from_slice(&self.timestamp.to_le_bytes());
         
-        let signature = Signature::from_bytes(&self.signature)
-            .map_err(|e| AdaptiveNetworkError::Other(format!("Invalid signature: {}", e)))?;
+        let signature_bytes: [u8; 64] = self.signature.as_slice().try_into()
+            .map_err(|_| AdaptiveNetworkError::Other("Invalid signature length".to_string()))?;
+        let signature = Signature::from_bytes(&signature_bytes);
         
         Ok(public_key.verify(&bytes_to_verify, &signature).is_ok())
     }
@@ -286,13 +286,14 @@ impl StoredIdentity {
     
     /// Restore to NodeIdentity
     pub fn to_identity(&self) -> Result<NodeIdentity> {
-        let signing_key = SigningKey::from_bytes(&self.secret_key.try_into()
-            .map_err(|_| AdaptiveNetworkError::Other("Invalid secret key length".to_string()))?)
-            .map_err(|e| AdaptiveNetworkError::Other(format!("Invalid secret key: {}", e)))?;
+        let secret_key_bytes: [u8; 32] = self.secret_key.as_slice().try_into()
+            .map_err(|_| AdaptiveNetworkError::Other("Invalid secret key length".to_string()))?;
+        let signing_key = SigningKey::from_bytes(&secret_key_bytes);
         
-        let public_key = VerifyingKey::from_bytes(&self.public_key.try_into()
-            .map_err(|_| AdaptiveNetworkError::Other("Invalid public key length".to_string()))?)
-            .map_err(|e| AdaptiveNetworkError::Other(format!("Invalid public key: {}", e)))?;
+        let public_key_bytes: [u8; 32] = self.public_key.as_slice().try_into()
+            .map_err(|_| AdaptiveNetworkError::Other("Invalid public key length".to_string()))?;
+        let public_key = VerifyingKey::from_bytes(&public_key_bytes)
+            .map_err(|e| AdaptiveNetworkError::Other(format!("Invalid public key: {e}")))?;
         
         // Verify the stored public key matches the signing key
         if signing_key.verifying_key().to_bytes() != public_key.to_bytes() {

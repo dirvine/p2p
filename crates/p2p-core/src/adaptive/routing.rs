@@ -18,8 +18,6 @@
 
 use super::*;
 use async_trait::async_trait;
-use rand::distributions::Distribution;
-use rand::RngCore;
 use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
@@ -119,7 +117,7 @@ impl AdaptiveRouter {
         // Record strategy selection
         {
             let mut metrics = self.metrics.write().await;
-            let key = format!("route_attempts_{:?}", strategy_choice);
+            let key = format!("route_attempts_{strategy_choice:?}");
             let count = metrics.get(&key).copied().unwrap_or(0.0) + 1.0;
             metrics.insert(key, count);
         }
@@ -160,10 +158,10 @@ impl AdaptiveRouter {
         // Update metrics
         if success {
             let mut metrics = self.metrics.write().await;
-            let success_key = format!("route_success_{:?}", strategy_choice);
+            let success_key = format!("route_success_{strategy_choice:?}");
             let count = metrics.get(&success_key).copied().unwrap_or(0.0) + 1.0;
             metrics.insert(success_key, count);
-            metrics.insert(format!("route_latency_{:?}", strategy_choice), latency);
+            metrics.insert(format!("route_latency_{strategy_choice:?}"), latency);
         }
         
         result
@@ -228,7 +226,7 @@ impl AdaptiveRouter {
     /// Update routing statistics
     pub async fn update_statistics(&self, node_id: &NodeId, success: bool, latency_ms: u64) {
         let mut metrics = self.metrics.write().await;
-        let key = format!("node_{:?}_success_rate", node_id);
+        let key = format!("node_{node_id:?}_success_rate");
         let current = metrics.get(&key).copied().unwrap_or(0.0);
         let new_value = if success { current * 0.9 + 0.1 } else { current * 0.9 };
         metrics.insert(key, new_value);
@@ -302,6 +300,12 @@ pub struct HyperbolicRouting {
     coordinates: Arc<RwLock<HashMap<NodeId, HyperbolicCoordinate>>>,
 }
 
+impl Default for HyperbolicRouting {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HyperbolicRouting {
     pub fn new() -> Self {
         Self {
@@ -368,6 +372,12 @@ impl RoutingStrategy for TrustRouting {
 /// SOM-based routing implementation
 pub struct SOMRouting {
     som_positions: Arc<RwLock<HashMap<NodeId, [f64; 4]>>>,
+}
+
+impl Default for SOMRouting {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SOMRouting {

@@ -362,7 +362,7 @@ impl EnhancedIdentityManager {
             threshold: 1,
             participants: vec![owner_info],
             metadata: crate::threshold::GroupMetadata {
-                name: format!("{} Root Group", name),
+                name: format!("{name} Root Group"),
                 description: "Organization root authority".to_string(),
                 purpose: crate::threshold::GroupPurpose::Governance,
                 parent_group: None,

@@ -25,8 +25,7 @@ use crate::adaptive::{
     learning::ChurnPredictor,
     routing::{AdaptiveRouter},
     RoutingStrategy,
-    storage::{ContentStore, ReplicationConfig, ContentMetadata},
-    ContentType,
+    storage::{ReplicationConfig, ContentMetadata},
 };
 use anyhow::Result;
 use std::{

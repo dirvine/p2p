@@ -967,7 +967,9 @@ impl MCPServer {
             None
         };
         
-        let server = Self {
+        
+        
+        Self {
             config,
             tools: Arc::new(RwLock::new(HashMap::new())),
             prompts: Arc::new(RwLock::new(HashMap::new())),
@@ -987,9 +989,7 @@ impl MCPServer {
             health_event_tx,
             health_event_rx: Arc::new(RwLock::new(health_event_rx)),
             node_id: None,
-        };
-        
-        server
+        }
     }
     
     /// Create MCP server with DHT integration
@@ -1077,17 +1077,17 @@ impl MCPServer {
         // Check for duplicate names
         let tools = self.tools.read().await;
         if tools.contains_key(&tool.definition.name) {
-            return Err(P2PError::MCP(format!("Tool already exists: {}", tool.definition.name)).into());
+            return Err(P2PError::MCP(format!("Tool already exists: {}", tool.definition.name)));
         }
         
         // Validate tool name
         if tool.definition.name.is_empty() || tool.definition.name.len() > 100 {
-            return Err(P2PError::MCP("Invalid tool name".to_string()).into());
+            return Err(P2PError::MCP("Invalid tool name".to_string()));
         }
         
         // Validate schema
         if !tool.definition.input_schema.is_object() {
-            return Err(P2PError::MCP("Tool input schema must be an object".to_string()).into());
+            return Err(P2PError::MCP("Tool input schema must be an object".to_string()));
         }
         
         Ok(())
@@ -1095,11 +1095,11 @@ impl MCPServer {
     
     /// Register tool in DHT for discovery
     async fn register_tool_in_dht(&self, tool_name: &str, dht: &Arc<RwLock<DHT>>) -> Result<()> {
-        let key = Key::new(format!("mcp:tool:{}", tool_name).as_bytes());
+        let key = Key::new(format!("mcp:tool:{tool_name}").as_bytes());
         let service_info = json!({
             "tool_name": tool_name,
             "node_id": self.get_node_id_string(),
-            "registered_at": SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| P2PError::Network(format!("Time error: {}", e)))?.as_secs(),
+            "registered_at": SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| P2PError::Network(format!("Time error: {e}")))?.as_secs(),
             "capabilities": self.get_server_capabilities().await
         });
         
@@ -1185,7 +1185,7 @@ impl MCPServer {
         let mut details = HashMap::new();
         details.insert("action".to_string(), "tool_call".to_string());
         details.insert("tool_name".to_string(), tool_name.to_string());
-        details.insert("security_level".to_string(), format!("{:?}", tool_security_level));
+        details.insert("security_level".to_string(), format!("{tool_security_level:?}"));
         
         self.audit_logger.log_event(
             "tool_execution".to_string(),
@@ -1201,18 +1201,18 @@ impl MCPServer {
         };
         
         if !tool_exists {
-            return Err(P2PError::MCP(format!("Tool not found: {}", tool_name)).into());
+            return Err(P2PError::MCP(format!("Tool not found: {tool_name}")));
         }
         
         // Validate arguments and get requirements
         let requirements = {
             let tools = self.tools.read().await;
             let tool = tools.get(tool_name)
-                .ok_or_else(|| P2PError::MCP(format!("Tool not found: {}", tool_name)))?;
+                .ok_or_else(|| P2PError::MCP(format!("Tool not found: {tool_name}")))?;
             
             // Validate arguments
             if let Err(e) = tool.handler.validate(&arguments) {
-                return Err(P2PError::MCP(format!("Tool validation failed: {}", e)).into());
+                return Err(P2PError::MCP(format!("Tool validation failed: {e}")));
             }
             
             // Get resource requirements
@@ -1230,11 +1230,11 @@ impl MCPServer {
         let result = timeout(execution_timeout, async move {
             let tools = tools_clone.read().await;
             let tool = tools.get(&tool_name_owned)
-                .ok_or_else(|| P2PError::MCP(format!("Tool not found: {}", tool_name_owned)))?;
+                .ok_or_else(|| P2PError::MCP(format!("Tool not found: {tool_name_owned}")))?;
             tool.handler.execute(arguments).await
         }).await
         .map_err(|_| P2PError::MCP("Tool execution timeout".to_string()))?
-        .map_err(|e| P2PError::MCP(format!("Tool execution failed: {}", e)))?;
+        .map_err(|e| P2PError::MCP(format!("Tool execution failed: {e}")))?;
         
         let execution_time = start_time.elapsed();
         
@@ -1264,14 +1264,14 @@ impl MCPServer {
         // Check memory limit
         if let Some(max_memory) = requirements.max_memory {
             if max_memory > self.config.tool_memory_limit {
-                return Err(P2PError::MCP("Tool memory requirement exceeds limit".to_string()).into());
+                return Err(P2PError::MCP("Tool memory requirement exceeds limit".to_string()));
             }
         }
         
         // Check execution time limit
         if let Some(max_execution_time) = requirements.max_execution_time {
             if max_execution_time > self.config.max_tool_execution_time {
-                return Err(P2PError::MCP("Tool execution time requirement exceeds limit".to_string()).into());
+                return Err(P2PError::MCP("Tool execution time requirement exceeds limit".to_string()));
             }
         }
         
@@ -1856,7 +1856,7 @@ impl MCPServer {
             target_peer: Some(peer_id.clone()),
             timestamp: SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| P2PError::Network(format!("Time error: {}", e)))?
+                .map_err(|e| P2PError::Network(format!("Time error: {e}")))?
                 .as_secs(),
             payload: mcp_message,
             ttl: 5, // Max 5 hops
@@ -1864,7 +1864,7 @@ impl MCPServer {
         
         // Serialize the message
         let message_data = serde_json::to_vec(&p2p_message)
-            .map_err(|e| P2PError::Serialization(e))?;
+            .map_err(P2PError::Serialization)?;
         
         if message_data.len() > MAX_MESSAGE_SIZE {
             return Err(P2PError::MCP("Message too large".to_string()));
@@ -1905,7 +1905,7 @@ impl MCPServer {
     pub async fn handle_p2p_message(&self, message_data: &[u8], source_peer: &PeerId) -> Result<Option<Vec<u8>>> {
         // Deserialize the P2P message
         let p2p_message: P2PMCPMessage = serde_json::from_slice(message_data)
-            .map_err(|e| P2PError::Serialization(e))?;
+            .map_err(P2PError::Serialization)?;
         
         debug!("Received MCP message from {}: {:?}", source_peer, p2p_message.message_type);
         
@@ -2001,7 +2001,7 @@ impl MCPServer {
                     target_peer: Some(message.source_peer),
                     timestamp: SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .map_err(|e| P2PError::Network(format!("Time error: {}", e)))?
+                        .map_err(|e| P2PError::Network(format!("Time error: {e}")))?
                         .as_secs(),
                     payload: response_payload,
                     ttl: message.ttl.saturating_sub(1),
@@ -2009,7 +2009,7 @@ impl MCPServer {
                 
                 // Serialize response
                 let response_data = serde_json::to_vec(&response_message)
-                    .map_err(|e| P2PError::Serialization(e))?;
+                    .map_err(P2PError::Serialization)?;
                 
                 Ok(Some(response_data))
             }
@@ -2028,14 +2028,14 @@ impl MCPServer {
                     target_peer: Some(message.source_peer),
                     timestamp: SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .map_err(|e| P2PError::Network(format!("Time error: {}", e)))?
+                        .map_err(|e| P2PError::Network(format!("Time error: {e}")))?
                         .as_secs(),
                     payload: response_payload,
                     ttl: message.ttl.saturating_sub(1),
                 };
                 
                 let response_data = serde_json::to_vec(&response_message)
-                    .map_err(|e| P2PError::Serialization(e))?;
+                    .map_err(P2PError::Serialization)?;
                 
                 Ok(Some(response_data))
             }
@@ -2048,7 +2048,7 @@ impl MCPServer {
                     target_peer: Some(message.source_peer),
                     timestamp: SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .map_err(|e| P2PError::Network(format!("Time error: {}", e)))?
+                        .map_err(|e| P2PError::Network(format!("Time error: {e}")))?
                         .as_secs(),
                     payload: MCPMessage::Error {
                         code: -2,
@@ -2059,7 +2059,7 @@ impl MCPServer {
                 };
                 
                 let response_data = serde_json::to_vec(&error_response)
-                    .map_err(|e| P2PError::Serialization(e))?;
+                    .map_err(P2PError::Serialization)?;
                 
                 Ok(Some(response_data))
             }
@@ -2252,7 +2252,7 @@ impl MCPServer {
             let mut details = HashMap::new();
             details.insert("action".to_string(), "tool_policy_set".to_string());
             details.insert("tool_name".to_string(), tool_name);
-            details.insert("security_level".to_string(), format!("{:?}", level));
+            details.insert("security_level".to_string(), format!("{level:?}"));
             
             self.audit_logger.log_event(
                 "security_policy".to_string(),
@@ -2406,11 +2406,11 @@ impl MCPServer {
         // Store individual service record
         let service_key = Key::new(format!("mcp:service:{}", service.service_id).as_bytes());
         let service_data = serde_json::to_vec(service)
-            .map_err(|e| P2PError::Serialization(e))?;
+            .map_err(P2PError::Serialization)?;
         
         let dht_guard = dht.write().await;
         dht_guard.put(service_key.clone(), service_data).await
-            .map_err(|e| P2PError::DHT(format!("Failed to store service in DHT: {}", e)))?;
+            .map_err(|e| P2PError::DHT(format!("Failed to store service in DHT: {e}")))?;
         
         // Also add to services index
         let services_key = Key::new(b"mcp:services:index");
@@ -2425,10 +2425,10 @@ impl MCPServer {
             service_ids.push(service.service_id.clone());
             
             let index_data = serde_json::to_vec(&service_ids)
-                .map_err(|e| P2PError::Serialization(e))?;
+                .map_err(P2PError::Serialization)?;
             
             dht_guard.put(services_key, index_data).await
-                .map_err(|e| P2PError::DHT(format!("Failed to update services index: {}", e)))?;
+                .map_err(|e| P2PError::DHT(format!("Failed to update services index: {e}")))?;
         }
         
         Ok(())
@@ -2457,7 +2457,7 @@ impl MCPServer {
         };
         
         let announcement_data = serde_json::to_vec(&announcement)
-            .map_err(|e| P2PError::Serialization(e))?;
+            .map_err(P2PError::Serialization)?;
         
         // TODO: Broadcast to all connected peers
         // For now, this would require getting the list of connected peers from the network layer
@@ -2485,7 +2485,7 @@ impl MCPServer {
             let mut discovered_services = Vec::new();
             
             for service_id in service_ids {
-                let service_key = Key::new(format!("mcp:service:{}", service_id).as_bytes());
+                let service_key = Key::new(format!("mcp:service:{service_id}").as_bytes());
                 
                 if let Some(record) = dht_guard.get(&service_key).await {
                     match serde_json::from_slice::<MCPService>(&record.value) {
@@ -2647,7 +2647,7 @@ impl MCPServer {
                 target_peer: Some(message.source_peer),
                 timestamp: SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .map_err(|e| P2PError::Network(format!("Time error: {}", e)))?
+                    .map_err(|e| P2PError::Network(format!("Time error: {e}")))?
                     .as_secs(),
                 payload: MCPMessage::ListToolsResult {
                     tools: local_services.into_iter()
@@ -2663,7 +2663,7 @@ impl MCPServer {
             };
             
             let response_data = serde_json::to_vec(&advertisement)
-                .map_err(|e| P2PError::Serialization(e))?;
+                .map_err(P2PError::Serialization)?;
             
             Ok(Some(response_data))
         } else {

@@ -27,7 +27,6 @@ use crate::adaptive::{
     learning::ChurnPredictor,
     routing::AdaptiveRouter,
     replication::ReplicationManager,
-    storage::ContentStore,
     gossip::{AdaptiveGossipSub, GossipMessage},
     ContentHash, NodeId,
 };
@@ -35,9 +34,9 @@ use anyhow::Result;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, Instant},
 };
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::RwLock;
 
 /// Churn detection and recovery system
 pub struct ChurnHandler {
@@ -555,6 +554,7 @@ impl ChurnHandler {
     /// Clone for spawning tasks
     fn clone_for_task(&self) -> Self {
         Self {
+            node_id: self.node_id.clone(),
             predictor: self.predictor.clone(),
             node_monitor: self.node_monitor.clone(),
             recovery_manager: self.recovery_manager.clone(),
@@ -635,6 +635,12 @@ impl NodeMonitor {
         } else {
             false
         }
+    }
+}
+
+impl Default for RecoveryManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

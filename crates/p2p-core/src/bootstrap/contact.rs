@@ -356,6 +356,12 @@ impl ContactEntry {
     }
 }
 
+impl Default for QualityMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QualityMetrics {
     /// Create new quality metrics with default values
     pub fn new() -> Self {
@@ -376,6 +382,12 @@ impl QualityMetrics {
         // Decay quality score over time to favor recent connections
         self.quality_score *= decay_factor;
         self.uptime_score *= decay_factor;
+    }
+}
+
+impl Default for ConnectionHistory {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -78,6 +78,12 @@ pub struct RoutingMetrics {
     pub strategy_latencies: HashMap<StrategyChoice, f64>,
 }
 
+impl Default for ThompsonSampling {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ThompsonSampling {
     /// Create a new Thompson Sampling instance
     pub fn new() -> Self {
@@ -226,7 +232,7 @@ impl ThompsonSampling {
         
         // Simple normal approximation for Beta distribution
         let mut rng = rand::thread_rng();
-        let uniform: f64 = rng.gen_range(0.0, 1.0);
+        let uniform: f64 = rng.gen_range(0.0..1.0);
         let normal_sample = uniform - 0.5;
         let sample = mean + normal_sample * std_dev * 2.0;
         
@@ -722,12 +728,12 @@ impl QLearnCacheManager {
         let hit_rate = if hits + misses > 0 { hits as f64 / (hits + misses) as f64 } else { 0.0 };
         
         CacheStats {
-            hit_count: hits,
-            miss_count: misses,
-            hit_rate,
-            cache_size: self.current_size.load(std::sync::atomic::Ordering::Relaxed),
-            capacity: self.capacity,
-            bandwidth_used: self.bandwidth_used.load(std::sync::atomic::Ordering::Relaxed),
+            hits,
+            misses,
+            size_bytes: self.current_size.load(std::sync::atomic::Ordering::Relaxed) as u64,
+            item_count: 0, // TODO: Track number of items
+            evictions: 0, // TODO: Track evictions
+            hit_rate: if hits + misses > 0 { hits as f64 / (hits + misses) as f64 } else { 0.0 },
         }
     }
     
@@ -748,8 +754,8 @@ impl QLearnCacheManager {
         Ok(())
     }
     
-    /// Get cache statistics
-    pub async fn get_stats(&self) -> CacheStats {
+    /// Get cache statistics asynchronously
+    pub async fn get_stats_async(&self) -> CacheStats {
         let cache = self.cache.read().await;
         let hit_count = self.hit_count.load(std::sync::atomic::Ordering::Relaxed);
         let miss_count = self.miss_count.load(std::sync::atomic::Ordering::Relaxed);
@@ -804,6 +810,12 @@ pub struct FeatureHistory {
     pub total_uptime: u64,
     /// Total downtime in seconds
     pub total_downtime: u64,
+}
+
+impl Default for FeatureHistory {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FeatureHistory {
@@ -895,6 +907,12 @@ pub struct ChurnPrediction {
     pub probability_24h: f64,
     pub confidence: f64,
     pub timestamp: std::time::Instant,
+}
+
+impl Default for ChurnPredictor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ChurnPredictor {
@@ -1106,7 +1124,7 @@ impl ChurnPredictor {
         ];
         
         // Compute base score from features
-        let mut base_scores = vec![0.0; 3]; // 1h, 6h, 24h
+        let mut base_scores = [0.0; 3]; // 1h, 6h, 24h
         for (i, &weight) in model.feature_weights.iter().enumerate() {
             if i < feature_vec.len() {
                 for j in 0..3 {
@@ -1268,8 +1286,7 @@ impl ChurnPredictor {
         // Update weights based on prediction errors
         for example in batch {
             // Extract features for this example
-            let feature_vec = vec![
-                example.features.online_duration / 3600.0,
+            let feature_vec = [example.features.online_duration / 3600.0,
                 example.features.avg_response_time / 1000.0,
                 example.features.resource_contribution,
                 example.features.message_frequency / 100.0,
@@ -1278,8 +1295,7 @@ impl ChurnPredictor {
                 example.features.historical_reliability,
                 example.features.recent_disconnections / 10.0,
                 example.features.avg_session_length / 24.0,
-                example.features.connection_stability,
-            ];
+                example.features.connection_stability];
             
             // Calculate patterns
             let patterns = self.analyze_patterns(&example.features).await;
@@ -1288,11 +1304,9 @@ impl ChurnPredictor {
             let prediction = self.apply_model(&example.features, &patterns, &model).await;
             
             // Calculate errors
-            let errors = vec![
-                if example.actual_churn_1h { 1.0 } else { 0.0 } - prediction.probability_1h,
+            let errors = [if example.actual_churn_1h { 1.0 } else { 0.0 } - prediction.probability_1h,
                 if example.actual_churn_6h { 1.0 } else { 0.0 } - prediction.probability_6h,
-                if example.actual_churn_24h { 1.0 } else { 0.0 } - prediction.probability_24h,
-            ];
+                if example.actual_churn_24h { 1.0 } else { 0.0 } - prediction.probability_24h];
             
             // Update feature weights
             for (i, &feature_value) in feature_vec.iter().enumerate() {

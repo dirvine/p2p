@@ -317,7 +317,7 @@ impl MCPSecurityManager {
     pub async fn generate_token(&self, peer_id: &PeerId, permissions: Vec<MCPPermission>, ttl: Duration) -> Result<String> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| P2PError::MCP(format!("Time error: {}", e)))?;
+            .map_err(|e| P2PError::MCP(format!("Time error: {e}")))?;
         
         let payload = TokenPayload {
             iss: peer_id.clone(),
@@ -343,16 +343,16 @@ impl MCPSecurityManager {
         
         // Create token without signature first
         let header_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header)
-            .map_err(|e| P2PError::Serialization(e))?);
+            .map_err(P2PError::Serialization)?);
         let payload_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload)
-            .map_err(|e| P2PError::Serialization(e))?);
+            .map_err(P2PError::Serialization)?);
         
         // Sign the token
-        let signing_input = format!("{}.{}", header_b64, payload_b64);
+        let signing_input = format!("{header_b64}.{payload_b64}");
         let signature = self.sign_data(signing_input.as_bytes());
         let signature_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(signature);
         
-        Ok(format!("{}.{}.{}", header_b64, payload_b64, signature_b64))
+        Ok(format!("{header_b64}.{payload_b64}.{signature_b64}"))
     }
     
     /// Verify authentication token
@@ -363,11 +363,11 @@ impl MCPSecurityManager {
         }
         
         let _header_data = base64::prelude::BASE64_URL_SAFE_NO_PAD.decode(parts[0])
-            .map_err(|e| P2PError::MCP(format!("Invalid header encoding: {}", e)))?;
+            .map_err(|e| P2PError::MCP(format!("Invalid header encoding: {e}")))?;
         let payload_data = base64::prelude::BASE64_URL_SAFE_NO_PAD.decode(parts[1])
-            .map_err(|e| P2PError::MCP(format!("Invalid payload encoding: {}", e)))?;
+            .map_err(|e| P2PError::MCP(format!("Invalid payload encoding: {e}")))?;
         let signature = base64::prelude::BASE64_URL_SAFE_NO_PAD.decode(parts[2])
-            .map_err(|e| P2PError::MCP(format!("Invalid signature encoding: {}", e)))?;
+            .map_err(|e| P2PError::MCP(format!("Invalid signature encoding: {e}")))?;
         
         // Verify signature
         let signing_input = format!("{}.{}", parts[0], parts[1]);
@@ -379,12 +379,12 @@ impl MCPSecurityManager {
         
         // Parse payload
         let payload: TokenPayload = serde_json::from_slice(&payload_data)
-            .map_err(|e| P2PError::MCP(format!("Invalid payload: {}", e)))?;
+            .map_err(|e| P2PError::MCP(format!("Invalid payload: {e}")))?;
         
         // Check expiration
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| P2PError::MCP(format!("Time error: {}", e)))?
+            .map_err(|e| P2PError::MCP(format!("Time error: {e}")))?
             .as_secs();
         
         if payload.exp < now {

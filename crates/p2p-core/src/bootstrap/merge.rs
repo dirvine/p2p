@@ -92,7 +92,7 @@ impl MergeCoordinator {
         
         // Ensure instance cache directory exists
         std::fs::create_dir_all(&instance_cache_dir)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to create instance cache directory: {}", e)))?;
+            .map_err(|e| P2PError::Bootstrap(format!("Failed to create instance cache directory: {e}")))?;
         
         Ok(Self {
             cache_dir,
@@ -153,7 +153,7 @@ impl MergeCoordinator {
         }
         
         let entries = std::fs::read_dir(&self.instance_cache_dir)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to read instance cache directory: {}", e)))?;
+            .map_err(|e| P2PError::Bootstrap(format!("Failed to read instance cache directory: {e}")))?;
         
         for entry in entries {
             let entry = entry?;
@@ -204,10 +204,10 @@ impl MergeCoordinator {
     /// Load a single instance cache
     async fn load_instance_cache(&self, cache_file: &PathBuf) -> Result<InstanceCacheData> {
         let json_data = std::fs::read_to_string(cache_file)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to read instance cache: {}", e)))?;
+            .map_err(|e| P2PError::Bootstrap(format!("Failed to read instance cache: {e}")))?;
         
         let cache_data: InstanceCacheData = serde_json::from_str(&json_data)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to parse instance cache: {}", e)))?;
+            .map_err(|e| P2PError::Bootstrap(format!("Failed to parse instance cache: {e}")))?;
         
         Ok(cache_data)
     }
@@ -337,7 +337,7 @@ impl MergeCoordinator {
         // Update addresses (union of both sets)
         for addr in &instance_contact.addresses {
             if !combined_contact.addresses.contains(addr) {
-                combined_contact.addresses.push(addr.clone());
+                combined_contact.addresses.push(*addr);
             }
         }
         
@@ -411,7 +411,7 @@ impl MergeCoordinator {
         {
             use std::process::Command;
             Command::new("kill")
-                .args(&["-0", &process_id.to_string()])
+                .args(["-0", &process_id.to_string()])
                 .output()
                 .map(|output| output.status.success())
                 .unwrap_or(false)

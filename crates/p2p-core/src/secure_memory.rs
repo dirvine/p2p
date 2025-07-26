@@ -34,7 +34,7 @@ use std::alloc::{alloc_zeroed, dealloc, Layout};
 use std::fmt;
 use std::ops::Deref;
 use std::ptr::{self, NonNull};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::collections::VecDeque;
 
 #[cfg(unix)]
@@ -132,11 +132,11 @@ pub enum SecureMemoryError {
 impl std::fmt::Display for SecureMemoryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SecureMemoryError::AllocationFailed(msg) => write!(f, "Allocation failed: {}", msg),
-            SecureMemoryError::LockingFailed(msg) => write!(f, "Memory locking failed: {}", msg),
-            SecureMemoryError::InvalidParameters(msg) => write!(f, "Invalid parameters: {}", msg),
+            SecureMemoryError::AllocationFailed(msg) => write!(f, "Allocation failed: {msg}"),
+            SecureMemoryError::LockingFailed(msg) => write!(f, "Memory locking failed: {msg}"),
+            SecureMemoryError::InvalidParameters(msg) => write!(f, "Invalid parameters: {msg}"),
             SecureMemoryError::PoolExhausted => write!(f, "Secure memory pool exhausted"),
-            SecureMemoryError::NotSupported(msg) => write!(f, "Operation not supported: {}", msg),
+            SecureMemoryError::NotSupported(msg) => write!(f, "Operation not supported: {msg}"),
         }
     }
 }
@@ -152,8 +152,7 @@ impl SecureMemory {
 
         if size > MAX_SECURE_ALLOCATION {
             return Err(P2PError::Memory(format!(
-                "Allocation size {} exceeds maximum {}",
-                size, MAX_SECURE_ALLOCATION
+                "Allocation size {size} exceeds maximum {MAX_SECURE_ALLOCATION}"
             )));
         }
 
@@ -162,7 +161,7 @@ impl SecureMemory {
         
         // Create layout for allocation
         let layout = Layout::from_size_align(aligned_size, SECURE_ALIGNMENT)
-            .map_err(|e| P2PError::Memory(format!("Invalid layout: {}", e)))?;
+            .map_err(|e| P2PError::Memory(format!("Invalid layout: {e}")))?;
 
         // Allocate zeroed memory
         let ptr = unsafe { alloc_zeroed(layout) };
@@ -427,7 +426,7 @@ impl SecureString {
     /// Get the string as a str slice
     pub fn as_str(&self) -> Result<&str> {
         std::str::from_utf8(self.vec.as_slice())
-            .map_err(|e| P2PError::Memory(format!("Invalid UTF-8: {}", e)))
+            .map_err(|e| P2PError::Memory(format!("Invalid UTF-8: {e}")))
     }
 
     /// Clear the string (zeroizes the data)
@@ -439,7 +438,7 @@ impl SecureString {
 impl fmt::Display for SecureString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.as_str() {
-            Ok(s) => write!(f, "{}", s),
+            Ok(s) => write!(f, "{s}"),
             Err(_) => write!(f, "<invalid UTF-8>"),
         }
     }

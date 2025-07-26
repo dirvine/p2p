@@ -84,22 +84,22 @@ pub fn encapsulate(public_key: &[u8]) -> Result<(Vec<u8>, SharedSecret)> {
     // Extract Ed25519 public key
     let their_public = VerifyingKey::from_bytes(&public_key[0..32].try_into()
         .map_err(|_| QuantumCryptoError::MlKemError("Invalid public key length".to_string()))?)
-        .map_err(|e| QuantumCryptoError::MlKemError(format!("Invalid Ed25519 public key: {}", e)))?;
+        .map_err(|e| QuantumCryptoError::MlKemError(format!("Invalid Ed25519 public key: {e}")))?;
     
     // Generate ephemeral keypair for key exchange
     let our_signing_key = SigningKey::generate(&mut OsRng);
     
     // Create shared secret using deterministic key derivation
     let mut hasher = Sha256::new();
-    hasher.update(&their_public.to_bytes());
-    hasher.update(&our_signing_key.verifying_key().to_bytes());
-    hasher.update(&our_signing_key.to_bytes());
+    hasher.update(their_public.to_bytes());
+    hasher.update(our_signing_key.verifying_key().to_bytes());
+    hasher.update(our_signing_key.to_bytes());
     hasher.update(b"ML-KEM-768-ENCAPSULATE");
     let shared_secret_round1 = hasher.finalize();
     
     // Second round of KDF for additional security
     let mut hasher = Sha256::new();
-    hasher.update(&shared_secret_round1);
+    hasher.update(shared_secret_round1);
     hasher.update(&public_key[68..100]); // Include more entropy from original key
     let final_secret = hasher.finalize();
     
@@ -119,11 +119,11 @@ pub fn encapsulate(public_key: &[u8]) -> Result<(Vec<u8>, SharedSecret)> {
     
     // Fill remaining space with derived randomness
     let mut expansion_hasher = Sha256::new();
-    expansion_hasher.update(&final_secret);
+    expansion_hasher.update(final_secret);
     expansion_hasher.update(b"ML-KEM-CIPHERTEXT-EXPANSION");
     for i in 0..((1088 - 68 - 32) / 32) {  // Leave last 32 bytes for secret
         let mut round_hasher = expansion_hasher.clone();
-        round_hasher.update(&(i as u32).to_be_bytes());
+        round_hasher.update((i as u32).to_be_bytes());
         let round_hash = round_hasher.finalize();
         let start = 68 + i * 32;
         let end = std::cmp::min(start + 32, 1056);
@@ -306,7 +306,7 @@ impl HybridKeyExchange {
         let hkdf = Hkdf::<Sha256>::new(None, &combined);
         let mut output = [0u8; 32];
         hkdf.expand(b"hybrid-key-exchange", &mut output)
-            .map_err(|e| QuantumCryptoError::MlKemError(format!("HKDF failed: {}", e)))?;
+            .map_err(|e| QuantumCryptoError::MlKemError(format!("HKDF failed: {e}")))?;
         
         Ok(output)
     }

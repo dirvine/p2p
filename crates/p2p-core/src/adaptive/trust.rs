@@ -22,7 +22,6 @@ use std::sync::Arc;
 use std::time::{Instant, Duration};
 use tokio::sync::RwLock;
 use async_trait::async_trait;
-use crate::peer_record::UserId;
 
 /// EigenTrust++ engine for reputation management
 pub struct EigenTrustEngine {
@@ -489,6 +488,12 @@ impl RoutingStrategy for TrustBasedRoutingStrategy {
 /// Mock trust provider for testing
 pub struct MockTrustProvider {
     trust_scores: Arc<RwLock<HashMap<NodeId, f64>>>,
+}
+
+impl Default for MockTrustProvider {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MockTrustProvider {

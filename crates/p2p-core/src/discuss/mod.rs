@@ -56,6 +56,12 @@ type Result<T> = std::result::Result<T, DiscussError>;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CategoryId(pub String);
 
+impl Default for CategoryId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CategoryId {
     pub fn new() -> Self {
         Self(Uuid::new_v4().to_string())
@@ -66,6 +72,12 @@ impl CategoryId {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TopicId(pub String);
 
+impl Default for TopicId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TopicId {
     pub fn new() -> Self {
         Self(Uuid::new_v4().to_string())
@@ -75,6 +87,12 @@ impl TopicId {
 /// Reply identifier
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ReplyId(pub String);
+
+impl Default for ReplyId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ReplyId {
     pub fn new() -> Self {
@@ -152,7 +170,9 @@ pub struct CategoryStats {
 
 /// User trust level
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default)]
 pub enum TrustLevel {
+    #[default]
     New = 0,
     Basic = 1,
     Member = 2,
@@ -160,11 +180,6 @@ pub enum TrustLevel {
     Leader = 4,
 }
 
-impl Default for TrustLevel {
-    fn default() -> Self {
-        TrustLevel::New
-    }
-}
 
 /// Discussion topic
 #[derive(Debug, Clone, Serialize, Deserialize)]

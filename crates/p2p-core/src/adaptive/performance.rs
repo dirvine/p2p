@@ -150,7 +150,7 @@ impl ZeroCopyMessage {
     /// Deserialize without copying
     pub fn deserialize<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
         bincode::deserialize(&self.data)
-            .map_err(|e| AdaptiveNetworkError::SerializationError(e.to_string()))
+            .map_err(AdaptiveNetworkError::Serialization)
     }
 }
 
@@ -178,20 +178,21 @@ impl OptimizedSerializer {
         
         // Serialize to buffer
         let serialized = bincode::serialize(value)
-            .map_err(|e| AdaptiveNetworkError::SerializationError(e.to_string()))?;
+            .map_err(AdaptiveNetworkError::Serialization)?;
         buffer.extend_from_slice(&serialized);
         
         // Optional compression
         let bytes = if self.config.compression {
-            self.compress(&buffer)?
+            let compressed = self.compress(&buffer)?;
+            // Return buffer to pool after compression
+            if buffer.capacity() <= self.config.buffer_size * 2 {
+                self.buffer_pool.write().push(buffer);
+            }
+            compressed
         } else {
+            // freeze() consumes the buffer, so we can't return it to the pool
             buffer.freeze()
         };
-        
-        // Return buffer to pool
-        if buffer.capacity() <= self.config.buffer_size * 2 {
-            self.buffer_pool.write().push(buffer);
-        }
         
         Ok(bytes)
     }
@@ -234,7 +235,7 @@ impl<T: Send> ConnectionPool<T> {
     /// Return connection to pool
     pub fn put(&self, host: String, conn: T) {
         let mut pool = self.connections.write();
-        let conns = pool.entry(host).or_insert_with(Vec::new);
+        let conns = pool.entry(host).or_default();
         
         if conns.len() < self.max_per_host {
             conns.push(conn);
@@ -332,7 +333,8 @@ impl<T: Send + 'static> BatchProcessor<T> {
     /// Add item to batch
     pub async fn add(&self, item: T) -> Result<()> {
         self.tx.send(item).await
-            .map_err(|_| anyhow::anyhow!("Batch processor closed"))
+            .map_err(|_| AdaptiveNetworkError::Other("Batch processor closed".to_string()))?;
+        Ok(())
     }
     
     /// Process batch with given function
@@ -391,7 +393,7 @@ impl ConcurrencyLimiter {
         Fut: std::future::Future<Output = Result<T>>,
     {
         let _permit = self.semaphore.acquire().await
-            .map_err(|_| anyhow::anyhow!("Semaphore closed"))?;
+            .map_err(|_| AdaptiveNetworkError::Other("Semaphore closed".to_string()))?;
         f().await
     }
     
@@ -412,7 +414,7 @@ impl ConcurrencyLimiter {
         
         futures::future::join_all(futures).await
             .into_iter()
-            .filter_map(|x| x)
+            .flatten()
             .collect()
     }
 }
@@ -421,6 +423,12 @@ impl ConcurrencyLimiter {
 pub struct PerformanceMonitor {
     operation_times: Arc<PLRwLock<HashMap<String, Vec<Duration>>>>,
     start_times: Arc<PLRwLock<HashMap<String, Instant>>>,
+}
+
+impl Default for PerformanceMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PerformanceMonitor {
@@ -443,7 +451,7 @@ impl PerformanceMonitor {
             let duration = start.elapsed();
             self.operation_times.write()
                 .entry(name.to_string())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(duration);
         }
     }

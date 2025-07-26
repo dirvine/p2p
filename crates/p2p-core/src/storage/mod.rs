@@ -52,57 +52,57 @@ type Result<T> = std::result::Result<T, StorageError>;
 pub mod keys {
     /// User profile key pattern
     pub fn profile(user_id: &str) -> String {
-        format!("profile:{}", user_id)
+        format!("profile:{user_id}")
     }
     
     /// Device registry key
     pub fn devices(user_id: &str) -> String {
-        format!("devices:{}", user_id)
+        format!("devices:{user_id}")
     }
     
     /// Chat channel key
     pub fn chat_channel(channel_id: &str) -> String {
-        format!("chat:channel:{}", channel_id)
+        format!("chat:channel:{channel_id}")
     }
     
     /// Chat message key
     pub fn chat_message(channel_id: &str, msg_id: &str) -> String {
-        format!("chat:msg:{}:{}", channel_id, msg_id)
+        format!("chat:msg:{channel_id}:{msg_id}")
     }
     
     /// Chat message index (for pagination)
     pub fn chat_index(channel_id: &str, timestamp: u64) -> String {
-        format!("chat:idx:{}:{}", channel_id, timestamp)
+        format!("chat:idx:{channel_id}:{timestamp}")
     }
     
     /// Discussion topic key
     pub fn discuss_topic(topic_id: &str) -> String {
-        format!("discuss:topic:{}", topic_id)
+        format!("discuss:topic:{topic_id}")
     }
     
     /// Discussion reply key
     pub fn discuss_reply(topic_id: &str, reply_id: &str) -> String {
-        format!("discuss:reply:{}:{}", topic_id, reply_id)
+        format!("discuss:reply:{topic_id}:{reply_id}")
     }
     
     /// Project key
     pub fn project(project_id: &str) -> String {
-        format!("project:{}", project_id)
+        format!("project:{project_id}")
     }
     
     /// Document metadata key
     pub fn document_meta(doc_id: &str) -> String {
-        format!("doc:meta:{}", doc_id)
+        format!("doc:meta:{doc_id}")
     }
     
     /// File chunk key
     pub fn file_chunk(file_id: &str, chunk_num: u32) -> String {
-        format!("file:chunk:{}:{:08}", file_id, chunk_num)
+        format!("file:chunk:{file_id}:{chunk_num:08}")
     }
     
     /// Organization key
     pub fn organization(org_id: &str) -> String {
-        format!("org:{}", org_id)
+        format!("org:{org_id}")
     }
     
     /// Public channel discovery
@@ -112,7 +112,7 @@ pub mod keys {
     
     /// User's joined channels
     pub fn user_channels(user_id: &str) -> String {
-        format!("user:channels:{}", user_id)
+        format!("user:channels:{user_id}")
     }
 }
 

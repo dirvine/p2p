@@ -189,10 +189,10 @@ impl IPv6DHTIdentityManager {
                 Ok(())
             }
             Ok(false) => {
-                Err(P2PError::Security("Local IPv6 identity verification failed".to_string()).into())
+                Err(P2PError::Security("Local IPv6 identity verification failed".to_string()))
             }
             Err(e) => {
-                Err(P2PError::Security(format!("Identity verification error: {}", e)).into())
+                Err(P2PError::Security(format!("Identity verification error: {e}")))
             }
         }
     }
@@ -217,7 +217,7 @@ impl IPv6DHTIdentityManager {
             return Err(P2PError::Security(format!(
                 "IPv6 identity verification failed: {}",
                 verification_result.error_message.unwrap_or_default()
-            )).into());
+            )));
         }
 
         // Analyze IP for diversity enforcement
@@ -227,13 +227,13 @@ impl IPv6DHTIdentityManager {
         if self.config.enable_ip_diversity && !self.ip_enforcer.can_accept_node(&ip_analysis) {
             return Err(P2PError::Security(
                 "IP diversity constraints violated".to_string()
-            ).into());
+            ));
         }
 
         // Add to IP diversity tracking
         if self.config.enable_ip_diversity {
             self.ip_enforcer.add_node(&ip_analysis)
-                .map_err(|e| P2PError::Security(format!("IP diversity error: {}", e)))?;
+                .map_err(|e| P2PError::Security(format!("IP diversity error: {e}")))?;
         }
 
         let enhanced_node = IPv6DHTNode {
@@ -255,8 +255,8 @@ impl IPv6DHTIdentityManager {
     pub async fn verify_ipv6_identity(&mut self, identity: &IPv6NodeID) -> Result<IPv6VerificationResult> {
         // Check cache first
         if let Some((cached_identity, cached_at)) = self.identity_cache.get(&identity.ipv6_addr.to_string()) {
-            if cached_at.elapsed().unwrap_or(Duration::MAX) < self.config.identity_refresh_interval {
-                if cached_identity.node_id == identity.node_id {
+            if cached_at.elapsed().unwrap_or(Duration::MAX) < self.config.identity_refresh_interval
+                && cached_identity.node_id == identity.node_id {
                     return Ok(IPv6VerificationResult {
                         is_valid: true,
                         confidence: 0.9, // High confidence for cached valid identity
@@ -265,7 +265,6 @@ impl IPv6DHTIdentityManager {
                         identity_age_secs: cached_at.elapsed().unwrap_or_default().as_secs(),
                     });
                 }
-            }
         }
 
         // Verify cryptographic signature
@@ -276,7 +275,7 @@ impl IPv6DHTIdentityManager {
                 return Ok(IPv6VerificationResult {
                     is_valid: false,
                     confidence: 0.0,
-                    error_message: Some(format!("Signature verification failed: {}", e)),
+                    error_message: Some(format!("Signature verification failed: {e}")),
                     ip_diversity_ok: false,
                     identity_age_secs: 0,
                 });
@@ -361,7 +360,7 @@ impl IPv6DHTIdentityManager {
 
         // Perform IP analysis
         let analysis = self.ip_enforcer.analyze_ip(ipv6_addr)
-            .map_err(|e| P2PError::Security(format!("IP analysis error: {}", e)))?;
+            .map_err(|e| P2PError::Security(format!("IP analysis error: {e}")))?;
 
         // Cache the analysis
         self.ip_analysis_cache.insert(ipv6_addr, (analysis.clone(), SystemTime::now()));

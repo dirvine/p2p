@@ -52,6 +52,12 @@ type Result<T> = std::result::Result<T, ChatError>;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ChannelId(pub String);
 
+impl Default for ChannelId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChannelId {
     /// Generate new channel ID
     pub fn new() -> Self {
@@ -62,6 +68,12 @@ impl ChannelId {
 /// Message identifier
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MessageId(pub String);
+
+impl Default for MessageId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl MessageId {
     /// Generate new message ID

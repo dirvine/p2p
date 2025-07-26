@@ -129,18 +129,18 @@ impl BootstrapCache {
     pub async fn new(cache_dir: PathBuf, config: CacheConfig) -> Result<Self> {
         // Ensure cache directory exists
         std::fs::create_dir_all(&cache_dir)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to create cache directory: {}", e)))?;
+            .map_err(|e| P2PError::Bootstrap(format!("Failed to create cache directory: {e}")))?;
         
         let instance_id = generate_instance_id();
         
         let cache_file = cache_dir.join("bootstrap_cache.json");
-        let instance_cache_file = cache_dir.join("instance_caches").join(format!("{}.cache", instance_id));
+        let instance_cache_file = cache_dir.join("instance_caches").join(format!("{instance_id}.cache"));
         let lock_file = cache_dir.join("bootstrap_cache.lock");
         let metadata_file = cache_dir.join("metadata.json");
         
         // Ensure instance cache directory exists
         std::fs::create_dir_all(instance_cache_file.parent().unwrap())
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to create instance cache directory: {}", e)))?;
+            .map_err(|e| P2PError::Bootstrap(format!("Failed to create instance cache directory: {e}")))?;
         
         let mut cache = Self {
             config: config.clone(),
@@ -402,7 +402,7 @@ impl BootstrapCache {
         for contact in contacts.values() {
             if let Some(ref quic) = contact.quic_contact {
                 for conn_type in &quic.successful_connection_types {
-                    *connection_type_counts.entry(format!("{:?}", conn_type)).or_insert(0) += 1;
+                    *connection_type_counts.entry(format!("{conn_type:?}")).or_insert(0) += 1;
                 }
             }
         }
@@ -465,14 +465,14 @@ impl BootstrapCache {
         // Write to temporary file first for atomic operation
         let temp_file = self.cache_file.with_extension("tmp");
         let json_data = serde_json::to_string_pretty(&cache_data)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to serialize cache: {}", e)))?;
+            .map_err(|e| P2PError::Bootstrap(format!("Failed to serialize cache: {e}")))?;
         
         std::fs::write(&temp_file, json_data)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to write cache file: {}", e)))?;
+            .map_err(|e| P2PError::Bootstrap(format!("Failed to write cache file: {e}")))?;
         
         // Atomic rename
         std::fs::rename(temp_file, &self.cache_file)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to rename cache file: {}", e)))?;
+            .map_err(|e| P2PError::Bootstrap(format!("Failed to rename cache file: {e}")))?;
         
         debug!("Saved {} contacts to cache", contacts.len());
         
@@ -491,10 +491,10 @@ impl BootstrapCache {
         };
         
         let json_data = serde_json::to_string(&cache_data)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to serialize instance cache: {}", e)))?;
+            .map_err(|e| P2PError::Bootstrap(format!("Failed to serialize instance cache: {e}")))?;
         
         std::fs::write(&self.instance_cache_file, json_data)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to write instance cache: {}", e)))?;
+            .map_err(|e| P2PError::Bootstrap(format!("Failed to write instance cache: {e}")))?;
         
         Ok(())
     }
@@ -507,10 +507,10 @@ impl BootstrapCache {
     /// Load cache data from file
     async fn load_cache_data(&self) -> Result<CacheData> {
         let json_data = std::fs::read_to_string(&self.cache_file)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to read cache file: {}", e)))?;
+            .map_err(|e| P2PError::Bootstrap(format!("Failed to read cache file: {e}")))?;
         
         let cache_data: CacheData = serde_json::from_str(&json_data)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to parse cache file: {}", e)))?;
+            .map_err(|e| P2PError::Bootstrap(format!("Failed to parse cache file: {e}")))?;
         
         Ok(cache_data)
     }
@@ -653,7 +653,7 @@ impl FileLock {
             .create(true)
             .write(true)
             .open(lock_file)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to create lock file: {}", e)))?;
+            .map_err(|e| P2PError::Bootstrap(format!("Failed to create lock file: {e}")))?;
         
         // In a production system, you'd use proper file locking here
         // For now, we'll rely on atomic file operations

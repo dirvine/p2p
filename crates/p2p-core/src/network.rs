@@ -336,7 +336,7 @@ impl P2PNode {
     pub async fn new(config: NodeConfig) -> Result<Self> {
         let peer_id = config.peer_id.clone().unwrap_or_else(|| {
             // Generate a random peer ID for now
-            format!("peer_{}", uuid::Uuid::new_v4().to_string()[..8].to_string())
+            format!("peer_{}", &uuid::Uuid::new_v4().to_string()[..8])
         });
         
         let (event_tx, _) = broadcast::channel(1000);
@@ -363,7 +363,7 @@ impl P2PNode {
         let mcp_server = if config.enable_mcp_server {
             let mcp_config = config.mcp_server_config.clone().unwrap_or_else(|| {
                 MCPServerConfig {
-                    server_name: format!("P2P-MCP-{}", peer_id),
+                    server_name: format!("P2P-MCP-{peer_id}"),
                     server_version: crate::VERSION.to_string(),
                     enable_dht_discovery: dht.is_some(),
                     ..MCPServerConfig::default()
@@ -383,11 +383,7 @@ impl P2PNode {
         };
         
         // Initialize production resource manager if configured
-        let resource_manager = if let Some(prod_config) = config.production_config.clone() {
-            Some(Arc::new(ResourceManager::new(prod_config)))
-        } else {
-            None
-        };
+        let resource_manager = config.production_config.clone().map(|prod_config| Arc::new(ResourceManager::new(prod_config)));
         
         // Initialize bootstrap cache manager
         let bootstrap_manager = if let Some(ref cache_config) = config.bootstrap_cache_config {
@@ -511,7 +507,7 @@ impl P2PNode {
     }
 
     pub fn local_addr(&self) -> Option<String> {
-        self.listen_addrs.try_read().ok().and_then(|addrs| addrs.get(0).map(|a| a.to_string()))
+        self.listen_addrs.try_read().ok().and_then(|addrs| addrs.first().map(|a| a.to_string()))
     }
 
     pub async fn subscribe(&self, topic: &str) -> Result<()> {
@@ -572,7 +568,7 @@ impl P2PNode {
         // Start production resource manager if configured
         if let Some(ref resource_manager) = self.resource_manager {
             resource_manager.start().await
-                .map_err(|e| P2PError::Network(format!("Failed to start resource manager: {}", e)))?;
+                .map_err(|e| P2PError::Network(format!("Failed to start resource manager: {e}")))?;
             info!("Production resource manager started");
         }
         
@@ -580,7 +576,7 @@ impl P2PNode {
         if let Some(ref bootstrap_manager) = self.bootstrap_manager {
             let mut manager = bootstrap_manager.write().await;
             manager.start_background_tasks().await
-                .map_err(|e| P2PError::Network(format!("Failed to start bootstrap manager: {}", e)))?;
+                .map_err(|e| P2PError::Network(format!("Failed to start bootstrap manager: {e}")))?;
             info!("Bootstrap cache manager started");
         }
         
@@ -600,7 +596,7 @@ impl P2PNode {
         // Start MCP server if enabled
         if let Some(ref mcp_server) = self.mcp_server {
             mcp_server.start().await
-                .map_err(|e| P2PError::MCP(format!("Failed to start MCP server: {}", e)))?;
+                .map_err(|e| P2PError::MCP(format!("Failed to start MCP server: {e}")))?;
             info!("MCP server started with network integration");
         }
         
@@ -693,7 +689,7 @@ impl P2PNode {
         }
         
         // No TCP fallback - QUIC only
-        Err(crate::P2PError::Transport(format!("Failed to start QUIC listener on {}", addr)))
+        Err(crate::P2PError::Transport(format!("Failed to start QUIC listener on {addr}")))
     }
     
     /// Start connection acceptor background task
@@ -915,7 +911,7 @@ impl P2PNode {
                                     .as_secs()
                             })).unwrap();
                             
-                            if let Err(e) = self.send_message(&peer_id, MCP_PROTOCOL, ack_data).await {
+                            if let Err(e) = self.send_message(peer_id, MCP_PROTOCOL, ack_data).await {
                                 warn!("Failed to send heartbeat ack to {}: {}", peer_id, e);
                             }
                         }
@@ -953,10 +949,10 @@ impl P2PNode {
                             });
                             
                             let response_data = serde_json::to_vec(&health_response)
-                                .map_err(|e| P2PError::Serialization(e))?;
+                                .map_err(P2PError::Serialization)?;
                             
                             // Send health check response
-                            if let Err(e) = self.send_message(&peer_id, MCP_PROTOCOL, response_data).await {
+                            if let Err(e) = self.send_message(peer_id, MCP_PROTOCOL, response_data).await {
                                 warn!("Failed to send health check response to {}: {}", peer_id, e);
                             }
                         }
@@ -964,7 +960,7 @@ impl P2PNode {
                 }
                 Err(e) => {
                     warn!("Failed to deserialize MCP message from peer {}: {}", peer_id, e);
-                    return Err(P2PError::MCP(format!("Invalid MCP message: {}", e)));
+                    return Err(P2PError::MCP(format!("Invalid MCP message: {e}")));
                 }
             }
         } else {
@@ -1015,7 +1011,7 @@ impl P2PNode {
                         
                         // Serialize and send response
                         let response_data = serde_json::to_vec(&response_message)
-                            .map_err(|e| P2PError::Serialization(e))?;
+                            .map_err(P2PError::Serialization)?;
                         
                         self.send_message(peer_id, MCP_PROTOCOL, response_data).await?;
                         debug!("Sent MCP tool response to peer {}", peer_id);
@@ -1033,7 +1029,7 @@ impl P2PNode {
                                 .as_secs(),
                             payload: crate::mcp::MCPMessage::CallToolResult {
                                 content: vec![crate::mcp::MCPContent::Text {
-                                    text: format!("Error: {}", e),
+                                    text: format!("Error: {e}"),
                                 }],
                                 is_error: true,
                             },
@@ -1041,7 +1037,7 @@ impl P2PNode {
                         };
                         
                         let error_data = serde_json::to_vec(&error_message)
-                            .map_err(|e| P2PError::Serialization(e))?;
+                            .map_err(P2PError::Serialization)?;
                         
                         self.send_message(peer_id, MCP_PROTOCOL, error_data).await?;
                         warn!("Sent MCP error response to peer {}: {}", peer_id, e);
@@ -1134,7 +1130,7 @@ impl P2PNode {
         // Shutdown MCP server if enabled
         if let Some(ref mcp_server) = self.mcp_server {
             mcp_server.shutdown().await
-                .map_err(|e| P2PError::MCP(format!("Failed to shutdown MCP server: {}", e)))?;
+                .map_err(|e| P2PError::MCP(format!("Failed to shutdown MCP server: {e}")))?;
             info!("MCP server stopped");
         }
         
@@ -1144,7 +1140,7 @@ impl P2PNode {
         // Shutdown production resource manager if configured
         if let Some(ref resource_manager) = self.resource_manager {
             resource_manager.shutdown().await
-                .map_err(|e| P2PError::Network(format!("Failed to shutdown resource manager: {}", e)))?;
+                .map_err(|e| P2PError::Network(format!("Failed to shutdown resource manager: {e}")))?;
             info!("Production resource manager stopped");
         }
         
@@ -1190,7 +1186,7 @@ impl P2PNode {
         
         // Parse the address to SocketAddr format
         let socket_addr: std::net::SocketAddr = address.parse()
-            .map_err(|e| P2PError::Transport(format!("Invalid address format: {}", e)))?;
+            .map_err(|e| P2PError::Transport(format!("Invalid address format: {e}")))?;
         
         // Use transport manager to establish real connection
         let peer_id = match self.transport_manager.connect(NetworkAddress::new(socket_addr)).await {
@@ -1258,13 +1254,13 @@ impl P2PNode {
         // Check rate limits if resource manager is enabled
         if let Some(ref resource_manager) = self.resource_manager {
             if !resource_manager.check_rate_limit(peer_id, "message").await? {
-                return Err(P2PError::Network(format!("Rate limit exceeded for peer {}", peer_id)));
+                return Err(P2PError::Network(format!("Rate limit exceeded for peer {peer_id}")));
             }
         }
         
         // Check if peer is connected
         if !self.peers.read().await.contains_key(peer_id) {
-            return Err(P2PError::Network(format!("Peer {} not connected", peer_id)));
+            return Err(P2PError::Network(format!("Peer {peer_id} not connected")));
         }
         
         // For MCP protocol messages, validate before sending
@@ -1275,7 +1271,7 @@ impl P2PNode {
             }
             
             // Check message type is valid
-            let message_type = data.get(0).unwrap_or(&0);
+            let message_type = data.first().unwrap_or(&0);
             if *message_type > 10 { // Arbitrary limit for message types
                 return Err(P2PError::Network("Invalid MCP message type".to_string()));
             }
@@ -1298,7 +1294,7 @@ impl P2PNode {
             }
             Err(e) => {
                 warn!("Failed to send message to peer {}: {}", peer_id, e);
-                return Err(P2PError::Network(format!("Message send failed: {}", e)));
+                return Err(P2PError::Network(format!("Message send failed: {e}")));
             }
         }
         Ok(())
@@ -1320,7 +1316,7 @@ impl P2PNode {
         });
         
         serde_json::to_vec(&message)
-            .map_err(|e| P2PError::Transport(format!("Failed to serialize message: {}", e)))
+            .map_err(|e| P2PError::Transport(format!("Failed to serialize message: {e}")))
     }
 }
 
@@ -1339,7 +1335,7 @@ fn create_protocol_message_static(protocol: &str, data: Vec<u8>) -> Result<Vec<u
     });
     
     serde_json::to_vec(&message)
-        .map_err(|e| P2PError::Transport(format!("Failed to serialize message: {}", e)))
+        .map_err(|e| P2PError::Transport(format!("Failed to serialize message: {e}")))
 }
 
 impl P2PNode {
@@ -1362,7 +1358,7 @@ impl P2PNode {
     pub async fn register_mcp_tool(&self, tool: Tool) -> Result<()> {
         if let Some(ref mcp_server) = self.mcp_server {
             mcp_server.register_tool(tool).await
-                .map_err(|e| P2PError::MCP(format!("Failed to register tool: {}", e)))
+                .map_err(|e| P2PError::MCP(format!("Failed to register tool: {e}")))
         } else {
             Err(P2PError::MCP("MCP server not enabled".to_string()))
         }
@@ -1387,7 +1383,7 @@ impl P2PNode {
             };
             
             mcp_server.call_tool(tool_name, arguments, context).await
-                .map_err(|e| P2PError::MCP(format!("Tool call failed: {}", e)))
+                .map_err(|e| P2PError::MCP(format!("Tool call failed: {e}")))
         } else {
             Err(P2PError::MCP("MCP server not enabled".to_string()))
         }
@@ -1456,7 +1452,7 @@ impl P2PNode {
             target_peer: Some(peer_id.clone()),
             timestamp: context.timestamp
                 .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| P2PError::Network(format!("Time error: {}", e)))?
+                .map_err(|e| P2PError::Network(format!("Time error: {e}")))?
                 .as_secs(),
             payload: mcp_message,
             ttl: 5, // Max 5 hops
@@ -1464,7 +1460,7 @@ impl P2PNode {
         
         // Serialize the message
         let message_data = serde_json::to_vec(&p2p_message)
-            .map_err(|e| P2PError::Serialization(e))?;
+            .map_err(P2PError::Serialization)?;
         
         if message_data.len() > crate::mcp::MAX_MESSAGE_SIZE {
             return Err(P2PError::MCP("Message too large".to_string()));
@@ -1491,7 +1487,7 @@ impl P2PNode {
     pub async fn list_mcp_tools(&self) -> Result<Vec<String>> {
         if let Some(ref mcp_server) = self.mcp_server {
             let (tools, _) = mcp_server.list_tools(None).await
-                .map_err(|e| P2PError::MCP(format!("Failed to list tools: {}", e)))?;
+                .map_err(|e| P2PError::MCP(format!("Failed to list tools: {e}")))?;
             
             Ok(tools.into_iter().map(|tool| tool.name).collect())
         } else {
@@ -1503,7 +1499,7 @@ impl P2PNode {
     pub async fn discover_remote_mcp_services(&self) -> Result<Vec<crate::mcp::MCPService>> {
         if let Some(ref mcp_server) = self.mcp_server {
             mcp_server.discover_remote_services().await
-                .map_err(|e| P2PError::MCP(format!("Failed to discover services: {}", e)))
+                .map_err(|e| P2PError::MCP(format!("Failed to discover services: {e}")))
         } else {
             Err(P2PError::MCP("MCP server not enabled".to_string()))
         }
@@ -1552,7 +1548,7 @@ impl P2PNode {
             // Basic health check without resource manager
             let peer_count = self.peer_count().await;
             if peer_count > self.config.max_connections {
-                Err(P2PError::Network(format!("Too many connections: {}", peer_count)))
+                Err(P2PError::Network(format!("Too many connections: {peer_count}")))
             } else {
                 Ok(())
             }
@@ -1579,7 +1575,7 @@ impl P2PNode {
         if let Some(ref dht) = self.dht {
             let dht_instance = dht.write().await;
             dht_instance.put(key.clone(), value.clone()).await
-                .map_err(|e| P2PError::DHT(format!("DHT put failed: {}", e)))?;
+                .map_err(|e| P2PError::DHT(format!("DHT put failed: {e}")))?;
             
             Ok(())
         } else {
@@ -1610,7 +1606,7 @@ impl P2PNode {
                 .collect();
             let contact = ContactEntry::new(peer_id, socket_addresses);
             manager.add_contact(contact).await
-                .map_err(|e| P2PError::Network(format!("Failed to add peer to bootstrap cache: {}", e)))?;
+                .map_err(|e| P2PError::Network(format!("Failed to add peer to bootstrap cache: {e}")))?;
         }
         Ok(())
     }
@@ -1631,7 +1627,7 @@ impl P2PNode {
             };
             
             manager.update_contact_metrics(peer_id, metrics).await
-                .map_err(|e| P2PError::Network(format!("Failed to update peer metrics: {}", e)))?;
+                .map_err(|e| P2PError::Network(format!("Failed to update peer metrics: {e}")))?;
         }
         Ok(())
     }
@@ -1641,7 +1637,7 @@ impl P2PNode {
         if let Some(ref bootstrap_manager) = self.bootstrap_manager {
             let manager = bootstrap_manager.read().await;
             let stats = manager.get_stats().await
-                .map_err(|e| P2PError::Network(format!("Failed to get bootstrap stats: {}", e)))?;
+                .map_err(|e| P2PError::Network(format!("Failed to get bootstrap stats: {e}")))?;
             Ok(Some(stats))
         } else {
             Ok(None)
@@ -1850,7 +1846,7 @@ impl P2PNode {
         };
         
         let query_data = serde_json::to_vec(&discovery_query)
-            .map_err(|e| P2PError::Serialization(e))?;
+            .map_err(P2PError::Serialization)?;
         
         self.send_message(peer_id, MCP_PROTOCOL, query_data).await?;
         debug!("Sent MCP service discovery query to peer {}", peer_id);
@@ -1932,6 +1928,12 @@ impl NetworkSender for P2PNetworkSender {
 /// Builder pattern for creating P2P nodes
 pub struct NodeBuilder {
     config: NodeConfig,
+}
+
+impl Default for NodeBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NodeBuilder {
@@ -2086,7 +2088,7 @@ async fn handle_mcp_message_standalone(
             }
             Err(e) => {
                 warn!("Failed to deserialize MCP message from peer {}: {}", peer_id, e);
-                return Err(P2PError::MCP(format!("Invalid MCP message: {}", e)));
+                return Err(P2PError::MCP(format!("Invalid MCP message: {e}")));
             }
         }
     } else {

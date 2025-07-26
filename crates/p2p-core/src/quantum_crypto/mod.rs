@@ -26,7 +26,6 @@ pub mod types;
 pub use self::types::*;
 
 use serde::{Deserialize, Serialize};
-use std::fmt;
 use thiserror::Error;
 
 /// Quantum cryptography errors

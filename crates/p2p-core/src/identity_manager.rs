@@ -99,7 +99,7 @@ impl Clone for IdentityKeyPair {
         
         Self {
             ed25519_secret,
-            ed25519_public: self.ed25519_public.clone(),
+            ed25519_public: self.ed25519_public,
             x25519_secret: self.x25519_secret,
             x25519_public: self.x25519_public,
             created_at: self.created_at,
@@ -170,6 +170,7 @@ pub enum RevocationReason {
 
 /// Identity creation parameters
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct IdentityCreationParams {
     /// Display name
     pub display_name: Option<String>,
@@ -279,7 +280,7 @@ impl IdentityKeyPair {
         
         Ok(Self {
             ed25519_secret: Ed25519SigningKey::from_bytes(&key.secret_key.to_bytes()),
-            ed25519_public: key.public_key.clone(),
+            ed25519_public: key.public_key,
             x25519_secret: key.x25519_secret,
             x25519_public: key.x25519_public,
             created_at,
@@ -308,7 +309,7 @@ impl IdentityKeyPair {
     /// Verify signature with Ed25519 public key
     pub fn verify(&self, data: &[u8], signature: &Signature) -> Result<()> {
         self.ed25519_public.verify(data, signature)
-            .map_err(|e| P2PError::Cryptography(format!("Signature verification failed: {}", e)))
+            .map_err(|e| P2PError::Cryptography(format!("Signature verification failed: {e}")))
     }
 }
 
@@ -329,8 +330,7 @@ impl Identity {
         
         if metadata_size > MAX_METADATA_SIZE {
             return Err(P2PError::InvalidInput(format!(
-                "Metadata size {} exceeds maximum {}",
-                metadata_size, MAX_METADATA_SIZE
+                "Metadata size {metadata_size} exceeds maximum {MAX_METADATA_SIZE}"
             )));
         }
         
@@ -377,7 +377,7 @@ impl Identity {
             endpoints,
             timestamp: self.updated_at,
             ttl: (self.expires_at - current_timestamp()) as u32,
-            signature: ed25519_dalek::Signature::from_bytes(&[0u8; 64]).unwrap(), // Will be set by signing
+            signature: ed25519_dalek::Signature::from_bytes(&[0u8; 64]), // Will be set by signing
         }
     }
     
@@ -419,7 +419,7 @@ impl IdentityManager {
         
         // Create storage directory
         tokio::fs::create_dir_all(&storage_path).await
-            .map_err(|e| P2PError::Storage(format!("Failed to create identity storage: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Failed to create identity storage: {e}")))?;
         
         // Initialize components
         let key_storage = Arc::new(EncryptedKeyStorageManager::new(
@@ -529,12 +529,12 @@ impl IdentityManager {
         }
         
         // Load from storage
-        let identity_path = self.storage_path.join(format!("{}.json", identity_id));
+        let identity_path = self.storage_path.join(format!("{identity_id}.json"));
         let identity_data = tokio::fs::read(&identity_path).await
-            .map_err(|e| P2PError::Storage(format!("Failed to read identity: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Failed to read identity: {e}")))?;
         
         let identity: Identity = serde_json::from_slice(&identity_data)
-            .map_err(|e| P2PError::Serialization(e))?;
+            .map_err(P2PError::Serialization)?;
         
         // Load key pair
         let master_seed = self.key_storage.retrieve_master_seed(
@@ -587,7 +587,7 @@ impl IdentityManager {
         match Ed25519VerifyingKey::from_bytes(identity.id.as_bytes()) {
             Ok(_) => {},
             Err(e) => {
-                issues.push(format!("Invalid public key in ID: {}", e));
+                issues.push(format!("Invalid public key in ID: {e}"));
                 trust_level = 0;
             }
         }
@@ -645,7 +645,7 @@ impl IdentityManager {
         
         // Generate new key pair
         let new_version = identity.key_version + 1;
-        let path = DerivationPath::from_string(&format!("m/44'/0'/0'/0/{}", new_version))?;
+        let path = DerivationPath::from_string(&format!("m/44'/0'/0'/0/{new_version}"))?;
         
         let derived_key = {
             let mut key_derivation = self.key_derivation.write().await;
@@ -712,7 +712,7 @@ impl IdentityManager {
         
         // Sign certificate
         let cert_data = bincode::serialize(&cert)
-            .map_err(|e| P2PError::Storage(format!("Failed to serialize certificate: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Failed to serialize certificate: {e}")))?;
         let signature = key_pair.sign(&cert_data)?;
         
         let mut signed_cert = cert;
@@ -772,7 +772,7 @@ impl IdentityManager {
         
         // Serialize identity
         let identity_data = serde_json::to_vec(&identity)
-            .map_err(|e| P2PError::Serialization(e))?;
+            .map_err(P2PError::Serialization)?;
         
         // Get key material
         let master_seed = self.key_storage.retrieve_master_seed(
@@ -802,7 +802,7 @@ impl IdentityManager {
         // Sign package
         let key_pair = self.get_key_pair(identity_id)?;
         let package_data = bincode::serialize(&package)
-            .map_err(|e| P2PError::Storage(format!("Failed to serialize package: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Failed to serialize package: {e}")))?;
         let signature = key_pair.sign(&package_data)?;
         
         let mut signed_package = package;
@@ -824,7 +824,7 @@ impl IdentityManager {
         
         // Deserialize identity
         let identity: Identity = serde_json::from_slice(identity_data)
-            .map_err(|e| P2PError::Serialization(e))?;
+            .map_err(P2PError::Serialization)?;
         
         // Store key material
         let master_seed = crate::key_derivation::MasterSeed::from_entropy(key_data)?;
@@ -862,10 +862,10 @@ impl IdentityManager {
     async fn save_identity(&self, identity: &Identity) -> Result<()> {
         let identity_path = self.storage_path.join(format!("{}.json", identity.id));
         let identity_data = serde_json::to_vec_pretty(identity)
-            .map_err(|e| P2PError::Serialization(e))?;
+            .map_err(P2PError::Serialization)?;
         
         tokio::fs::write(&identity_path, identity_data).await
-            .map_err(|e| P2PError::Storage(format!("Failed to save identity: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Failed to save identity: {e}")))?;
         
         Ok(())
     }
@@ -1079,15 +1079,3 @@ mod tests {
 }
 
 // Implement Default for IdentityCreationParams
-impl Default for IdentityCreationParams {
-    fn default() -> Self {
-        Self {
-            display_name: None,
-            avatar_url: None,
-            bio: None,
-            metadata: HashMap::new(),
-            key_lifetime: None,
-            derivation_path: None,
-        }
-    }
-}

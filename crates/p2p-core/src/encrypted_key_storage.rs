@@ -333,7 +333,7 @@ impl EncryptedKeyStorageManager {
         // Ensure parent directory exists
         if let Some(parent) = storage_path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| P2PError::Storage(format!("Failed to create storage directory: {}", e)))?;
+                .map_err(|e| P2PError::Storage(format!("Failed to create storage directory: {e}")))?;
         }
         
         Ok(Self {
@@ -464,7 +464,7 @@ impl EncryptedKeyStorageManager {
         let key_data = self.load_and_decrypt(password).await?;
         
         let seed_bytes = key_data.master_seeds.get(seed_id)
-            .ok_or_else(|| P2PError::Storage(format!("Master seed not found: {}", seed_id)))?;
+            .ok_or_else(|| P2PError::Storage(format!("Master seed not found: {seed_id}")))?;
         
         let master_seed = MasterSeed::from_entropy(seed_bytes)?;
         
@@ -533,7 +533,7 @@ impl EncryptedKeyStorageManager {
     /// Validate password strength
     pub fn validate_password(&self, password: &SecureString) -> Result<PasswordValidation> {
         let password_str = password.as_str()
-            .map_err(|e| P2PError::Security(format!("Invalid password encoding: {}", e)))?;
+            .map_err(|e| P2PError::Security(format!("Invalid password encoding: {e}")))?;
         
         let mut errors = Vec::new();
         let mut suggestions = Vec::new();
@@ -647,19 +647,19 @@ impl EncryptedKeyStorageManager {
         {
             let cache = self.password_cache.lock().unwrap();
             if let Some(ref cached_key) = *cache {
-                return Ok(SecureMemory::from_slice(cached_key.as_slice())?);
+                return SecureMemory::from_slice(cached_key.as_slice());
             }
         }
         
         let password_str = password.as_str()
-            .map_err(|e| P2PError::Cryptography(format!("Invalid password encoding: {}", e)))?;
+            .map_err(|e| P2PError::Cryptography(format!("Invalid password encoding: {e}")))?;
         
         let argon2 = self.argon2_config.create_argon2();
         let salt_string = SaltString::encode_b64(salt)
-            .map_err(|e| P2PError::Cryptography(format!("Failed to encode salt: {}", e)))?;
+            .map_err(|e| P2PError::Cryptography(format!("Failed to encode salt: {e}")))?;
         
         let hash = argon2.hash_password(password_str.as_bytes(), &salt_string)
-            .map_err(|e| P2PError::Cryptography(format!("Argon2id key derivation failed: {}", e)))?;
+            .map_err(|e| P2PError::Cryptography(format!("Argon2id key derivation failed: {e}")))?;
         
         let hash_output = hash.hash.unwrap();
         let key_bytes = hash_output.as_bytes();
@@ -695,14 +695,14 @@ impl EncryptedKeyStorageManager {
         
         // Serialize key data
         let serialized_data = bincode::serialize(key_data)
-            .map_err(|e| P2PError::Storage(format!("Serialization failed: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Serialization failed: {e}")))?;
         
         // Encrypt data
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(derived_key.as_slice()));
         let nonce_obj = Nonce::from_slice(nonce);
         
         let encrypted_data = cipher.encrypt(nonce_obj, serialized_data.as_ref())
-            .map_err(|e| P2PError::Cryptography(format!("AES-GCM encryption failed: {}", e)))?;
+            .map_err(|e| P2PError::Cryptography(format!("AES-GCM encryption failed: {e}")))?;
         
         // Create storage header
         let header = StorageHeader {
@@ -724,7 +724,7 @@ impl EncryptedKeyStorageManager {
         // Write to file atomically
         let temp_path = self.storage_path.with_extension("tmp");
         let serialized_storage = bincode::serialize(&storage)
-            .map_err(|e| P2PError::Storage(format!("Serialization failed: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Serialization failed: {e}")))?;
         
         {
             let mut file = OpenOptions::new()
@@ -732,18 +732,18 @@ impl EncryptedKeyStorageManager {
                 .write(true)
                 .truncate(true)
                 .open(&temp_path)
-                .map_err(|e| P2PError::Storage(format!("Failed to create temp file: {}", e)))?;
+                .map_err(|e| P2PError::Storage(format!("Failed to create temp file: {e}")))?;
             
             file.write_all(&serialized_storage)
-                .map_err(|e| P2PError::Storage(format!("Failed to write encrypted data: {}", e)))?;
+                .map_err(|e| P2PError::Storage(format!("Failed to write encrypted data: {e}")))?;
             
             file.flush()
-                .map_err(|e| P2PError::Storage(format!("Failed to flush file: {}", e)))?;
+                .map_err(|e| P2PError::Storage(format!("Failed to flush file: {e}")))?;
         }
         
         // Atomic rename
         std::fs::rename(&temp_path, &self.storage_path)
-            .map_err(|e| P2PError::Storage(format!("Failed to rename temp file: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Failed to rename temp file: {e}")))?;
         
         Ok(())
     }
@@ -752,15 +752,15 @@ impl EncryptedKeyStorageManager {
     async fn load_and_decrypt(&self, password: &SecureString) -> Result<KeyStorageData> {
         // Read storage file
         let mut file = File::open(&self.storage_path)
-            .map_err(|e| P2PError::Storage(format!("Failed to open storage file: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Failed to open storage file: {e}")))?;
         
         let mut data = Vec::new();
         file.read_to_end(&mut data)
-            .map_err(|e| P2PError::Storage(format!("Failed to read storage file: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Failed to read storage file: {e}")))?;
         
         // Deserialize storage
         let storage: EncryptedKeyStorage = bincode::deserialize(&data)
-            .map_err(|e| P2PError::Storage(format!("Deserialization failed: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Deserialization failed: {e}")))?;
         
         // Verify version
         if storage.header.version != STORAGE_FORMAT_VERSION {
@@ -778,11 +778,11 @@ impl EncryptedKeyStorageManager {
         let nonce_obj = Nonce::from_slice(&storage.header.nonce);
         
         let decrypted_data = cipher.decrypt(nonce_obj, storage.encrypted_data.as_ref())
-            .map_err(|e| P2PError::Cryptography(format!("AES-GCM decryption failed: {}", e)))?;
+            .map_err(|e| P2PError::Cryptography(format!("AES-GCM decryption failed: {e}")))?;
         
         // Deserialize key data
         let key_data: KeyStorageData = bincode::deserialize(&decrypted_data)
-            .map_err(|e| P2PError::Storage(format!("Deserialization failed: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Deserialization failed: {e}")))?;
         
         Ok(key_data)
     }
@@ -790,14 +790,14 @@ impl EncryptedKeyStorageManager {
     /// Get current salt from storage
     async fn get_current_salt(&self) -> Result<[u8; SALT_SIZE]> {
         let mut file = File::open(&self.storage_path)
-            .map_err(|e| P2PError::Storage(format!("Failed to open storage file: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Failed to open storage file: {e}")))?;
         
         let mut data = Vec::new();
         file.read_to_end(&mut data)
-            .map_err(|e| P2PError::Storage(format!("Failed to read storage file: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Failed to read storage file: {e}")))?;
         
         let storage: EncryptedKeyStorage = bincode::deserialize(&data)
-            .map_err(|e| P2PError::Storage(format!("Deserialization failed: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Deserialization failed: {e}")))?;
         
         Ok(storage.header.salt)
     }

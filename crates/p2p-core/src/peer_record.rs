@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
+use ed25519_dalek::{VerifyingKey, Signature, Signer, Verifier};
 use blake3::Hash;
 use uuid::Uuid;
 
@@ -278,7 +278,7 @@ impl PeerDHTRecord {
             endpoints,
             timestamp: current_timestamp(),
             ttl,
-            signature: Signature::from_bytes(&[0; 64]).unwrap(), // Placeholder, will be signed
+            signature: Signature::from_bytes(&[0; 64]), // Placeholder, will be signed
         })
     }
 
@@ -390,7 +390,7 @@ impl PeerDHTRecord {
     /// Serialize the record using bincode for efficiency
     pub fn serialize(&self) -> Result<Vec<u8>> {
         let serialized = bincode::serialize(self)
-            .map_err(|e| P2PError::Storage(format!("Failed to serialize record: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Failed to serialize record: {e}")))?;
         
         // Enforce size limits
         if serialized.len() > MAX_DHT_RECORD_SIZE {
@@ -408,7 +408,7 @@ impl PeerDHTRecord {
         }
         
         let record: PeerDHTRecord = bincode::deserialize(data)
-            .map_err(|e| P2PError::Storage(format!("Failed to deserialize record: {}", e)))?;
+            .map_err(|e| P2PError::Storage(format!("Failed to deserialize record: {e}")))?;
         
         // Validate version
         if record.version > Self::CURRENT_VERSION {

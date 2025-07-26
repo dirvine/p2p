@@ -27,8 +27,7 @@ use sha2::{Sha256, Digest};
 use std::{
     collections::HashMap,
     sync::Arc,
-    time::{Duration, Instant},
-    path::Path,
+    time::Instant,
 };
 use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
@@ -396,7 +395,7 @@ impl ChunkManager {
     
     /// Split content into chunks
     pub fn create_chunks(&self, content: &[u8], parent_hash: ContentHash) -> Vec<Chunk> {
-        let total_chunks = (content.len() + self.chunk_size - 1) / self.chunk_size;
+        let total_chunks = content.len().div_ceil(self.chunk_size);
         
         content
             .chunks(self.chunk_size)

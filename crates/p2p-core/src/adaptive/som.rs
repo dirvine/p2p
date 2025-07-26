@@ -66,6 +66,12 @@ pub struct FeatureExtractor {
     max_bandwidth: f64,
 }
 
+impl Default for FeatureExtractor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FeatureExtractor {
     /// Create a new feature extractor
     pub fn new() -> Self {
@@ -109,7 +115,7 @@ impl FeatureExtractor {
     
     /// Update content history for a node
     pub fn update_content_history(&mut self, node_id: &NodeId, content_type: ContentType) {
-        let history = self.content_history.entry(node_id.clone()).or_insert_with(HashMap::new);
+        let history = self.content_history.entry(node_id.clone()).or_default();
         *history.entry(content_type).or_insert(0) += 1;
     }
     
@@ -312,8 +318,8 @@ impl SelfOrganizingMap {
         
         // Collect nodes from BMU and neighbors
         let radius = 2;
-        for di in -(radius as i32)..=(radius as i32) {
-            for dj in -(radius as i32)..=(radius as i32) {
+        for di in -radius..=radius {
+            for dj in -radius..=radius {
                 let i = (bmu.0 as i32 + di) as usize;
                 let j = (bmu.1 as i32 + dj) as usize;
                 

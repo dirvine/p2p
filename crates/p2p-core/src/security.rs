@@ -133,7 +133,7 @@ impl IPv6NodeID {
         hasher.update(ipv6_addr.octets());
         hasher.update(&public_key);
         hasher.update(&salt);
-        hasher.update(&timestamp_secs.to_le_bytes());
+        hasher.update(timestamp_secs.to_le_bytes());
         let node_id = hasher.finalize().to_vec();
         
         // Create signature proving ownership
@@ -162,11 +162,11 @@ impl IPv6NodeID {
         hasher.update(self.ipv6_addr.octets());
         hasher.update(&self.public_key);
         hasher.update(&self.salt);
-        hasher.update(&self.timestamp_secs.to_le_bytes());
+        hasher.update(self.timestamp_secs.to_le_bytes());
         let expected_node_id = hasher.finalize();
         
         // Verify node ID matches
-        if expected_node_id.as_slice() != &self.node_id {
+        if expected_node_id.as_slice() != self.node_id {
             return Ok(false);
         }
         
@@ -185,8 +185,7 @@ impl IPv6NodeID {
             
         let mut sig_bytes = [0u8; 64];
         sig_bytes.copy_from_slice(&self.signature);
-        let signature = Signature::from_bytes(&sig_bytes)
-            .map_err(|e| anyhow!("Invalid signature: {}", e))?;
+        let signature = Signature::from_bytes(&sig_bytes);
         
         let mut message_to_verify = Vec::new();
         message_to_verify.extend_from_slice(&self.ipv6_addr.octets());
@@ -502,7 +501,7 @@ impl ReputationManager {
         if success {
             reputation.response_rate = reputation.response_rate * (1.0 - alpha) + alpha;
         } else {
-            reputation.response_rate = reputation.response_rate * (1.0 - alpha);
+            reputation.response_rate *= 1.0 - alpha;
         }
         
         // Update response time

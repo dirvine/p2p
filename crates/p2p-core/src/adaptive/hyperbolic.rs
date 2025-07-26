@@ -46,6 +46,12 @@ pub struct RoutingStats {
     pub average_hop_count: f64,
 }
 
+impl Default for HyperbolicSpace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HyperbolicSpace {
     /// Create a new hyperbolic space instance
     pub fn new() -> Self {

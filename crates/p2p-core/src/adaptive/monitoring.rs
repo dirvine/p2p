@@ -23,11 +23,11 @@
 
 use super::*;
 use crate::adaptive::{
-    NetworkStats, ChurnHandler, AdaptiveRouter, AdaptiveGossipSub,
+    ChurnHandler, AdaptiveRouter, AdaptiveGossipSub,
     ContentStore, ReplicationManager, learning::{ThompsonSampling, QLearnCacheManager},
 };
 use prometheus::{
-    Encoder, TextEncoder, Counter, Gauge, Histogram, HistogramOpts,
+    Encoder, TextEncoder, Counter, Gauge, Histogram,
     IntCounter, IntGauge, Registry, register_counter, register_gauge,
     register_histogram, register_int_counter, register_int_gauge,
 };
@@ -159,13 +159,13 @@ struct NetworkMetrics {
 
 /// Components being monitored
 pub struct MonitoredComponents {
-    router: Arc<AdaptiveRouter>,
-    churn_handler: Arc<ChurnHandler>,
-    gossip: Arc<AdaptiveGossipSub>,
-    storage: Arc<ContentStore>,
-    replication: Arc<ReplicationManager>,
-    thompson: Arc<ThompsonSampling>,
-    cache: Arc<QLearnCacheManager>,
+    pub router: Arc<AdaptiveRouter>,
+    pub churn_handler: Arc<ChurnHandler>,
+    pub gossip: Arc<AdaptiveGossipSub>,
+    pub storage: Arc<ContentStore>,
+    pub replication: Arc<ReplicationManager>,
+    pub thompson: Arc<ThompsonSampling>,
+    pub cache: Arc<QLearnCacheManager>,
 }
 
 /// Anomaly detection system
@@ -501,7 +501,7 @@ impl MonitoringSystem {
                 
                 if let Err(e) = monitoring.collect_metrics().await {
                     // Log error but continue monitoring
-                    monitoring.logger.error("monitoring", &format!("Metric collection error: {}", e)).await;
+                    monitoring.logger.error("monitoring", &format!("Metric collection error: {e}")).await;
                 }
             }
         });
@@ -555,7 +555,7 @@ impl MonitoringSystem {
         let metric_families = self.registry.gather();
         let mut buffer = Vec::new();
         encoder.encode(&metric_families, &mut buffer)?;
-        Ok(String::from_utf8(buffer).map_err(|e| anyhow::anyhow!("UTF-8 error: {}", e))?)
+        String::from_utf8(buffer).map_err(|e| anyhow::anyhow!("UTF-8 error: {}", e))
     }
     
     /// Get current network health
@@ -629,7 +629,7 @@ impl MonitoringSystem {
                 let anomalies = detector.get_recent_anomalies().await;
                 for anomaly in anomalies {
                     // Log anomaly
-                    logger.warn("anomaly_detector", &format!("Anomaly detected: {:?}", anomaly)).await;
+                    logger.warn("anomaly_detector", &format!("Anomaly detected: {anomaly:?}")).await;
                     
                     // Create alert if severe
                     if anomaly.severity > 0.7 {

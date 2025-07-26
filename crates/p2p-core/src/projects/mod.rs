@@ -75,6 +75,12 @@ type Result<T> = std::result::Result<T, ProjectsError>;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ProjectId(pub String);
 
+impl Default for ProjectId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProjectId {
     /// Generate a new unique project identifier
     /// 
@@ -92,6 +98,12 @@ impl ProjectId {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DocumentId(pub String);
 
+impl Default for DocumentId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DocumentId {
     /// Generate a new unique document identifier
     /// 
@@ -108,6 +120,12 @@ impl DocumentId {
 /// structure, supporting nested organization of project content.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FolderId(pub String);
+
+impl Default for FolderId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl FolderId {
     /// Generate a new unique folder identifier
@@ -834,7 +852,7 @@ impl ProjectsManager {
         // Encrypt the data
         let mut ciphertext = content.to_vec();
         let tag = cipher.encrypt_in_place_detached(nonce, b"", &mut ciphertext)
-            .map_err(|e| ProjectsError::InvalidOperation(format!("Encryption failed: {}", e)))?;
+            .map_err(|e| ProjectsError::InvalidOperation(format!("Encryption failed: {e}")))?;
         
         // Combine nonce + ciphertext + tag
         let mut result = Vec::with_capacity(12 + ciphertext.len() + 16);
@@ -875,7 +893,7 @@ impl ProjectsManager {
         
         // Decrypt the data
         cipher.decrypt_in_place_detached(nonce, b"", &mut plaintext, tag.into())
-            .map_err(|e| ProjectsError::InvalidOperation(format!("Decryption failed: {}", e)))?;
+            .map_err(|e| ProjectsError::InvalidOperation(format!("Decryption failed: {e}")))?;
         
         Ok(plaintext)
     }

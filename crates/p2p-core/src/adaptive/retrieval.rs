@@ -25,7 +25,7 @@ use crate::adaptive::{
     RoutingStrategy,
     learning::QLearnCacheManager,
     storage::ContentStore,
-    ContentType, NetworkMessage,
+    ContentType,
 };
 use anyhow::Result;
 use std::{
@@ -34,7 +34,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{
-    sync::{RwLock, mpsc, oneshot},
+    sync::{RwLock, mpsc},
     time::timeout,
 };
 use futures::future::select_all;
@@ -389,7 +389,7 @@ impl RetrievalManager {
         // For now, simulate with random success
         if rand::random::<f64>() > 0.7 {
             // Simulate content retrieval
-            let content = format!("Content for hash {:?}", content_hash).into_bytes();
+            let content = format!("Content for hash {content_hash:?}").into_bytes();
             Ok((content, node))
         } else {
             Err(anyhow::anyhow!("Node does not have content"))

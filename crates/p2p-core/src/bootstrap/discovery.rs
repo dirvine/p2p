@@ -22,7 +22,7 @@
 
 use crate::bootstrap::{WordEncoder, FourWordAddress};
 use crate::address::NetworkAddress;
-use anyhow::{Result, Context};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use tracing::{info, warn, debug};

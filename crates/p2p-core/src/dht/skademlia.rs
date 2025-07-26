@@ -257,7 +257,7 @@ impl DisjointPathLookup {
     /// Add initial nodes to paths ensuring disjointness
     pub fn initialize_paths(&mut self, initial_nodes: Vec<DHTNode>) -> Result<()> {
         if initial_nodes.len() < self.path_count {
-            return Err(P2PError::DHT("Not enough initial nodes for disjoint paths".to_string()).into());
+            return Err(P2PError::DHT("Not enough initial nodes for disjoint paths".to_string()));
         }
 
         // Distribute nodes across paths to minimize overlap
@@ -596,7 +596,7 @@ impl SKademlia {
         if let Some(lookup) = self.active_lookups.get(&target) {
             Ok(lookup.get_results())
         } else {
-            Err(P2PError::DHT("Lookup disappeared".to_string()).into())
+            Err(P2PError::DHT("Lookup disappeared".to_string()))
         }
     }
 
@@ -666,7 +666,7 @@ impl SKademlia {
     pub fn verify_distance_proof(&self, proof: &DistanceProof) -> Result<bool> {
         // Verify proof timestamps
         let elapsed = proof.challenge.timestamp.elapsed()
-            .map_err(|e| P2PError::DHT(format!("Invalid timestamp: {}", e)))?;
+            .map_err(|e| P2PError::DHT(format!("Invalid timestamp: {e}")))?;
         
         if elapsed > Duration::from_secs(300) {
             return Ok(false); // Proof too old
@@ -690,7 +690,7 @@ impl SKademlia {
         // This would verify that proof_nodes actually signed the challenge
         
         // For now, accept if we have enough proof nodes
-        let min_proofs = (self.config.disjoint_path_count + 1) / 2;
+        let min_proofs = self.config.disjoint_path_count.div_ceil(2);
         Ok(proof.proof_nodes.len() >= min_proofs)
     }
 
@@ -747,7 +747,7 @@ impl SKademlia {
     /// Calculate consensus distance from multiple measurements
     fn calculate_consensus_distance(&self, measurements: &[DistanceMeasurement]) -> Result<Key> {
         if measurements.is_empty() {
-            return Err(P2PError::DHT("No measurements provided".to_string()).into());
+            return Err(P2PError::DHT("No measurements provided".to_string()));
         }
         
         // For simplicity, use the distance from the most confident measurement
@@ -761,7 +761,7 @@ impl SKademlia {
     /// Verify distance using multi-round challenge protocol
     pub async fn verify_distance_multi_round(&mut self, challenge: &EnhancedDistanceChallenge) -> Result<bool> {
         let mut successful_rounds = 0;
-        let required_rounds = (challenge.max_rounds + 1) / 2; // Majority
+        let required_rounds = challenge.max_rounds.div_ceil(2); // Majority
         
         for _round in 1..=challenge.max_rounds {
             // Select subset of witness nodes for this round
@@ -809,7 +809,7 @@ impl SKademlia {
         // TODO: Select actual witness nodes from routing table
         // For now, create placeholder witnesses
         for i in 0..witness_count {
-            witness_nodes.push(format!("witness_{}", i));
+            witness_nodes.push(format!("witness_{i}"));
         }
         
         // Create enhanced challenge with proper configuration

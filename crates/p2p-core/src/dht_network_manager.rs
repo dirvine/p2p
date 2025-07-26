@@ -308,14 +308,14 @@ impl DhtNetworkManager {
             warn!("No nodes found for key: {}, storing locally only", key.to_hex());
             // Store locally
             self.dht.write().await.put(key.clone(), value).await
-                .map_err(|e| P2PError::DHT(format!("Local storage failed: {}", e)))?;
+                .map_err(|e| P2PError::DHT(format!("Local storage failed: {e}")))?;
             
             return Ok(DhtNetworkResult::PutSuccess { key, replicated_to: 1 });
         }
         
         // Store locally first
         self.dht.write().await.put(key.clone(), value.clone()).await
-            .map_err(|e| P2PError::DHT(format!("Local storage failed: {}", e)))?;
+            .map_err(|e| P2PError::DHT(format!("Local storage failed: {e}")))?;
         
         // Replicate to closest nodes
         let mut replicated_count = 1; // Local storage
@@ -565,7 +565,7 @@ impl DhtNetworkManager {
         
         // Serialize message
         let message_data = serde_json::to_vec(&message)
-            .map_err(|e| P2PError::Serialization(e))?;
+            .map_err(P2PError::Serialization)?;
         
         // Create operation context for tracking
         let operation_context = DhtOperationContext {
@@ -615,8 +615,7 @@ impl DhtNetworkManager {
                 // Remove the operation context on timeout
                 self.active_operations.write().await.remove(message_id);
                 return Err(P2PError::Network(format!(
-                    "DHT request {} to peer {} timed out after {:?}", 
-                    message_id, peer_id, RESPONSE_TIMEOUT
+                    "DHT request {message_id} to peer {peer_id} timed out after {RESPONSE_TIMEOUT:?}"
                 )));
             }
             
@@ -648,8 +647,8 @@ impl DhtNetworkManager {
                 DhtNetworkOperation::FindNode { key } => {
                     // Try local node lookup as fallback
                     let nodes = self.dht.read().await.find_node(key).await;
-                    if !nodes.is_empty() {
-                        if !nodes.is_empty() {
+                    if !nodes.is_empty()
+                        && !nodes.is_empty() {
                             self.active_operations.write().await.remove(message_id);
                             let serializable_nodes: Vec<SerializableDHTNode> = nodes
                                 .into_iter()
@@ -661,7 +660,6 @@ impl DhtNetworkManager {
                                 nodes: serializable_nodes,
                             });
                         }
-                    }
                 }
                 _ => {}
             }
@@ -762,7 +760,7 @@ impl DhtNetworkManager {
     pub async fn handle_dht_message(&self, data: &[u8], sender: &PeerId) -> Result<Option<Vec<u8>>> {
         // Deserialize message
         let message: DhtNetworkMessage = serde_json::from_slice(data)
-            .map_err(|e| P2PError::Serialization(e))?;
+            .map_err(P2PError::Serialization)?;
         
         debug!("Received DHT message {} from {}: {:?}", 
                message.message_id, sender, message.message_type);
@@ -797,7 +795,7 @@ impl DhtNetworkManager {
             DhtNetworkOperation::Put { key, value } => {
                 info!("Handling PUT request for key: {}", key.to_hex());
                 self.dht.write().await.put(key.clone(), value.clone()).await
-                    .map_err(|e| P2PError::DHT(format!("PUT failed: {}", e)))?;
+                    .map_err(|e| P2PError::DHT(format!("PUT failed: {e}")))?;
                 Ok(DhtNetworkResult::PutSuccess { key: key.clone(), replicated_to: 1 })
             }
             DhtNetworkOperation::Get { key } => {
@@ -1135,8 +1133,8 @@ impl DhtNetworkManager {
     pub async fn get_routing_table_size(&self) -> usize {
         let dht_guard = self.dht.read().await;
         let stats = dht_guard.stats().await;
-        let total_nodes = stats.total_nodes;
-        total_nodes
+        
+        stats.total_nodes
     }
 }
 

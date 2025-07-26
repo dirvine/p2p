@@ -729,7 +729,7 @@ impl DHT {
             info!("Local IPv6 identity set and DHT key updated");
             Ok(())
         } else {
-            Err(P2PError::Security("IPv6 identity manager not enabled".to_string()).into())
+            Err(P2PError::Security("IPv6 identity manager not enabled".to_string()))
         }
     }
     
@@ -762,16 +762,16 @@ impl DHT {
                     Ok(())
                 }
                 ipv6_identity::IPv6SecurityEvent::VerificationFailed { reason, .. } => {
-                    Err(P2PError::Security(format!("IPv6 verification failed: {}", reason)).into())
+                    Err(P2PError::Security(format!("IPv6 verification failed: {reason}")))
                 }
                 ipv6_identity::IPv6SecurityEvent::DiversityViolation { subnet_type, .. } => {
-                    Err(P2PError::Security(format!("IP diversity violation: {}", subnet_type)).into())
+                    Err(P2PError::Security(format!("IP diversity violation: {subnet_type}")))
                 }
                 ipv6_identity::IPv6SecurityEvent::NodeBanned { reason, .. } => {
-                    Err(P2PError::Security(format!("Node banned: {}", reason)).into())
+                    Err(P2PError::Security(format!("Node banned: {reason}")))
                 }
                 _ => {
-                    Err(P2PError::Security("Unexpected security event".to_string()).into())
+                    Err(P2PError::Security("Unexpected security event".to_string()))
                 }
             }
         } else {
@@ -846,7 +846,7 @@ impl DHT {
             Err(P2PError::DHT(format!(
                 "Insufficient replication: only {}/{} nodes stored the record (required: {})", 
                 successful_replications, closest_nodes.len(), required_replications
-            )).into())
+            )))
         }
     }
     
@@ -1081,7 +1081,7 @@ impl DHT {
             let sample_nodes = self.routing_table.closest_nodes(&sample_key, 100).await;
             skademlia.validate_routing_consistency(&sample_nodes).await
         } else {
-            Err(P2PError::DHT("S/Kademlia not enabled".to_string()).into())
+            Err(P2PError::DHT("S/Kademlia not enabled".to_string()))
         }
     }
     
@@ -1096,7 +1096,7 @@ impl DHT {
         if let Some(ref skademlia) = self.skademlia {
             skademlia.verify_distance_proof(proof)
         } else {
-            Err(P2PError::DHT("S/Kademlia not enabled".to_string()).into())
+            Err(P2PError::DHT("S/Kademlia not enabled".to_string()))
         }
     }
 
@@ -1140,11 +1140,7 @@ impl DHT {
 
     /// Create enhanced distance challenge with adaptive difficulty
     pub fn create_enhanced_distance_challenge(&mut self, peer_id: &PeerId, key: &Key, suspected_attack: bool) -> Option<skademlia::EnhancedDistanceChallenge> {
-        if let Some(ref mut skademlia) = self.skademlia {
-            Some(skademlia.create_adaptive_distance_challenge(peer_id, key, suspected_attack))
-        } else {
-            None
-        }
+        self.skademlia.as_mut().map(|skademlia| skademlia.create_adaptive_distance_challenge(peer_id, key, suspected_attack))
     }
 
     /// Verify distance using multi-round challenge protocol  
@@ -1152,7 +1148,7 @@ impl DHT {
         if let Some(ref mut skademlia) = self.skademlia {
             skademlia.verify_distance_multi_round(challenge).await
         } else {
-            Err(P2PError::DHT("S/Kademlia not enabled".to_string()).into())
+            Err(P2PError::DHT("S/Kademlia not enabled".to_string()))
         }
     }
     
@@ -1176,7 +1172,7 @@ impl DHT {
     pub async fn ipv6_secure_get(&mut self, key: &Key) -> Result<Option<Record>> {
         // Check if requester would be banned
         if self.is_node_banned(&self.local_id.to_hex()) {
-            return Err(P2PError::Security("Local node is banned".to_string()).into());
+            return Err(P2PError::Security("Local node is banned".to_string()));
         }
 
         // Check local storage first
@@ -1238,7 +1234,7 @@ impl DHT {
     pub async fn ipv6_secure_put(&mut self, key: Key, value: Vec<u8>) -> Result<()> {
         // Check if local node would be banned
         if self.is_node_banned(&self.local_id.to_hex()) {
-            return Err(P2PError::Security("Local node is banned".to_string()).into());
+            return Err(P2PError::Security("Local node is banned".to_string()));
         }
 
         let record = Record::new(key.clone(), value, self.local_id.to_hex());
@@ -1275,7 +1271,7 @@ impl DHT {
         }
         
         if successful_replications == 0 && !secure_nodes.is_empty() {
-            return Err(P2PError::DHT("Failed to replicate to any IPv6-verified nodes".to_string()).into());
+            return Err(P2PError::DHT("Failed to replicate to any IPv6-verified nodes".to_string()));
         }
         
         info!("Successfully replicated to {}/{} IPv6-verified nodes", 
@@ -1350,7 +1346,7 @@ impl DHT {
         if rand::random::<f64>() < 0.95 {
             Ok(())
         } else {
-            Err(P2PError::Network("Replication failed".to_string()).into())
+            Err(P2PError::Network("Replication failed".to_string()))
         }
     }
     
@@ -1722,7 +1718,7 @@ impl DHT {
         };
         
         let metadata_value = serde_json::to_vec(&inbox_metadata)
-            .map_err(|e| P2PError::DHT(format!("Failed to serialize inbox metadata: {}", e)))?;
+            .map_err(|e| P2PError::DHT(format!("Failed to serialize inbox metadata: {e}")))?;
         
         let metadata_record = Record {
             key: inbox_key.clone(),
@@ -1745,7 +1741,7 @@ impl DHT {
         };
         
         let index_value = serde_json::to_vec(&empty_index)
-            .map_err(|e| P2PError::DHT(format!("Failed to serialize inbox index: {}", e)))?;
+            .map_err(|e| P2PError::DHT(format!("Failed to serialize inbox index: {e}")))?;
         
         let index_record = Record {
             key: index_key,
@@ -1780,20 +1776,20 @@ impl DHT {
         // Get current inbox metadata
         let inbox_key = Key::from_inbox_id(inbox_id);
         let metadata_record = self.get(&inbox_key).await
-            .ok_or_else(|| P2PError::DHT(format!("Inbox {} not found", inbox_id)))?;
+            .ok_or_else(|| P2PError::DHT(format!("Inbox {inbox_id} not found")))?;
         
         let mut inbox_metadata: InboxMetadata = serde_json::from_slice(&metadata_record.value)
-            .map_err(|e| P2PError::DHT(format!("Failed to deserialize inbox metadata: {}", e)))?;
+            .map_err(|e| P2PError::DHT(format!("Failed to deserialize inbox metadata: {e}")))?;
         
         // Check message limit
         if inbox_metadata.message_count >= inbox_metadata.max_messages {
-            return Err(P2PError::DHT(format!("Inbox {} is full", inbox_id)));
+            return Err(P2PError::DHT(format!("Inbox {inbox_id} is full")));
         }
         
         // Create message record with infinite TTL
         let message_key = Key::from_inbox_message(inbox_id, &message.id);
         let message_value = serde_json::to_vec(&message)
-            .map_err(|e| P2PError::DHT(format!("Failed to serialize message: {}", e)))?;
+            .map_err(|e| P2PError::DHT(format!("Failed to serialize message: {e}")))?;
         
         let message_record = Record {
             key: message_key.clone(),
@@ -1809,10 +1805,10 @@ impl DHT {
         // Update message index
         let index_key = Key::from_inbox_index(inbox_id);
         let index_record = self.get(&index_key).await
-            .ok_or_else(|| P2PError::DHT(format!("Inbox index {} not found", inbox_id)))?;
+            .ok_or_else(|| P2PError::DHT(format!("Inbox index {inbox_id} not found")))?;
         
         let mut message_index: InboxMessageIndex = serde_json::from_slice(&index_record.value)
-            .map_err(|e| P2PError::DHT(format!("Failed to deserialize message index: {}", e)))?;
+            .map_err(|e| P2PError::DHT(format!("Failed to deserialize message index: {e}")))?;
         
         message_index.messages.push(MessageRef {
             message_id: message.id.clone(),
@@ -1827,10 +1823,10 @@ impl DHT {
         
         // Store updated index and metadata
         let updated_index_value = serde_json::to_vec(&message_index)
-            .map_err(|e| P2PError::DHT(format!("Failed to serialize updated index: {}", e)))?;
+            .map_err(|e| P2PError::DHT(format!("Failed to serialize updated index: {e}")))?;
         
         let updated_metadata_value = serde_json::to_vec(&inbox_metadata)
-            .map_err(|e| P2PError::DHT(format!("Failed to serialize updated metadata: {}", e)))?;
+            .map_err(|e| P2PError::DHT(format!("Failed to serialize updated metadata: {e}")))?;
         
         let updated_index_record = Record {
             key: index_key,
@@ -1863,10 +1859,10 @@ impl DHT {
         
         let index_key = Key::from_inbox_index(inbox_id);
         let index_record = self.get(&index_key).await
-            .ok_or_else(|| P2PError::DHT(format!("Inbox {} not found", inbox_id)))?;
+            .ok_or_else(|| P2PError::DHT(format!("Inbox {inbox_id} not found")))?;
         
         let message_index: InboxMessageIndex = serde_json::from_slice(&index_record.value)
-            .map_err(|e| P2PError::DHT(format!("Failed to deserialize message index: {}", e)))?;
+            .map_err(|e| P2PError::DHT(format!("Failed to deserialize message index: {e}")))?;
         
         let mut messages = Vec::new();
         let message_refs: Vec<&MessageRef> = if let Some(limit) = limit {
@@ -1898,7 +1894,7 @@ impl DHT {
         
         if let Some(record) = metadata_record {
             let metadata: InboxMetadata = serde_json::from_slice(&record.value)
-                .map_err(|e| P2PError::DHT(format!("Failed to deserialize inbox metadata: {}", e)))?;
+                .map_err(|e| P2PError::DHT(format!("Failed to deserialize inbox metadata: {e}")))?;
             
             let inbox_info = InboxInfo {
                 inbox_id: inbox_id.to_string(),
@@ -1950,7 +1946,7 @@ impl DHT {
         let word2 = words[(hash >> 8) as usize % words.len()];
         let word3 = words[(hash >> 16) as usize % words.len()];
         
-        format!("{}.{}.{}", word1, word2, word3)
+        format!("{word1}.{word2}.{word3}")
     }
     
     /// Add a node to the DHT routing table

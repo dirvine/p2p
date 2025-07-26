@@ -102,7 +102,7 @@ impl IPv6BindingProof {
         user_keypair: &SigningKey,
         ipv6_keypair: &SigningKey,
     ) -> Result<Self> {
-        let ipv6_address = format!("{:?}", ipv6_id); // Placeholder conversion
+        let ipv6_address = format!("{ipv6_id:?}"); // Placeholder conversion
         let timestamp = SystemTime::now();
         
         // Create signature data (simplified)
@@ -243,7 +243,7 @@ impl UserIdentity {
         let mut keypair_bytes = [0u8; 64];
         keypair_bytes[..32].copy_from_slice(&secret_bytes);
         keypair_bytes[32..].copy_from_slice(&public_bytes);
-        let keypair = SigningKey::from_bytes(&keypair_bytes[..32]).map_err(|e| P2PError::Cryptography(e.to_string()))?;
+        let keypair = SigningKey::from_bytes(&secret_bytes);
         
         // Derive user ID from public key using ant-quic's method
         let peer_id = derive_peer_id_from_public_key(&ant_public_key);
@@ -362,12 +362,12 @@ impl EncryptedUserProfile {
     ) -> Result<Self> {
         // Serialize the profile data
         let profile_data = serde_json::to_vec(profile)
-            .map_err(|e| P2PError::Serialization(e))?;
+            .map_err(P2PError::Serialization)?;
         
         // Generate encryption key from keypair deterministically
         use sha2::{Sha256, Digest};
         let mut hasher = Sha256::new();
-        hasher.update(&keypair.to_bytes());
+        hasher.update(keypair.to_bytes());
         hasher.update(b"profile-encryption-key");
         let encryption_key = hasher.finalize();
         
@@ -412,12 +412,15 @@ impl EncryptedUserProfile {
         use ed25519_dalek::{VerifyingKey, Signature, Verifier};
         
         // Parse the public key
-        let public_key = VerifyingKey::from_bytes(&self.public_key)
-            .map_err(|e| P2PError::Identity(format!("Invalid public key: {}", e)))?;
+        let public_key_bytes: [u8; 32] = self.public_key.as_slice().try_into()
+            .map_err(|_| P2PError::Identity("Invalid public key length".to_string()))?;
+        let public_key = VerifyingKey::from_bytes(&public_key_bytes)
+            .map_err(|e| P2PError::Identity(format!("Invalid public key: {e}")))?;
         
         // Parse the signature
-        let signature = Signature::from_bytes(&self.signature)
-            .map_err(|e| P2PError::Identity(format!("Invalid signature: {}", e)))?;
+        let signature_bytes: [u8; 64] = self.signature.as_slice().try_into()
+            .map_err(|_| P2PError::Identity("Invalid signature length".to_string()))?;
+        let signature = Signature::from_bytes(&signature_bytes);
         
         // Verify signature against encrypted data
         match public_key.verify(&self.encrypted_data, &signature) {
@@ -446,7 +449,7 @@ impl EncryptedUserProfile {
         // Encrypt the data
         let mut ciphertext = data.to_vec();
         let tag = cipher.encrypt_in_place_detached(nonce, b"", &mut ciphertext)
-            .map_err(|e| P2PError::Identity(format!("Profile encryption failed: {}", e)))?;
+            .map_err(|e| P2PError::Identity(format!("Profile encryption failed: {e}")))?;
         
         // Combine nonce + ciphertext + tag
         let mut result = Vec::with_capacity(12 + ciphertext.len() + 16);
@@ -480,7 +483,7 @@ impl EncryptedUserProfile {
         
         // Decrypt the data
         cipher.decrypt_in_place_detached(nonce, b"", &mut plaintext, tag.into())
-            .map_err(|e| P2PError::Identity(format!("Profile decryption failed: {}", e)))?;
+            .map_err(|e| P2PError::Identity(format!("Profile decryption failed: {e}")))?;
         
         Ok(plaintext)
     }
@@ -504,7 +507,7 @@ impl EncryptedUserProfile {
         
         // Deserialize the profile
         let profile: UserProfile = serde_json::from_slice(&decrypted_data)
-            .map_err(|e| P2PError::Serialization(e))?;
+            .map_err(P2PError::Serialization)?;
         
         Ok(profile)
     }
@@ -969,12 +972,15 @@ impl ChallengeProof {
         use ed25519_dalek::{VerifyingKey, Signature, Verifier};
         
         // Parse the public key
-        let public_key = VerifyingKey::from_bytes(&self.public_key)
-            .map_err(|e| P2PError::Identity(format!("Invalid public key in proof: {}", e)))?;
+        let public_key_bytes: [u8; 32] = self.public_key.as_slice().try_into()
+            .map_err(|_| P2PError::Identity("Invalid public key length in proof".to_string()))?;
+        let public_key = VerifyingKey::from_bytes(&public_key_bytes)
+            .map_err(|e| P2PError::Identity(format!("Invalid public key in proof: {e}")))?;
         
         // Parse the signature
-        let signature = Signature::from_bytes(&self.signature)
-            .map_err(|e| P2PError::Identity(format!("Invalid signature in proof: {}", e)))?;
+        let signature_bytes: [u8; 64] = self.signature.as_slice().try_into()
+            .map_err(|_| P2PError::Identity("Invalid signature length in proof".to_string()))?;
+        let signature = Signature::from_bytes(&signature_bytes);
         
         // Create the signed data: challenge_id + proof_data
         let mut signed_data = challenge.challenge_id.as_bytes().to_vec();

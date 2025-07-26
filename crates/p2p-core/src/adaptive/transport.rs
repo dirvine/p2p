@@ -87,6 +87,12 @@ pub struct TcpTransport {
     connections: Arc<RwLock<HashMap<SocketAddr, Arc<RwLock<TcpStream>>>>>,
 }
 
+impl Default for TcpTransport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TcpTransport {
     pub fn new() -> Self {
         Self {
@@ -99,7 +105,7 @@ impl TcpTransport {
 impl Transport for TcpTransport {
     async fn listen(&self, addr: SocketAddr) -> Result<Box<dyn TransportListener>> {
         let listener = TcpListener::bind(addr).await
-            .map_err(|e| AdaptiveNetworkError::Network(e))?;
+            .map_err(AdaptiveNetworkError::Network)?;
         
         Ok(Box::new(TcpTransportListener { listener }))
     }
@@ -115,10 +121,10 @@ impl Transport for TcpTransport {
         }
         
         let stream = TcpStream::connect(addr).await
-            .map_err(|e| AdaptiveNetworkError::Network(e))?;
+            .map_err(AdaptiveNetworkError::Network)?;
         
         let local_addr = stream.local_addr()
-            .map_err(|e| AdaptiveNetworkError::Network(e))?;
+            .map_err(AdaptiveNetworkError::Network)?;
         
         let info = ConnectionInfo {
             protocol: TransportProtocol::Tcp,
@@ -150,10 +156,10 @@ struct TcpTransportListener {
 impl TransportListener for TcpTransportListener {
     async fn accept(&self) -> Result<(Box<dyn TransportConnection>, SocketAddr)> {
         let (stream, remote_addr) = self.listener.accept().await
-            .map_err(|e| AdaptiveNetworkError::Network(e))?;
+            .map_err(AdaptiveNetworkError::Network)?;
         
         let local_addr = stream.local_addr()
-            .map_err(|e| AdaptiveNetworkError::Network(e))?;
+            .map_err(AdaptiveNetworkError::Network)?;
         
         let info = ConnectionInfo {
             protocol: TransportProtocol::Tcp,
@@ -169,7 +175,7 @@ impl TransportListener for TcpTransportListener {
     
     fn local_addr(&self) -> Result<SocketAddr> {
         self.listener.local_addr()
-            .map_err(|e| AdaptiveNetworkError::Network(e))
+            .map_err(AdaptiveNetworkError::Network)
     }
 }
 
@@ -186,7 +192,7 @@ impl TransportConnection for TcpTransportConnection {
     }
     
     async fn close(&mut self) -> Result<()> {
-        use std::io::Error;
+        
         // TCP stream doesn't have shutdown method, use try_write with empty buffer
         // to flush and then drop will close the connection
         Ok(())
@@ -238,6 +244,12 @@ pub struct QuicTransport {
     // Quinn endpoint would go here
 }
 
+impl Default for QuicTransport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QuicTransport {
     pub fn new() -> Self {
         Self {}
@@ -276,6 +288,12 @@ pub struct TransportManager {
     
     /// Protocol preferences
     protocol_preference: Vec<TransportProtocol>,
+}
+
+impl Default for TransportManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TransportManager {
@@ -359,6 +377,12 @@ pub struct NatTraversal {
     
     /// Known public addresses
     public_addresses: Arc<RwLock<Vec<SocketAddr>>>,
+}
+
+impl Default for NatTraversal {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NatTraversal {

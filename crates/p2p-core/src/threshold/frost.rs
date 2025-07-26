@@ -233,6 +233,12 @@ struct GroupInfo {
     pub participants: Vec<ParticipantId>,
 }
 
+impl Default for FrostCoordinator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FrostCoordinator {
     /// Create new coordinator
     pub fn new() -> Self {

@@ -94,7 +94,7 @@ impl HybridKeyExchange {
         let hkdf = Hkdf::<Sha256>::new(None, &combined);
         let mut output = [0u8; 32];
         hkdf.expand(b"hybrid-key-exchange-v1", &mut output)
-            .map_err(|e| QuantumCryptoError::MlKemError(format!("HKDF failed: {}", e)))?;
+            .map_err(|e| QuantumCryptoError::MlKemError(format!("HKDF failed: {e}")))?;
         
         self.hybrid_secret = Some(output);
         Ok(output)
@@ -108,6 +108,12 @@ pub struct HybridSigner {
     
     /// Ed25519 signing key
     pub ed25519_signing_key: Option<SigningKey>,
+}
+
+impl Default for HybridSigner {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HybridSigner {
@@ -193,8 +199,9 @@ impl HybridSigner {
             let verifying_key = VerifyingKey::from_bytes(&ed25519_key.0)
                 .map_err(|e| QuantumCryptoError::InvalidKeyError(e.to_string()))?;
             
-            let signature = Signature::from_bytes(&signature.classical.0)
-                .map_err(|e| QuantumCryptoError::InvalidKeyError(e.to_string()))?;
+            let signature_bytes: [u8; 64] = signature.classical.0.as_slice().try_into()
+                .map_err(|_| QuantumCryptoError::InvalidKeyError("Invalid signature length".to_string()))?;
+            let signature = Signature::from_bytes(&signature_bytes);
             
             verifying_key.verify(message, &signature)
                 .map_err(|_| QuantumCryptoError::SignatureVerificationFailed)?;

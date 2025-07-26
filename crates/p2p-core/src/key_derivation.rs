@@ -268,7 +268,7 @@ impl DerivationPath {
             
             let index: u32 = index_str.parse()
                 .map_err(|_| P2PError::Cryptography(
-                    format!("Invalid path component: {}", part)
+                    format!("Invalid path component: {part}")
                 ))?;
             
             let final_index = if hardened {
@@ -582,7 +582,7 @@ impl DerivedKey {
     
     /// Get Ed25519 key pair
     pub fn ed25519_keypair(&self) -> (SigningKey, VerifyingKey) {
-        (self.secret_key, self.public_key)
+        (self.secret_key.clone(), self.public_key)
     }
     
     /// Get X25519 key pair

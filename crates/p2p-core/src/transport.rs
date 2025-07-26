@@ -37,8 +37,10 @@ pub enum TransportType {
 
 /// Transport selection strategy (simplified for QUIC-only)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum TransportSelection {
     /// Use QUIC transport (default and only option)
+    #[default]
     QUIC,
 }
 
@@ -231,7 +233,7 @@ impl TransportManager {
     pub async fn connect(&self, addr: NetworkAddress) -> Result<PeerId> {
         let transport_type = self.select_transport(&addr).await?;
         let transport = self.transports.get(&transport_type)
-            .ok_or_else(|| P2PError::Transport(format!("Transport {:?} not available", transport_type)))?;
+            .ok_or_else(|| P2PError::Transport(format!("Transport {transport_type:?} not available")))?;
         
         debug!("Connecting to {} using {:?}", addr, transport_type);
         
@@ -248,7 +250,7 @@ impl TransportManager {
     /// Connect with specific transport
     pub async fn connect_with_transport(&self, addr: NetworkAddress, transport_type: TransportType) -> Result<PeerId> {
         let transport = self.transports.get(&transport_type)
-            .ok_or_else(|| P2PError::Transport(format!("Transport {:?} not available", transport_type)))?;
+            .ok_or_else(|| P2PError::Transport(format!("Transport {transport_type:?} not available")))?;
         
         let connection = transport.connect_with_options(addr.clone(), self.options.clone()).await?;
         let peer_id = format!("peer_from_{}_{}", addr.ip(), addr.port());
@@ -261,7 +263,7 @@ impl TransportManager {
     pub async fn send_message(&self, peer_id: &PeerId, data: Vec<u8>) -> Result<()> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(format!("No connection to peer {}", peer_id)))?;
+            .ok_or_else(|| P2PError::Network(format!("No connection to peer {peer_id}")))?;
         
         let mut pool_guard = pool.lock().await;
         let connection = pool_guard.get_connection()?;
@@ -277,7 +279,7 @@ impl TransportManager {
     pub async fn get_connection_info(&self, peer_id: &PeerId) -> Result<ConnectionInfo> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(format!("No connection to peer {}", peer_id)))?;
+            .ok_or_else(|| P2PError::Network(format!("No connection to peer {peer_id}")))?;
         
         let mut pool_guard = pool.lock().await;
         let connection = pool_guard.get_connection()?;
@@ -290,7 +292,7 @@ impl TransportManager {
     pub async fn get_connection_pool_info(&self, peer_id: &PeerId) -> Result<ConnectionPoolInfo> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(format!("No connection to peer {}", peer_id)))?;
+            .ok_or_else(|| P2PError::Network(format!("No connection to peer {peer_id}")))?;
         
         let pool_guard = pool.lock().await;
         Ok(ConnectionPoolInfo {
@@ -305,7 +307,7 @@ impl TransportManager {
     pub async fn get_connection_pool_stats(&self, peer_id: &PeerId) -> Result<ConnectionPoolStats> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(format!("No connection to peer {}", peer_id)))?;
+            .ok_or_else(|| P2PError::Network(format!("No connection to peer {peer_id}")))?;
         
         let pool_guard = pool.lock().await;
         Ok(pool_guard.stats.clone())
@@ -315,7 +317,7 @@ impl TransportManager {
     pub async fn measure_connection_quality(&self, peer_id: &PeerId) -> Result<ConnectionQuality> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(format!("No connection to peer {}", peer_id)))?;
+            .ok_or_else(|| P2PError::Network(format!("No connection to peer {peer_id}")))?;
         
         let mut pool_guard = pool.lock().await;
         let connection = pool_guard.get_connection()?;
@@ -436,12 +438,6 @@ impl fmt::Display for TransportType {
     }
 }
 
-impl Default for TransportSelection {
-    fn default() -> Self {
-        // Default to QUIC (only option)
-        TransportSelection::QUIC
-    }
-}
 
 impl Default for TransportOptions {
     fn default() -> Self {

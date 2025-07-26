@@ -21,11 +21,11 @@
 //! - Security audit tools
 
 use super::*;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime},
     net::IpAddr,
 };
 use tokio::sync::{RwLock, Mutex};
@@ -34,6 +34,7 @@ use sha2::{Sha256, Digest};
 
 /// Security configuration
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct SecurityConfig {
     /// Rate limiting configuration
     pub rate_limit: RateLimitConfig,
@@ -51,17 +52,6 @@ pub struct SecurityConfig {
     pub audit: AuditConfig,
 }
 
-impl Default for SecurityConfig {
-    fn default() -> Self {
-        Self {
-            rate_limit: RateLimitConfig::default(),
-            blacklist: BlacklistConfig::default(),
-            eclipse_detection: EclipseDetectionConfig::default(),
-            integrity: IntegrityConfig::default(),
-            audit: AuditConfig::default(),
-        }
-    }
-}
 
 /// Rate limiting configuration
 #[derive(Debug, Clone)]
@@ -425,7 +415,7 @@ pub enum SecurityEvent {
 }
 
 /// Event severity
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Severity {
     Debug,
     Info,
@@ -533,7 +523,7 @@ impl SecurityManager {
             if !self.rate_limiter.check_ip_rate(&ip_addr).await {
                 self.auditor.log_event(SecurityEvent::RateLimitExceeded,
                     None,
-                    format!("IP {} rate limit exceeded", ip_addr),
+                    format!("IP {ip_addr} rate limit exceeded"),
                     Severity::Warning).await;
                 return Err(SecurityError::RateLimitExceeded);
             }
@@ -549,7 +539,7 @@ impl SecurityManager {
         if diversity_score < self.config.eclipse_detection.min_diversity_score {
             self.auditor.log_event(SecurityEvent::EclipseAttackDetected,
                 None,
-                format!("Low routing table diversity: {:.2}", diversity_score),
+                format!("Low routing table diversity: {diversity_score:.2}"),
                 Severity::Critical).await;
             return Err(SecurityError::EclipseAttackDetected);
         }
@@ -573,15 +563,14 @@ impl SecurityManager {
         }
         
         // Verify content hash
-        if self.config.integrity.verify_content_hash {
-            if !self.integrity_verifier.verify_hash(message, hash).await {
+        if self.config.integrity.verify_content_hash
+            && !self.integrity_verifier.verify_hash(message, hash).await {
                 self.auditor.log_event(SecurityEvent::IntegrityFailure,
                     None,
                     "Content hash verification failed".to_string(),
                     Severity::Error).await;
                 return Err(SecurityError::IntegrityCheckFailed);
             }
-        }
         
         // Verify signature if required
         if self.config.integrity.require_signatures {
@@ -607,7 +596,7 @@ impl SecurityManager {
         
         self.auditor.log_event(SecurityEvent::NodeBlacklisted,
             Some(node_id),
-            format!("Node blacklisted: {:?}", reason),
+            format!("Node blacklisted: {reason:?}"),
             Severity::Warning).await;
     }
     
@@ -979,7 +968,7 @@ impl SecurityAuditor {
         }
         
         // Update event counts
-        let event_name = format!("{:?}", event_type);
+        let event_name = format!("{event_type:?}");
         let mut counts = self.event_counts.write().await;
         *counts.entry(event_name).or_insert(0) += 1;
     }
