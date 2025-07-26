@@ -291,15 +291,11 @@ impl EnhancedIdentityManager {
         
         let quantum_identity = QuantumPeerIdentity {
             peer_id,
-            ml_dsa_public_key: crate::quantum_crypto::types::MlDsaPublicKey(
-                keypair.public.ml_dsa.unwrap_or_default()
-            ),
-            ml_kem_public_key: crate::quantum_crypto::types::MlKemPublicKey(
-                keypair.public.ml_kem.unwrap_or_default()
-            ),
-            frost_public_key: keypair.public.frost.map(|k| 
-                crate::quantum_crypto::types::FrostPublicKey(k)
-            ),
+            ml_dsa_public_key: keypair.public.ml_dsa.clone()
+                .unwrap_or_else(|| crate::quantum_crypto::types::MlDsaPublicKey(vec![0u8; 32])),
+            ml_kem_public_key: keypair.public.ml_kem.clone()
+                .unwrap_or_else(|| crate::quantum_crypto::types::MlKemPublicKey(vec![0u8; 32])),
+            frost_public_key: keypair.public.frost.clone(),
             legacy_key: keypair.public.ed25519.clone().map(|k|
                 crate::quantum_crypto::types::Ed25519PublicKey(
                     k.try_into().unwrap_or([0; 32])

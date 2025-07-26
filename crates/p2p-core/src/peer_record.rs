@@ -272,7 +272,7 @@ impl PeerDHTRecord {
         Ok(Self {
             version: Self::CURRENT_VERSION,
             user_id,
-            verifying_key,
+            public_key,
             sequence_number,
             name,
             endpoints,

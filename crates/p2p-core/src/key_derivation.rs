@@ -95,8 +95,8 @@ impl Clone for DerivedKey {
         let verifying_key = VerifyingKey::from_bytes(self.public_key.as_bytes()).unwrap();
         
         Self {
-            secret_key,
-            public_key,
+            secret_key: signing_key,
+            public_key: verifying_key,
             x25519_secret: self.x25519_secret,
             x25519_public: self.x25519_public,
             path: self.path.clone(),
@@ -581,10 +581,8 @@ impl DerivedKey {
     }
     
     /// Get Ed25519 key pair
-    pub fn ed25519_keypair(&self) -> (SecretKey, PublicKey) {
-        let signing_key = SigningKey::from_bytes(self.secret_key.as_bytes());
-        let verifying_key = VerifyingKey::from_bytes(self.public_key.as_bytes()).unwrap();
-        (secret_key, public_key)
+    pub fn ed25519_keypair(&self) -> (SigningKey, VerifyingKey) {
+        (self.secret_key, self.public_key)
     }
     
     /// Get X25519 key pair

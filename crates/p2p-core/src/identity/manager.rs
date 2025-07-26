@@ -230,7 +230,7 @@ impl UserIdentity {
     /// 
     /// # Errors
     /// Returns error if cryptographic key generation fails
-    pub fn new(display_name: String, three_word_address: String) -> Result<(Self, Keypair)> {
+    pub fn new(display_name: String, three_word_address: String) -> Result<(Self, SigningKey)> {
         // Using ant-quic's key generation now
         
         // Generate new keypair using ant-quic
@@ -254,7 +254,7 @@ impl UserIdentity {
         
         let identity = Self {
             user_id,
-            public_key: keypair.public.as_bytes().to_vec(),
+            public_key: keypair.verifying_key().as_bytes().to_vec(),
             display_name_hint,
             three_word_address,
             created_at: SystemTime::now(),
