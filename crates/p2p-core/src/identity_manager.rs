@@ -37,7 +37,7 @@ use crate::encrypted_key_storage::{EncryptedKeyStorageManager, SecurityLevel};
 use crate::peer_record::{PeerDHTRecord, PeerEndpoint, UserId};
 use crate::crypto_verify::EnhancedSignatureVerifier;
 use crate::monotonic_counter::MonotonicCounterSystem;
-use ed25519_dalek::{ExpandedSecretKey, PublicKey as Ed25519PublicKey, SecretKey as Ed25519SecretKey, Signature, Verifier};
+use ed25519_dalek::{SigningKey as Ed25519SigningKey, VerifyingKey as Ed25519VerifyingKey, Signature, Signer, Verifier};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -78,8 +78,8 @@ pub enum IdentityState {
 #[derive(Debug)]
 pub struct IdentityKeyPair {
     /// Ed25519 key pair for signatures
-    pub ed25519_secret: Ed25519SecretKey,
-    pub ed25519_public: Ed25519PublicKey,
+    pub ed25519_secret: Ed25519SigningKey,
+    pub ed25519_public: Ed25519VerifyingKey,
     /// X25519 key pair for key exchange (stored as raw bytes)
     pub x25519_secret: [u8; 32],
     pub x25519_public: [u8; 32],
@@ -93,9 +93,9 @@ pub struct IdentityKeyPair {
 
 impl Clone for IdentityKeyPair {
     fn clone(&self) -> Self {
-        // SecretKey doesn't implement Clone, so we need to recreate it from bytes
+        // SigningKey doesn't implement Clone, so we need to recreate it from bytes
         let secret_bytes = self.ed25519_secret.to_bytes();
-        let ed25519_secret = Ed25519SecretKey::from_bytes(&secret_bytes).expect("Valid secret key");
+        let ed25519_secret = Ed25519SigningKey::from_bytes(&secret_bytes);
         
         Self {
             ed25519_secret,
@@ -278,8 +278,8 @@ impl IdentityKeyPair {
         let expires_at = created_at + lifetime.as_secs();
         
         Ok(Self {
-            ed25519_secret: Ed25519SecretKey::from_bytes(key.secret_key.as_bytes()).unwrap(),
-            ed25519_public: Ed25519PublicKey::from_bytes(key.public_key.as_bytes()).unwrap(),
+            ed25519_secret: Ed25519SigningKey::from_bytes(&key.secret_key.to_bytes()),
+            ed25519_public: key.public_key.clone(),
             x25519_secret: key.x25519_secret,
             x25519_public: key.x25519_public,
             created_at,
@@ -302,8 +302,7 @@ impl IdentityKeyPair {
     
     /// Sign data with Ed25519 key
     pub fn sign(&self, data: &[u8]) -> Result<Signature> {
-        let expanded_key = ExpandedSecretKey::from(&self.ed25519_secret);
-        Ok(expanded_key.sign(data, &self.ed25519_public))
+        Ok(self.ed25519_secret.sign(data))
     }
     
     /// Verify signature with Ed25519 public key
@@ -372,7 +371,7 @@ impl Identity {
         PeerDHTRecord {
             version: IDENTITY_VERSION,
             user_id: self.id.clone(),
-            public_key: ed25519_dalek::PublicKey::from_bytes(self.id.as_bytes()).unwrap(),
+            public_key: ed25519_dalek::VerifyingKey::from_bytes(self.id.as_bytes()).unwrap(),
             sequence_number: self.updated_at,
             name: self.display_name.clone(),
             endpoints,
@@ -585,7 +584,7 @@ impl IdentityManager {
         }
         
         // Verify public key matches ID
-        match Ed25519PublicKey::from_bytes(identity.id.as_bytes()) {
+        match Ed25519VerifyingKey::from_bytes(identity.id.as_bytes()) {
             Ok(_) => {},
             Err(e) => {
                 issues.push(format!("Invalid public key in ID: {}", e));

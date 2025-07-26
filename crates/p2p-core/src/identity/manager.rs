@@ -412,7 +412,7 @@ impl EncryptedUserProfile {
         use ed25519_dalek::{VerifyingKey, Signature, Verifier};
         
         // Parse the public key
-        let public_key = PublicKey::from_bytes(&self.public_key)
+        let public_key = VerifyingKey::from_bytes(&self.public_key)
             .map_err(|e| P2PError::Identity(format!("Invalid public key: {}", e)))?;
         
         // Parse the signature
@@ -969,7 +969,7 @@ impl ChallengeProof {
         use ed25519_dalek::{VerifyingKey, Signature, Verifier};
         
         // Parse the public key
-        let public_key = PublicKey::from_bytes(&self.public_key)
+        let public_key = VerifyingKey::from_bytes(&self.public_key)
             .map_err(|e| P2PError::Identity(format!("Invalid public key in proof: {}", e)))?;
         
         // Parse the signature

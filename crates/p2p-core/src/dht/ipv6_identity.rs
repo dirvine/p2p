@@ -543,7 +543,7 @@ impl IPv6DHTNode {
 mod tests {
     use super::*;
     use crate::security::{IPv6NodeID, IPAnalysis};
-    use ed25519_dalek::Keypair;
+    use ed25519_dalek::SigningKey;
     use std::net::Ipv6Addr;
     use std::str::FromStr;
     use std::time::Duration;
@@ -560,9 +560,9 @@ mod tests {
 
     fn create_test_ipv6_identity() -> IPv6NodeID {
         let mut csprng = rand::rngs::OsRng {};
-        let keypair = Keypair::generate(&mut csprng);
+        let signing_key = SigningKey::generate(&mut csprng);
         let ipv6_addr = Ipv6Addr::from_str("2001:db8::1").unwrap();
-        IPv6NodeID::generate(ipv6_addr, &keypair).unwrap()
+        IPv6NodeID::generate(ipv6_addr, &signing_key).unwrap()
     }
 
     fn create_test_ip_analysis() -> IPAnalysis {
