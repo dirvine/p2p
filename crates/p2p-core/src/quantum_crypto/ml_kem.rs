@@ -22,11 +22,11 @@ use sha2::{Sha256, Digest};
 
 /// Generate ML-KEM keypair (Ed25519-based implementation for current use)
 pub fn generate_keypair() -> Result<(Vec<u8>, Vec<u8>)> {
-    use ed25519_dalek::Keypair;
+    use ed25519_dalek::SigningKey;
     use rand::rngs::OsRng;
     
     // Generate Ed25519 keypair as foundation
-    let keypair = Keypair::generate(&mut OsRng);
+    let keypair = SigningKey::generate(&mut OsRng);
     
     // Convert to ML-KEM format (pad to expected sizes)
     let mut ml_kem_public = vec![0u8; 1184]; // ML-KEM-768 public key size
@@ -60,7 +60,7 @@ pub fn generate_keypair() -> Result<(Vec<u8>, Vec<u8>)> {
 
 /// Encapsulate a shared secret using ML-KEM public key (Ed25519-based KDF)
 pub fn encapsulate(public_key: &[u8]) -> Result<(Vec<u8>, SharedSecret)> {
-    use ed25519_dalek::{Keypair, PublicKey};
+    use ed25519_dalek::{SigningKey, VerifyingKey};
     use rand::rngs::OsRng;
     
     // Validate ML-KEM format

@@ -18,7 +18,7 @@
 
 use crate::{P2PError, Result, dht::Key, security::IPv6NodeID};
 use ant_quic::crypto::raw_public_keys::key_utils::{generate_ed25519_keypair, derive_peer_id_from_public_key};
-use ed25519_dalek::{PublicKey as Ed25519PublicKey, Keypair, Signer};
+use ed25519_dalek::{VerifyingKey as Ed25519PublicKey, SigningKey, Signer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -99,8 +99,8 @@ impl IPv6BindingProof {
     /// Create new IPv6 binding proof
     pub fn new(
         ipv6_id: IPv6NodeID,
-        user_keypair: &Keypair,
-        ipv6_keypair: &Keypair,
+        user_keypair: &SigningKey,
+        ipv6_keypair: &SigningKey,
     ) -> Result<Self> {
         let ipv6_address = format!("{:?}", ipv6_id); // Placeholder conversion
         let timestamp = SystemTime::now();
@@ -243,7 +243,7 @@ impl UserIdentity {
         let mut keypair_bytes = [0u8; 64];
         keypair_bytes[..32].copy_from_slice(&secret_bytes);
         keypair_bytes[32..].copy_from_slice(&public_bytes);
-        let keypair = Keypair::from_bytes(&keypair_bytes).map_err(|e| P2PError::Cryptography(e.to_string()))?;
+        let keypair = SigningKey::from_bytes(&keypair_bytes[..32]).map_err(|e| P2PError::Cryptography(e.to_string()))?;
         
         // Derive user ID from public key using ant-quic's method
         let peer_id = derive_peer_id_from_public_key(&ant_public_key);
@@ -357,7 +357,7 @@ impl EncryptedUserProfile {
     pub fn new_from_identity(
         identity: &UserIdentity,
         profile: &UserProfile,
-        keypair: &Keypair,
+        keypair: &SigningKey,
         ipv6_binding: Option<IPv6BindingProof>,
     ) -> Result<Self> {
         // Serialize the profile data
@@ -409,7 +409,7 @@ impl EncryptedUserProfile {
     /// # Errors
     /// Returns error if signature verification fails
     pub fn verify_signature(&self) -> Result<bool> {
-        use ed25519_dalek::{PublicKey, Signature, Verifier};
+        use ed25519_dalek::{VerifyingKey, Signature, Verifier};
         
         // Parse the public key
         let public_key = PublicKey::from_bytes(&self.public_key)
@@ -562,7 +562,7 @@ impl EncryptedUserProfile {
         public_key_bytes: &[u8],
         permissions: ProfilePermissions,
         profile_key: &[u8; 32],
-        keypair: &Keypair,
+        keypair: &SigningKey,
     ) -> Result<()> {
         // TODO: Implement proper access granting with encryption
         // For now, just log the operation
@@ -652,7 +652,7 @@ impl IdentityChallenge {
     /// 
     /// # Returns
     /// Signed challenge response for verification
-    pub fn create_response(&self, keypair: &ed25519_dalek::Keypair) -> ChallengeResponse {
+    pub fn create_response(&self, keypair: &ed25519_dalek::SigningKey) -> ChallengeResponse {
         let mut signed_data = self.challenge_id.as_bytes().to_vec();
         signed_data.extend_from_slice(&self.challenge_data);
         let signature = keypair.sign(&signed_data);
@@ -966,7 +966,7 @@ impl ChallengeProof {
         }
         
         // Verify the signature of the challenge data
-        use ed25519_dalek::{PublicKey, Signature, Verifier};
+        use ed25519_dalek::{VerifyingKey, Signature, Verifier};
         
         // Parse the public key
         let public_key = PublicKey::from_bytes(&self.public_key)
@@ -1029,7 +1029,7 @@ impl IdentityManager {
         display_name: String,
         three_word_address: String,
         _ipv6_identity: Option<IPv6NodeID>,
-        _ipv6_keypair: Option<&Keypair>,
+        _ipv6_keypair: Option<&SigningKey>,
     ) -> Result<UserIdentity> {
         let (identity, _keypair) = UserIdentity::new(display_name, three_word_address)?;
         

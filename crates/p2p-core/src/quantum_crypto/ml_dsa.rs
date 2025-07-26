@@ -22,10 +22,10 @@ use rand::rngs::OsRng;
 
 /// Generate ML-DSA keypair (using Ed25519 for testing)
 pub fn generate_keypair() -> Result<(Vec<u8>, Vec<u8>)> {
-    use ed25519_dalek::Keypair;
+    use ed25519_dalek::SigningKey;
     
-    let keypair = Keypair::generate(&mut OsRng);
-    let public_key = keypair.public.to_bytes().to_vec();
+    let keypair = SigningKey::generate(&mut OsRng);
+    let public_key = keypair.verifying_key().to_bytes().to_vec();
     let private_key = keypair.to_bytes().to_vec();
     
     Ok((public_key, private_key))

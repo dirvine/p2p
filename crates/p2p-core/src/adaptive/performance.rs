@@ -150,7 +150,7 @@ impl ZeroCopyMessage {
     /// Deserialize without copying
     pub fn deserialize<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
         bincode::deserialize(&self.data)
-            .map_err(|e| anyhow::anyhow!("Deserialization error: {}", e))
+            .map_err(|e| AdaptiveNetworkError::SerializationError(e.to_string()))
     }
 }
 
@@ -177,8 +177,9 @@ impl OptimizedSerializer {
         buffer.clear();
         
         // Serialize to buffer
-        bincode::serialize_into(&mut buffer, value)
-            .map_err(|e| anyhow::anyhow!("Serialization error: {}", e))?;
+        let serialized = bincode::serialize(value)
+            .map_err(|e| AdaptiveNetworkError::SerializationError(e.to_string()))?;
+        buffer.extend_from_slice(&serialized);
         
         // Optional compression
         let bytes = if self.config.compression {

@@ -21,7 +21,7 @@
 use crate::PeerId;
 use anyhow::{anyhow, Result};
 use ant_quic::crypto::raw_public_keys::key_utils::generate_ed25519_keypair;
-use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, Verifier};
+use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::net::Ipv6Addr;
@@ -119,7 +119,7 @@ impl Default for IPDiversityConfig {
 
 impl IPv6NodeID {
     /// Generate a new IPv6-based node ID
-    pub fn generate(ipv6_addr: Ipv6Addr, keypair: &Keypair) -> Result<Self> {
+    pub fn generate(ipv6_addr: Ipv6Addr, keypair: &SigningKey) -> Result<Self> {
         let mut rng = rand::thread_rng();
         let mut salt = vec![0u8; 16];
         rand::RngCore::fill_bytes(&mut rng, &mut salt);
@@ -542,7 +542,7 @@ pub mod security_types {
     
     /// Ed25519 key pair wrapper
     pub struct KeyPair {
-        inner: Keypair,
+        inner: SigningKey,
     }
     
     impl KeyPair {
@@ -557,13 +557,13 @@ pub mod security_types {
             let mut keypair_bytes = [0u8; 64];
             keypair_bytes[..32].copy_from_slice(&secret_bytes);
             keypair_bytes[32..].copy_from_slice(&public_bytes);
-            let keypair = Keypair::from_bytes(&keypair_bytes).expect("Valid keypair bytes");
+            let keypair = SigningKey::from_bytes(&keypair_bytes).expect("Valid keypair bytes");
             
             KeyPair { inner: keypair }
         }
         
         /// Get the inner Ed25519 keypair
-        pub fn inner(&self) -> &Keypair {
+        pub fn inner(&self) -> &SigningKey {
             &self.inner
         }
         
@@ -583,9 +583,9 @@ pub mod security_types {
 mod tests {
     use super::*;
 
-    fn create_test_keypair() -> Keypair {
+    fn create_test_keypair() -> SigningKey {
         let mut csprng = rand::rngs::OsRng;
-        Keypair::generate(&mut csprng)
+        SigningKey::generate(&mut csprng)
     }
 
     fn create_test_ipv6() -> Ipv6Addr {

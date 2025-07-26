@@ -538,7 +538,7 @@ impl MonitoringSystem {
         self.metrics.topic_count.set(gossip_stats.topic_count as i64);
         
         // Collect cache statistics
-        let cache_stats = self.components.cache.get_stats().await;
+        let cache_stats = self.components.cache.get_stats();
         self.metrics.cache_hits.inc_by(cache_stats.hits as f64);
         self.metrics.cache_misses.inc_by(cache_stats.misses as f64);
         self.metrics.cache_size.set(cache_stats.size_bytes as i64);

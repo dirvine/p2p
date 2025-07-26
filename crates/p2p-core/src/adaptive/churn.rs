@@ -28,7 +28,7 @@ use crate::adaptive::{
     routing::AdaptiveRouter,
     replication::ReplicationManager,
     storage::ContentStore,
-    gossip::AdaptiveGossipSub,
+    gossip::{AdaptiveGossipSub, GossipMessage},
     ContentHash, NodeId,
 };
 use anyhow::Result;
@@ -379,10 +379,17 @@ impl ChurnHandler {
         self.router.mark_node_unreliable(node_id).await;
         
         // 5. Notify network via gossip
-        self.gossip.publish(
-            "node_departing",
-            bincode::serialize(&node_id).map_err(|e| anyhow::anyhow!("Serialization error: {}", e))?,
-        ).await?;
+        let message = GossipMessage {
+            topic: "node_departing".to_string(),
+            data: bincode::serialize(&node_id).map_err(|e| anyhow::anyhow!("Serialization error: {}", e))?,
+            from: self.node_id.clone(),
+            seqno: 0, // Will be set by gossip subsystem
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        };
+        self.gossip.publish("node_departing", message).await?;
         
         Ok(())
     }
@@ -441,11 +448,19 @@ impl ChurnHandler {
         self.router.enable_aggressive_caching().await;
         
         // 4. Notify applications of degraded conditions
-        self.gossip.publish(
-            "high_churn_alert",
-            bincode::serialize(&self.stats.read().await.churn_rate)
+        let churn_rate = self.stats.read().await.churn_rate;
+        let message = GossipMessage {
+            topic: "high_churn_alert".to_string(),
+            data: bincode::serialize(&churn_rate)
                 .map_err(|e| anyhow::anyhow!("Serialization error: {}", e))?,
-        ).await?;
+            from: self.node_id.clone(),
+            seqno: 0, // Will be set by gossip subsystem
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        };
+        self.gossip.publish("high_churn_alert", message).await?;
         
         Ok(())
     }
