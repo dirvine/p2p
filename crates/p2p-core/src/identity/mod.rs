@@ -17,6 +17,11 @@
 
 pub mod manager;
 pub mod enhanced;
+pub mod node_identity;
+pub mod four_words;
+pub mod cli;
 
 pub use manager::*;
 pub use enhanced::*;
+pub use node_identity::{NodeIdentity, NodeId, ProofOfWork, IdentityData};
+pub use four_words::{FourWordAddress, WordEncoder};
