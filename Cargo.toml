@@ -40,9 +40,9 @@ ant-quic = "0.4.4"
 four-word-networking = "0.1"
 
 # Cryptography  
-ed25519-dalek = { version = "1.0", features = ["rand", "serde"] }
-rand_core = "0.5"
-rand = "0.7"
+ed25519-dalek = { version = "2.1", features = ["rand", "serde"] }
+rand_core = "0.6"
+rand = "0.8"
 sha2 = "0.10"
 aes-gcm = "0.10"
 hkdf = "0.12"

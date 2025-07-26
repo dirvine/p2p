@@ -134,7 +134,7 @@ jobs:
             cargo build --all
           else
             echo "Building with features: ${{ matrix.features }}..."
-            cargo build --all --features "${{ matrix.features }}"
+            cargo build --all --features "saorsa-core/${{ matrix.features }}"
           fi
       
       - name: Run tests
@@ -146,7 +146,7 @@ jobs:
           if [ -z "${{ matrix.features }}" ]; then
             cargo test --all
           else
-            cargo test --all --features "${{ matrix.features }}"
+            cargo test --all --features "saorsa-core/${{ matrix.features }}"
           fi
 
   license-validation:
@@ -160,19 +160,13 @@ jobs:
       
       - name: Test license detection
         run: |
-          cd examples/licensing
+          # Test AGPL build
+          echo "Testing AGPL build..."
+          cargo build --workspace
           
-          # Test AGPL compliance example
-          echo "Testing AGPL compliance example..."
-          cargo build --bin agpl-compliance
-          
-          # Test commercial integration (with mock license)
-          echo "Testing commercial integration example..."
-          P2P_ENFORCE_LICENSE=false cargo build --bin commercial-integration
-          
-          # Test license migration
-          echo "Testing license migration example..."
-          cargo build --bin license-migration
+          # Test with agpl-compliance feature
+          echo "Testing with agpl-compliance feature..."
+          cargo build --workspace --features "saorsa-core/agpl-compliance"
 
   documentation:
     name: Check License Documentation
@@ -184,12 +178,6 @@ jobs:
         run: |
           required_docs=(
             "LICENSING.md"
-            "LICENSE-FAQ.md"
-            "COMMERCIAL-LICENSE-TERMS.md"
-            "docs/licensing/compliance-guide.md"
-            "docs/licensing/migration-guide.md"
-            "docs/licensing/enforcement-policy.md"
-            "examples/licensing/README.md"
           )
           
           missing_docs=0

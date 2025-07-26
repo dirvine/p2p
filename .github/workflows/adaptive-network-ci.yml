@@ -25,10 +25,10 @@ jobs:
         rust: [stable, beta]
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Install Rust
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
         profile: minimal
         toolchain: ${{ matrix.rust }}
@@ -63,10 +63,10 @@ jobs:
     name: Code Coverage
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Install Rust
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
         profile: minimal
         toolchain: stable
@@ -76,7 +76,7 @@ jobs:
       run: cargo install cargo-tarpaulin
       
     - name: Generate coverage
-      run: cargo tarpaulin --package saorsa-core --lib adaptive --out Xml
+      run: cargo tarpaulin --package saorsa-core --out Xml
       
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
@@ -87,7 +87,7 @@ jobs:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Install cargo-audit
       run: cargo install cargo-audit
@@ -99,10 +99,10 @@ jobs:
     name: Documentation Build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Install Rust
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
         profile: minimal
         toolchain: stable
