@@ -337,7 +337,7 @@ impl Client {
         
         // Create routing components
         let hyperbolic = Arc::new(crate::adaptive::hyperbolic::HyperbolicSpace::new());
-        let som = Arc::new(crate::adaptive::som::SelfOrganizingMap::new(10, 10, 4));
+        let som = Arc::new(crate::adaptive::som::SelfOrganizingMap::new(10, 10));
         let router = Arc::new(AdaptiveRouter::new(
             trust_provider.clone(),
             hyperbolic,

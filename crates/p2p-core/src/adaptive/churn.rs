@@ -41,6 +41,9 @@ use tokio::sync::{RwLock, mpsc};
 
 /// Churn detection and recovery system
 pub struct ChurnHandler {
+    /// Local node ID
+    node_id: NodeId,
+    
     /// Churn predictor for proactive measures
     predictor: Arc<ChurnPredictor>,
     
@@ -263,6 +266,7 @@ pub struct ChurnStats {
 impl ChurnHandler {
     /// Create a new churn handler
     pub fn new(
+        node_id: NodeId,
         predictor: Arc<ChurnPredictor>,
         trust_provider: Arc<dyn TrustProvider>,
         replication_manager: Arc<ReplicationManager>,
@@ -274,6 +278,7 @@ impl ChurnHandler {
         let recovery_manager = Arc::new(RecoveryManager::new());
         
         Self {
+            node_id,
             predictor,
             node_monitor,
             recovery_manager,

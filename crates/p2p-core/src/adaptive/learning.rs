@@ -1262,7 +1262,7 @@ impl ChurnPredictor {
         // Sample random batch
         let mut rng = rand::thread_rng();
         let batch: Vec<_> = (0..batch_size)
-            .map(|_| &buffer[rng.gen_range(0, buffer.len())])
+            .map(|_| &buffer[rng.gen_range(0..buffer.len())])
             .collect();
         
         // Update weights based on prediction errors
