@@ -23,9 +23,10 @@ use std::fmt::{self, Display};
 use serde::{Deserialize, Serialize};
 use anyhow::{anyhow, Result};
 
-// TODO: Re-enable when four-word-networking crate is available
-// #[cfg(feature = "four-word-addresses")]
-// use four_word_networking::FourWordAdaptiveEncoder;
+// Note: The four-word-networking crate is designed for IP addresses,
+// while our four_words.rs module handles node ID encoding.
+// This address module could potentially use four-word-networking in the future
+// if we want to encode IP addresses specifically.
 
 /// Network address that can be represented as IP:port or four-word format
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -90,8 +91,8 @@ impl NetworkAddress {
     /// Encode a SocketAddr to four-word format
     #[cfg(feature = "four-word-addresses")]
     fn encode_four_words(addr: &SocketAddr) -> Option<String> {
-        // TODO: Implement when four-word-networking crate is available
-        // Generate a placeholder four-word representation
+        // Generate a simple four-word representation for IP addresses
+        // Note: Could use four-word-networking crate here for better encoding
         let ip_bytes = match addr.ip() {
             std::net::IpAddr::V4(ip) => ip.octets().to_vec(),
             std::net::IpAddr::V6(ip) => ip.octets().to_vec(),
@@ -101,8 +102,8 @@ impl NetworkAddress {
         let words = ["alpha", "beta", "gamma", "delta", "echo", "foxtrot", "golf", "hotel"]; // placeholder
         let word_combo = format!("{}-{}-{}-{}", 
             words[ip_bytes[0] as usize % words.len()],
-            words[ip_bytes[1] as usize % words.len()],
-            words[*ip_bytes.get(2).unwrap_or(&0) as usize % words.len()],
+            words[ip_bytes.get(1).copied().unwrap_or(0) as usize % words.len()],
+            words[ip_bytes.get(2).copied().unwrap_or(0) as usize % words.len()],
             words[(addr.port() % words.len() as u16) as usize]
         );
         
@@ -118,8 +119,8 @@ impl NetworkAddress {
     /// Decode four-word format to NetworkAddress
     #[cfg(feature = "four-word-addresses")]
     pub fn from_four_words(words: &str) -> Result<Self> {
-        // TODO: Implement when four-word-networking crate is available
-        // For now, return a placeholder implementation
+        // Decode four-word format to address
+        // Note: This is a placeholder implementation
         // This is a very basic reverse mapping - in real implementation would be more sophisticated
         
         if words.contains("-") {

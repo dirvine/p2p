@@ -317,7 +317,7 @@ impl MCPSecurityManager {
     pub async fn generate_token(&self, peer_id: &PeerId, permissions: Vec<MCPPermission>, ttl: Duration) -> Result<String> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| P2PError::MCP(format!("Time error: {e}")))?;
+            .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}"))))?;
         
         let payload = TokenPayload {
             iss: peer_id.clone(),
@@ -359,40 +359,40 @@ impl MCPSecurityManager {
     pub async fn verify_token(&self, token: &str) -> Result<TokenPayload> {
         let parts: Vec<&str> = token.split('.').collect();
         if parts.len() != 3 {
-            return Err(P2PError::MCP("Invalid token format".to_string()));
+            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Invalid token format".to_string())));
         }
         
         let _header_data = base64::prelude::BASE64_URL_SAFE_NO_PAD.decode(parts[0])
-            .map_err(|e| P2PError::MCP(format!("Invalid header encoding: {e}")))?;
+            .map_err(|e| P2PError::Mcp(crate::error::McpError::InvalidRequest(format!("Invalid header encoding: {e}"))))?;
         let payload_data = base64::prelude::BASE64_URL_SAFE_NO_PAD.decode(parts[1])
-            .map_err(|e| P2PError::MCP(format!("Invalid payload encoding: {e}")))?;
+            .map_err(|e| P2PError::Mcp(crate::error::McpError::InvalidRequest(format!("Invalid payload encoding: {e}"))))?;
         let signature = base64::prelude::BASE64_URL_SAFE_NO_PAD.decode(parts[2])
-            .map_err(|e| P2PError::MCP(format!("Invalid signature encoding: {e}")))?;
+            .map_err(|e| P2PError::Mcp(crate::error::McpError::InvalidRequest(format!("Invalid signature encoding: {e}"))))?;
         
         // Verify signature
         let signing_input = format!("{}.{}", parts[0], parts[1]);
         let expected_signature = self.sign_data(signing_input.as_bytes());
         
         if signature != expected_signature {
-            return Err(P2PError::MCP("Invalid token signature".to_string()));
+            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Invalid token signature".to_string())));
         }
         
         // Parse payload
         let payload: TokenPayload = serde_json::from_slice(&payload_data)
-            .map_err(|e| P2PError::MCP(format!("Invalid payload: {e}")))?;
+            .map_err(|e| P2PError::Mcp(crate::error::McpError::InvalidRequest(format!("Invalid payload: {e}"))))?;
         
         // Check expiration
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| P2PError::MCP(format!("Time error: {e}")))?
+            .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}"))))?
             .as_secs();
         
         if payload.exp < now {
-            return Err(P2PError::MCP("Token expired".to_string()));
+            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Token expired".to_string())));
         }
         
         if payload.nbf > now {
-            return Err(P2PError::MCP("Token not yet valid".to_string()));
+            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Token not yet valid".to_string())));
         }
         
         Ok(payload)

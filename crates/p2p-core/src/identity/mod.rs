@@ -20,6 +20,7 @@ pub mod enhanced;
 pub mod node_identity;
 pub mod four_words;
 pub mod cli;
+pub mod encryption;
 
 pub use manager::*;
 pub use enhanced::*;

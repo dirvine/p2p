@@ -10,6 +10,7 @@
 //! - Deterministic generation from seeds
 
 use crate::{P2PError, Result};
+use crate::error::IdentityError;
 use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
@@ -51,12 +52,19 @@ impl NodeId {
     /// Create from public key bytes (for ant-quic integration)
     pub fn from_public_key_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() != 32 {
-            return Err(P2PError::Identity("Invalid public key length".into()));
+            return Err(P2PError::Identity(IdentityError::InvalidFormat {
+                reason: "Invalid public key length".to_string()
+            }));
         }
         
         // Create a VerifyingKey from bytes and then derive NodeId
-        let verifying_key = VerifyingKey::from_bytes(bytes.try_into().unwrap())
-            .map_err(|e| P2PError::Identity(format!("Invalid public key: {}", e)))?;
+        let verifying_key = VerifyingKey::from_bytes(bytes.try_into()
+            .map_err(|_| IdentityError::InvalidFormat {
+                reason: "Invalid byte array length for public key".to_string()
+            })?)
+            .map_err(|e| IdentityError::InvalidFormat {
+                reason: format!("Invalid public key: {}", e)
+            })?;
         
         Ok(NodeId::from_public_key(&verifying_key))
     }
@@ -125,11 +133,15 @@ impl ProofOfWork {
             }
             
             nonce = nonce.checked_add(1)
-                .ok_or_else(|| P2PError::Identity("PoW nonce overflow".into()))?;
+                .ok_or_else(|| P2PError::Identity(IdentityError::InvalidFormat {
+                    reason: "PoW nonce overflow".to_string()
+                }))?;
             
             // Timeout after 5 minutes
             if start.elapsed() > Duration::from_secs(300) {
-                return Err(P2PError::Identity("PoW timeout".into()));
+                return Err(P2PError::Identity(IdentityError::InvalidFormat {
+                    reason: "PoW timeout".to_string()
+                }));
             }
         }
     }
@@ -251,14 +263,18 @@ impl NodeIdentity {
     pub fn import(data: &IdentityData) -> Result<Self> {
         let signing_key = SigningKey::from_bytes(
             data.private_key.as_slice().try_into()
-                .map_err(|_| P2PError::Identity("Invalid private key length".into()))?
+                .map_err(|_| P2PError::Identity(IdentityError::InvalidFormat {
+                    reason: "Invalid private key length".to_string()
+                }))?
         );
         let verification_key = signing_key.verifying_key();
         let node_id = NodeId::from_public_key(&verification_key);
         
         // Verify proof of work
         if !data.proof_of_work.verify(&node_id, data.proof_of_work.difficulty) {
-            return Err(P2PError::Identity("Invalid proof of work".into()));
+            return Err(P2PError::Identity(IdentityError::VerificationFailed {
+                reason: "Invalid proof of work".to_string()
+            }));
         }
         
         // Generate four-word address from node ID
@@ -311,7 +327,8 @@ mod tests {
         let node_id = NodeId([0x42; 32]);
         let difficulty = 8; // 8 leading zero bits (easy for testing)
         
-        let pow = ProofOfWork::solve(&node_id, difficulty).unwrap();
+        let pow = ProofOfWork::solve(&node_id, difficulty)
+            .expect("Proof of work should succeed with low difficulty");
         assert!(pow.verify(&node_id, difficulty));
         assert_eq!(pow.difficulty, difficulty);
         
@@ -325,7 +342,8 @@ mod tests {
     
     #[test]
     fn test_identity_generation() {
-        let identity = NodeIdentity::generate(8).unwrap();
+        let identity = NodeIdentity::generate(8)
+            .expect("Identity generation should succeed");
         
         // Verify proof of work
         assert!(identity.proof_of_work.verify(&identity.node_id, 8));
@@ -342,8 +360,10 @@ mod tests {
     #[test]
     fn test_deterministic_generation() {
         let seed = [0x42; 32];
-        let identity1 = NodeIdentity::from_seed(&seed, 8).unwrap();
-        let identity2 = NodeIdentity::from_seed(&seed, 8).unwrap();
+        let identity1 = NodeIdentity::from_seed(&seed, 8)
+            .expect("Identity from seed should succeed");
+        let identity2 = NodeIdentity::from_seed(&seed, 8)
+            .expect("Identity from seed should succeed");
         
         // Should generate same identity
         assert_eq!(identity1.node_id, identity2.node_id);
@@ -352,13 +372,15 @@ mod tests {
     
     #[test]
     fn test_identity_persistence() {
-        let identity = NodeIdentity::generate(8).unwrap();
+        let identity = NodeIdentity::generate(8)
+            .expect("Identity generation should succeed");
         
         // Export
         let data = identity.export();
         
         // Import
-        let imported = NodeIdentity::import(&data).unwrap();
+        let imported = NodeIdentity::import(&data)
+            .expect("Import should succeed with valid data");
         
         // Should be the same
         assert_eq!(identity.node_id, imported.node_id);

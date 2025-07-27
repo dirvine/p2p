@@ -31,6 +31,7 @@
 //! - Background key rotation and sync
 
 use crate::{P2PError, Result};
+use crate::error::{StorageError, SecurityError};
 use crate::secure_memory::SecureString;
 use crate::key_derivation::{HierarchicalKeyDerivation, DerivationPath, DerivedKey};
 use crate::encrypted_key_storage::{EncryptedKeyStorageManager, SecurityLevel};
@@ -309,7 +310,7 @@ impl IdentityKeyPair {
     /// Verify signature with Ed25519 public key
     pub fn verify(&self, data: &[u8], signature: &Signature) -> Result<()> {
         self.ed25519_public.verify(data, signature)
-            .map_err(|e| P2PError::Cryptography(format!("Signature verification failed: {e}")))
+            .map_err(|_| P2PError::Security(SecurityError::SignatureVerificationFailed))
     }
 }
 
@@ -329,9 +330,11 @@ impl Identity {
             .sum();
         
         if metadata_size > MAX_METADATA_SIZE {
-            return Err(P2PError::InvalidInput(format!(
-                "Metadata size {metadata_size} exceeds maximum {MAX_METADATA_SIZE}"
-            )));
+            return Err(P2PError::Config(crate::error::ConfigError::InvalidValue {
+                field: "metadata_size".to_string(),
+                value: metadata_size.to_string(),
+                reason: format!("Metadata size exceeds maximum {MAX_METADATA_SIZE}"),
+            }));
         }
         
         let now = current_timestamp();
@@ -384,7 +387,9 @@ impl Identity {
     /// Apply an update to the identity
     pub fn apply_update(&mut self, update: &IdentityUpdate) -> Result<()> {
         if update.timestamp <= self.updated_at {
-            return Err(P2PError::InvalidState("Update timestamp is not newer".to_string()));
+            return Err(P2PError::Identity(crate::error::IdentityError::InvalidFormat {
+                reason: "Update timestamp is not newer".to_string(),
+            }));
         }
         
         if let Some(name) = &update.display_name {
@@ -419,7 +424,7 @@ impl IdentityManager {
         
         // Create storage directory
         tokio::fs::create_dir_all(&storage_path).await
-            .map_err(|e| P2PError::Storage(format!("Failed to create identity storage: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to create identity storage: {e}"))))?;
         
         // Initialize components
         let key_storage = Arc::new(EncryptedKeyStorageManager::new(
@@ -531,7 +536,7 @@ impl IdentityManager {
         // Load from storage
         let identity_path = self.storage_path.join(format!("{identity_id}.json"));
         let identity_data = tokio::fs::read(&identity_path).await
-            .map_err(|e| P2PError::Storage(format!("Failed to read identity: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read identity: {e}"))))?;
         
         let identity: Identity = serde_json::from_slice(&identity_data)
             .map_err(P2PError::Serialization)?;
@@ -635,9 +640,9 @@ impl IdentityManager {
         let mut identity = self.load_identity(identity_id, password).await?;
         
         if identity.state != IdentityState::Active {
-            return Err(P2PError::InvalidState(
-                "Cannot rotate keys for inactive identity".to_string()
-            ));
+            return Err(P2PError::Identity(crate::error::IdentityError::InvalidFormat {
+                reason: "Cannot rotate keys for inactive identity".to_string(),
+            }));
         }
         
         // Update state
@@ -712,7 +717,7 @@ impl IdentityManager {
         
         // Sign certificate
         let cert_data = bincode::serialize(&cert)
-            .map_err(|e| P2PError::Storage(format!("Failed to serialize certificate: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize certificate: {e}"))))?;
         let signature = key_pair.sign(&cert_data)?;
         
         let mut signed_cert = cert;
@@ -802,7 +807,7 @@ impl IdentityManager {
         // Sign package
         let key_pair = self.get_key_pair(identity_id)?;
         let package_data = bincode::serialize(&package)
-            .map_err(|e| P2PError::Storage(format!("Failed to serialize package: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize package: {e}"))))?;
         let signature = key_pair.sign(&package_data)?;
         
         let mut signed_package = package;
@@ -855,7 +860,9 @@ impl IdentityManager {
         let key_pairs = self.key_pairs.read().unwrap();
         key_pairs.get(identity_id)
             .cloned()
-            .ok_or_else(|| P2PError::Storage("Key pair not found in cache".to_string()))
+            .ok_or_else(|| P2PError::Storage(crate::error::StorageError::FileNotFound {
+                path: "key_pair_cache".to_string(),
+            }))
     }
     
     /// Save identity to disk
@@ -865,7 +872,7 @@ impl IdentityManager {
             .map_err(P2PError::Serialization)?;
         
         tokio::fs::write(&identity_path, identity_data).await
-            .map_err(|e| P2PError::Storage(format!("Failed to save identity: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to save identity: {e}"))))?;
         
         Ok(())
     }

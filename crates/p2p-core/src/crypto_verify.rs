@@ -142,13 +142,13 @@ impl EnhancedSignatureVerifier {
 
     /// Verify multiple signatures in batch for performance
     pub fn verify_batch(&mut self, requests: Vec<BatchVerificationRequest>) -> Vec<BatchVerificationResult> {
-        let start_time = Instant::now();
+        let _start_time = Instant::now();
         let mut results = Vec::with_capacity(requests.len());
         
         // Validate batch size
         if requests.len() > MAX_BATCH_SIZE {
             // Return all failures for oversized batch
-            return requests.into_iter().enumerate().map(|(index, req)| {
+            return requests.into_iter().enumerate().map(|(index, _req)| {
                 BatchVerificationResult {
                     index,
                     success: false,
@@ -197,12 +197,12 @@ impl EnhancedSignatureVerifier {
         let age = now.saturating_sub(record.timestamp);
         
         if age > SIGNATURE_FRESHNESS_WINDOW.as_secs() {
-            return Err(P2PError::Security("Signature too old".to_string()));
+            return Err(P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed));
         }
         
         // Also check for future timestamps (clock skew protection)
         if record.timestamp > now + 60 {
-            return Err(P2PError::Security("Signature from future".to_string()));
+            return Err(P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed));
         }
         
         Ok(())
@@ -247,7 +247,7 @@ impl EnhancedSignatureVerifier {
         
         // Check for low-order points and other curve attacks
         if self.is_low_order_point(key_bytes) {
-            return Err(P2PError::Security("Invalid curve point".to_string()));
+            return Err(P2PError::Security(crate::error::SecurityError::InvalidKey("Invalid curve point".to_string())));
         }
         
         // For ed25519_dalek 1.0, we just return the public key as-is
@@ -279,7 +279,7 @@ impl EnhancedSignatureVerifier {
     ) -> Result<()> {
         // Use constant-time verification
         verifying_key.verify(message, signature)
-            .map_err(|_| P2PError::Security("Signature verification failed".to_string()))
+            .map_err(|_| P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed))
     }
 
     /// Evict the least recently used key from cache
@@ -472,7 +472,7 @@ mod tests {
         let mut verifier = EnhancedSignatureVerifier::new();
         
         // Fill cache beyond capacity
-        for i in 0..VERIFICATION_CACHE_SIZE + 10 {
+        for _i in 0..VERIFICATION_CACHE_SIZE + 10 {
             let (secret_key, public_key) = create_test_keypair();
             let record = create_test_record(&secret_key, &public_key);
             

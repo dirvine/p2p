@@ -457,7 +457,6 @@ mod tests {
     use super::*;
     use crate::adaptive::{
         trust::MockTrustProvider,
-        routing::MockRoutingStrategy,
     };
     use std::sync::Arc;
     

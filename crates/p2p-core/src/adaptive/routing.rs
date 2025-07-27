@@ -77,8 +77,8 @@ impl AdaptiveRouter {
     /// Create a new adaptive router with multiple strategies
     pub fn new(
         trust_provider: Arc<dyn TrustProvider>,
-        hyperbolic: Arc<hyperbolic::HyperbolicSpace>,
-        som: Arc<som::SelfOrganizingMap>,
+        _hyperbolic: Arc<hyperbolic::HyperbolicSpace>,
+        _som: Arc<som::SelfOrganizingMap>,
     ) -> Self {
         let node_id = NodeId { hash: [0u8; 32] }; // Default node ID
         Self::new_with_id(node_id, trust_provider)
@@ -87,7 +87,7 @@ impl AdaptiveRouter {
     /// Create a new adaptive router with specific node ID
     pub fn new_with_id(
         node_id: NodeId,
-        trust_provider: Arc<dyn TrustProvider>,
+        _trust_provider: Arc<dyn TrustProvider>,
     ) -> Self {
         Self {
             local_id: node_id,
@@ -276,10 +276,10 @@ impl RoutingStrategy for KademliaRouting {
         Ok(vec![target.clone()])
     }
     
-    fn route_score(&self, neighbor: &NodeId, target: &NodeId) -> f64 {
+    fn route_score(&self, _neighbor: &NodeId, _target: &NodeId) -> f64 {
         // XOR distance metric
-        let neighbor_bytes = &neighbor.hash;
-        let target_bytes = &target.hash;
+        let neighbor_bytes = &_neighbor.hash;
+        let target_bytes = &_target.hash;
         let mut distance = 0u32;
         
         for i in 0..32 {
@@ -331,7 +331,7 @@ impl RoutingStrategy for HyperbolicRouting {
         Ok(vec![target.clone()])
     }
     
-    fn route_score(&self, neighbor: &NodeId, target: &NodeId) -> f64 {
+    fn route_score(&self, _neighbor: &NodeId, _target: &NodeId) -> f64 {
         // Score based on hyperbolic distance
         // Note: This is synchronous, so we can't use async
         0.0 // Placeholder for now
@@ -395,7 +395,7 @@ impl RoutingStrategy for SOMRouting {
         Ok(vec![target.clone()])
     }
     
-    fn route_score(&self, neighbor: &NodeId, target: &NodeId) -> f64 {
+    fn route_score(&self, _neighbor: &NodeId, _target: &NodeId) -> f64 {
         // Score based on SOM distance
         // Note: This is synchronous, so we can't use async
         0.0 // Placeholder for now

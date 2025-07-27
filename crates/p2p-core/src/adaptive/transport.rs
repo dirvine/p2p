@@ -114,7 +114,7 @@ impl Transport for TcpTransport {
         // Check connection pool first
         {
             let connections = self.connections.read().await;
-            if let Some(conn) = connections.get(&addr) {
+            if let Some(_conn) = connections.get(&addr) {
                 // TODO: Check if connection is still alive
                 // For now, always create new connection
             }

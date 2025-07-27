@@ -548,11 +548,11 @@ mod tests {
         // Add some trust relationships
         let mut hash1 = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut hash1);
-        let node1 = UserId::from_bytes(hash1);
+        let node1 = NodeId::from(hex::encode(hash1));
         
         let mut hash2 = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut hash2);
-        let node2 = UserId::from_bytes(hash2);
+        let node2 = NodeId::from(hex::encode(hash2));
         
         let pre_trusted_node = pre_trusted.iter().next().unwrap();
         
@@ -578,15 +578,15 @@ mod tests {
         
         let mut hash1 = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut hash1);
-        let node1 = UserId::from_bytes(hash1);
+        let node1 = NodeId::from(hex::encode(hash1));
         
         let mut hash2 = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut hash2);
-        let node2 = UserId::from_bytes(hash2);
+        let node2 = NodeId::from(hex::encode(hash2));
         
         let mut hash3 = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut hash3);
-        let node3 = UserId::from_bytes(hash3);
+        let node3 = NodeId::from(hex::encode(hash3));
         
         engine.update_local_trust(&node1, &node2, true).await;
         engine.update_local_trust(&node1, &node3, true).await;
@@ -608,7 +608,7 @@ mod tests {
         
         let mut hash = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut hash);
-        let node = UserId::from_bytes(hash);
+        let node = NodeId::from(hex::encode(hash));
         
         // Update node statistics
         engine.update_node_stats(&node, NodeStatisticsUpdate::Uptime(3600)).await;
@@ -620,7 +620,7 @@ mod tests {
         // Add some trust relationships
         let mut hash2 = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut hash2);
-        let other = UserId::from_bytes(hash2);
+        let other = NodeId::from(hex::encode(hash2));
         
         engine.update_local_trust(&other, &node, true).await;
         
@@ -641,11 +641,11 @@ mod tests {
         
         let mut hash1 = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut hash1);
-        let node1 = UserId::from_bytes(hash1);
+        let node1 = NodeId::from(hex::encode(hash1));
         
         let mut hash2 = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut hash2);
-        let node2 = UserId::from_bytes(hash2);
+        let node2 = NodeId::from(hex::encode(hash2));
         
         engine.update_local_trust(&node1, &node2, true).await;
         

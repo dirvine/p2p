@@ -37,7 +37,6 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # P2P and networking
 ant-quic = "0.4.4"
-four-word-networking = "0.1"
 
 # Cryptography  
 ed25519-dalek = { version = "2.1", features = ["rand_core", "serde"] }
@@ -61,6 +60,36 @@ chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.22"
 toml = "0.8"
 shellexpand = "3.1"
+
+# Workspace-level lints for production quality
+[workspace.lints.rust]
+unsafe_code = "warn"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+# Error handling - CRITICAL for production
+unwrap_used = "deny"
+expect_used = "deny" 
+panic = "deny"
+panic_in_result_fn = "deny"
+unimplemented = "deny"
+todo = "warn"
+unreachable = "deny"
+fallible_impl_from = "deny"
+
+# Correctness
+enum_glob_use = "deny"
+mem_forget = "deny"
+clone_on_ref_ptr = "deny"
+
+# Performance
+inefficient_to_string = "deny"
+large_enum_variant = "warn"
+mutex_atomic = "warn"
+needless_collect = "deny"
+
+# Security
+lossy_float_literal = "deny"
 
 # Workspace-level profiles
 [profile.release]

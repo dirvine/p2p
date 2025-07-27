@@ -78,23 +78,30 @@ This project investigates several key areas in decentralized networking:
 
 This is a Cargo workspace containing multiple interconnected components:
 
-### 📦 Core Library: [Saorsa Core](https://crates.io/crates/saorsa-core)
-[![Crates.io](https://img.shields.io/crates/v/saorsa-core)](https://crates.io/crates/saorsa-core)
-[![Documentation](https://docs.rs/saorsa-core/badge.svg)](https://docs.rs/saorsa-core)
+### 📦 Core Library: P2P Core (`crates/p2p-core`)
 
-The experimental P2P networking library (`crates/p2p-core`) with MAJOR NEW FEATURES:
-- **QUIC/TCP Transport**: Modern, efficient networking with built-in encryption and automatic fallback
-- **Kademlia DHT**: Complete distributed hash table with K=8 replication and network integration
-- **Git Content Addressing**: Universal version control with BLAKE3 hashing and DHT storage
-- **MCP Integration**: Full Model Context Protocol with health monitoring and service discovery
-- **Quantum-Resistant Security**: Foundation for ML-KEM/ML-DSA with threshold cryptography
-- **Four-Word Addresses**: Human-readable network addressing system with DHT integration
-- **DHT-Based Identity Management**: Network-wide identity persistence with four-word address resolution
-- **Privacy-First Identity**: Encrypted profiles with organizational support
-- **🆕 Adaptive P2P Network**: Self-optimizing network with machine learning (19 subsystems!)
-- **🆕 Performance Optimization**: Zero-copy messages, connection pooling, batch processing
-- **🆕 Advanced Security**: Rate limiting, blacklist management, eclipse attack detection
-- **🆕 Comprehensive Monitoring**: Prometheus metrics, real-time anomaly detection
+The experimental adaptive P2P networking library featuring:
+
+#### 🌐 Multi-Layer Architecture
+- **Transport Layer**: ant-quic with native NAT traversal (no STUN/TURN needed)
+- **DHT Layer**: Secure Kademlia with trust-weighted routing
+- **Topology Layer**: Hyperbolic geometry routing + Self-Organizing Maps
+- **Trust Layer**: EigenTrust++ distributed reputation system
+- **Coordination Layer**: Adaptive GossipSub for state synchronization
+- **Learning Layer**: ML-powered routing and caching optimization
+
+#### 🔑 Core Features
+- **Four-Word Addresses**: Human-readable network identifiers
+- **Raw Key Authentication**: Ed25519 keys, no certificates
+- **Quantum-Ready**: Foundation for ML-KEM/ML-DSA integration
+- **Git-Like Storage**: Content-addressed with BLAKE3 hashing
+- **MCP Integration**: AI-native with Model Context Protocol
+
+#### 🧠 Adaptive Intelligence
+- **Thompson Sampling**: Multi-armed bandit routing optimization
+- **Q-Learning**: Intelligent cache management
+- **LSTM Networks**: Churn prediction for proactive replication
+- **Self-Healing**: Automatic adaptation to network conditions
 
 ### Desktop Application: Saorsa (Experimental)
 Built with Tauri (`apps/saorsa`) - a test application demonstrating:

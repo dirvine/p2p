@@ -1290,9 +1290,9 @@ async fn create_user_identity(
             
             // STEP 3: Create keypair for signing (in production, this should be stored securely)
             // For now, create a new keypair each time - this is not ideal for production
-            use ed25519_dalek::Keypair;
+            use ed25519_dalek::SigningKey;
             use rand::rngs::OsRng;
-            let keypair = Keypair::generate(&mut OsRng);
+            let signing_key = SigningKey::generate(&mut OsRng);
             
             // STEP 4: Create signed identity packet with current network address (if network available)
             let signed_packet = if let Some(network) = network {
@@ -1302,7 +1302,7 @@ async fn create_user_identity(
                     identity.public_key.clone(),
                     three_word_address.clone(),
                     network,
-                    &keypair,
+                    &signing_key,
                 ).await {
                     Ok(packet) => Some(packet),
                     Err(e) => {
@@ -2260,7 +2260,7 @@ impl SignedIdentityPacket {
         public_key: Vec<u8>,
         three_word_address: String,
         network: &Arc<P2PNode>,
-        keypair: &ed25519_dalek::Keypair,
+        signing_key: &ed25519_dalek::SigningKey,
     ) -> Result<Self, String> {
         // Get current network address
         let listen_addrs = network.listen_addrs().await;
@@ -2291,13 +2291,13 @@ impl SignedIdentityPacket {
         };
         
         // Sign the packet
-        packet.sign(keypair)?;
+        packet.sign(signing_key)?;
         
         Ok(packet)
     }
     
     /// Sign the identity packet
-    fn sign(&mut self, keypair: &ed25519_dalek::Keypair) -> Result<(), String> {
+    fn sign(&mut self, signing_key: &ed25519_dalek::SigningKey) -> Result<(), String> {
         use ed25519_dalek::Signer;
         
         // Create signature data (everything except signature field)
@@ -2313,7 +2313,7 @@ impl SignedIdentityPacket {
         let signature_bytes = serde_json::to_vec(&signature_data)
             .map_err(|e| format!("Failed to serialize for signing: {}", e))?;
         
-        let signature = keypair.sign(&signature_bytes);
+        let signature = signing_key.sign(&signature_bytes);
         self.signature = signature.to_bytes().to_vec();
         
         Ok(())
@@ -2321,7 +2321,7 @@ impl SignedIdentityPacket {
     
     /// Verify the packet signature
     fn verify_signature(&self) -> Result<bool, String> {
-        use ed25519_dalek::{PublicKey, Signature, Verifier};
+        use ed25519_dalek::{VerifyingKey, Signature, Verifier};
         
         // Reconstruct signature data
         let signature_data = serde_json::json!({
@@ -2336,16 +2336,25 @@ impl SignedIdentityPacket {
         let signature_bytes = serde_json::to_vec(&signature_data)
             .map_err(|e| format!("Failed to serialize for verification: {}", e))?;
         
-        // Create public key from stored bytes
-        let public_key = PublicKey::from_bytes(&self.public_key)
+        // Create verifying key from stored bytes
+        let mut key_bytes = [0u8; 32];
+        if self.public_key.len() != 32 {
+            return Err("Invalid public key length".to_string());
+        }
+        key_bytes.copy_from_slice(&self.public_key);
+        let verifying_key = VerifyingKey::from_bytes(&key_bytes)
             .map_err(|e| format!("Invalid public key: {}", e))?;
         
         // Create signature from stored bytes
-        let signature = Signature::from_bytes(&self.signature)
-            .map_err(|e| format!("Invalid signature: {}", e))?;
+        let mut sig_bytes = [0u8; 64];
+        if self.signature.len() != 64 {
+            return Err("Invalid signature length".to_string());
+        }
+        sig_bytes.copy_from_slice(&self.signature);
+        let signature = Signature::from_bytes(&sig_bytes);
         
         // Verify signature
-        match public_key.verify(&signature_bytes, &signature) {
+        match verifying_key.verify(&signature_bytes, &signature) {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -2423,7 +2432,7 @@ async fn register_identity_by_name(
 async fn update_network_address(
     network: &Arc<P2PNode>,
     display_name: &str,
-    keypair: &ed25519_dalek::Keypair,
+    signing_key: &ed25519_dalek::SigningKey,
 ) -> Result<(), String> {
     use saorsa_core::dht::Key;
     use sha2::{Digest, Sha256};
@@ -2466,7 +2475,7 @@ async fn update_network_address(
         .as_secs();
     
     // Re-sign with updated data
-    packet.sign(keypair)?;
+    packet.sign(signing_key)?;
     
     // Store updated packet
     let packet_data = match serde_json::to_vec(&packet) {

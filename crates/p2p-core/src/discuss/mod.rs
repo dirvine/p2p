@@ -669,7 +669,7 @@ impl DiscussManager {
                     Ok(())
                 }
             }
-            AccessLevel::Private(group_id) => {
+            AccessLevel::Private(_group_id) => {
                 // Check if user is in threshold group
                 // TODO: Implement group membership check
                 Ok(())

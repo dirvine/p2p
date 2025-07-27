@@ -18,6 +18,7 @@
 
 use super::{Transport, Connection, TransportType, TransportOptions, ConnectionInfo, ConnectionQuality};
 use crate::{P2PError, Result, NetworkAddress};
+use crate::identity::NodeIdentity;
 use async_trait::async_trait;
 use ant_quic::{
     quic_node::{QuicNodeConfig, QuicP2PNode},
@@ -33,6 +34,8 @@ use tracing::{debug, info, error};
 
 /// QUIC transport implementation with NAT traversal
 pub struct QuicTransport {
+    /// Local identity for authentication
+    identity: Option<Arc<NodeIdentity>>,
     /// QUIC P2P node with NAT traversal
     node: Arc<Mutex<Option<Arc<QuicP2PNode>>>>,
     /// Node configuration
@@ -64,6 +67,16 @@ pub struct QuicConnection {
 impl QuicTransport {
     /// Create a new QUIC transport with NAT traversal
     pub fn new(enable_0rtt: bool) -> Result<Self> {
+        Self::new_with_identity(None, enable_0rtt)
+    }
+    
+    /// Create a new QUIC transport with identity for raw key authentication
+    pub fn new_with_identity(identity: Option<Arc<NodeIdentity>>, enable_0rtt: bool) -> Result<Self> {
+        // TODO: Implement raw key authentication when ant-quic API supports it
+        // For now, we store the identity and will use it for signing/verification
+        // at the application layer
+        let auth_config = AuthConfig::default();
+        
         let config = QuicNodeConfig {
             role: EndpointRole::Client,
             bootstrap_nodes: vec![],
@@ -71,11 +84,12 @@ impl QuicTransport {
             max_connections: 100,
             connection_timeout: Duration::from_secs(30),
             stats_interval: Duration::from_secs(60),
-            auth_config: AuthConfig::default(),
+            auth_config,
             bind_addr: None, // Let the system choose
         };
         
         Ok(Self {
+            identity,
             node: Arc::new(Mutex::new(None)),
             config,
             bootstrap_nodes: vec![],
@@ -85,6 +99,20 @@ impl QuicTransport {
 
     /// Create a new QUIC transport with bootstrap nodes
     pub fn new_with_bootstrap(bootstrap_nodes: Vec<SocketAddr>, enable_0rtt: bool) -> Result<Self> {
+        Self::new_with_bootstrap_and_identity(None, bootstrap_nodes, enable_0rtt)
+    }
+    
+    /// Create a new QUIC transport with bootstrap nodes and identity
+    pub fn new_with_bootstrap_and_identity(
+        identity: Option<Arc<NodeIdentity>>, 
+        bootstrap_nodes: Vec<SocketAddr>, 
+        enable_0rtt: bool
+    ) -> Result<Self> {
+        // TODO: Implement raw key authentication when ant-quic API supports it
+        // For now, we store the identity and will use it for signing/verification
+        // at the application layer
+        let auth_config = AuthConfig::default();
+        
         let config = QuicNodeConfig {
             role: EndpointRole::Client,
             bootstrap_nodes: bootstrap_nodes.clone(),
@@ -92,11 +120,12 @@ impl QuicTransport {
             max_connections: 100,
             connection_timeout: Duration::from_secs(30),
             stats_interval: Duration::from_secs(60),
-            auth_config: AuthConfig::default(),
+            auth_config,
             bind_addr: None,
         };
         
         Ok(Self {
+            identity,
             node: Arc::new(Mutex::new(None)),
             config,
             bootstrap_nodes,
@@ -118,7 +147,7 @@ impl QuicTransport {
         } else {
             // Create new node
             let node = Arc::new(QuicP2PNode::new(config).await
-                .map_err(|e| P2PError::Transport(format!("Failed to create QUIC node: {e}")))?);
+                .map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to create QUIC node: {e}"))))?);
             
             // Connect to bootstrap nodes if configured
             for bootstrap_addr in &self.bootstrap_nodes {
@@ -146,7 +175,7 @@ impl QuicTransport {
         } else {
             // Create new node
             let node = Arc::new(QuicP2PNode::new(self.config.clone()).await
-                .map_err(|e| P2PError::Transport(format!("Failed to create QUIC node: {e}")))?);
+                .map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to create QUIC node: {e}"))))?);
             
             // Connect to bootstrap nodes if configured
             for bootstrap_addr in &self.bootstrap_nodes {
@@ -180,12 +209,12 @@ impl Transport for QuicTransport {
         
         // Get actual listen address from the quinn endpoint
         let quinn_endpoint = node.get_nat_endpoint()
-            .map_err(|e| P2PError::Transport(format!("Failed to get NAT endpoint: {e}")))?
+            .map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to get NAT endpoint: {e}"))))?
             .get_quinn_endpoint()
-            .ok_or_else(|| P2PError::Transport("Quinn endpoint not available".to_string()))?;
+            .ok_or_else(|| P2PError::Transport(crate::error::TransportError::SetupFailed("Quinn endpoint not available".to_string())))?;
         
         let local_addr = quinn_endpoint.local_addr()
-            .map_err(|e| P2PError::Transport(format!("Failed to get local address: {e}")))?;
+            .map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to get local address: {e}"))))?;
         
         info!("QUIC transport listening on {} with peer ID {:?}", local_addr, node.peer_id());
         Ok(NetworkAddress::new(local_addr))
@@ -203,16 +232,16 @@ impl Transport for QuicTransport {
         
         // Accept a connection from ant-quic
         let (remote_addr, peer_id) = node.accept().await
-            .map_err(|e| P2PError::Transport(format!("Failed to accept connection: {e}")))?;
+            .map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to accept connection: {e}"))))?;
         
         // Get local address from the quinn endpoint
         let quinn_endpoint = node.get_nat_endpoint()
-            .map_err(|e| P2PError::Transport(format!("Failed to get NAT endpoint: {e}")))?
+            .map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to get NAT endpoint: {e}"))))?
             .get_quinn_endpoint()
-            .ok_or_else(|| P2PError::Transport("Quinn endpoint not available".to_string()))?;
+            .ok_or_else(|| P2PError::Transport(crate::error::TransportError::SetupFailed("Quinn endpoint not available".to_string())))?;
         
         let local_addr = quinn_endpoint.local_addr()
-            .map_err(|e| P2PError::Transport(format!("Failed to get local address: {e}")))?;
+            .map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to get local address: {e}"))))?;
         
         let connection_info = ConnectionInfo {
             transport_type: TransportType::QUIC,
@@ -259,18 +288,18 @@ impl Transport for QuicTransport {
             Err(e) => {
                 // If direct connection fails and we have bootstrap nodes,
                 // we could try NAT traversal through them
-                return Err(P2PError::Transport(format!("Failed to connect to {addr}: {e}")));
+                return Err(P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to connect to {addr}: {e}"))));
             }
         };
         
         // Get local address from the quinn endpoint
         let quinn_endpoint = node.get_nat_endpoint()
-            .map_err(|e| P2PError::Transport(format!("Failed to get NAT endpoint: {e}")))?
+            .map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to get NAT endpoint: {e}"))))?
             .get_quinn_endpoint()
-            .ok_or_else(|| P2PError::Transport("Quinn endpoint not available".to_string()))?;
+            .ok_or_else(|| P2PError::Transport(crate::error::TransportError::SetupFailed("Quinn endpoint not available".to_string())))?;
         
         let local_addr = quinn_endpoint.local_addr()
-            .map_err(|e| P2PError::Transport(format!("Failed to get local address: {e}")))?;
+            .map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to get local address: {e}"))))?;
         
         let connection_info = ConnectionInfo {
             transport_type: TransportType::QUIC,
@@ -318,7 +347,7 @@ impl Transport for QuicTransport {
 impl Connection for QuicConnection {
     async fn send(&mut self, data: &[u8]) -> Result<()> {
         self.node.send_to_peer(&self.peer_id, data).await
-            .map_err(|e| P2PError::Transport(format!("Failed to send data: {e}")))?;
+            .map_err(|e| P2PError::Transport(crate::error::TransportError::StreamError(format!("Failed to send data: {e}"))))?;
         Ok(())
     }
     
@@ -326,7 +355,7 @@ impl Connection for QuicConnection {
         // Receive from any peer, but filter for our peer
         loop {
             let (recv_peer_id, data) = self.node.receive().await
-                .map_err(|e| P2PError::Transport(format!("Failed to receive data: {e}")))?;
+                .map_err(|e| P2PError::Transport(crate::error::TransportError::StreamError(format!("Failed to receive data: {e}"))))?;
             
             if recv_peer_id == self.peer_id {
                 return Ok(data);
@@ -363,7 +392,7 @@ impl Connection for QuicConnection {
                 jitter: Duration::from_millis(0), // ant-quic doesn't provide jitter
                 connect_time: Duration::from_millis(0), // Not tracked
             }),
-            Err(e) => Err(P2PError::Transport(format!("Failed to get metrics: {e}")))
+            Err(e) => Err(P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to get metrics: {e}"))))
         }
     }
     
@@ -391,16 +420,16 @@ impl QuicTransport {
         
         // Connect via coordinator
         let remote_addr = node.connect_to_peer(peer_id, coordinator_addr).await
-            .map_err(|e| P2PError::Transport(format!("Failed to connect via coordinator: {e}")))?;
+            .map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to connect via coordinator: {e}"))))?;
         
         // Get local address from the quinn endpoint
         let quinn_endpoint = node.get_nat_endpoint()
-            .map_err(|e| P2PError::Transport(format!("Failed to get NAT endpoint: {e}")))?
+            .map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to get NAT endpoint: {e}"))))?
             .get_quinn_endpoint()
-            .ok_or_else(|| P2PError::Transport("Quinn endpoint not available".to_string()))?;
+            .ok_or_else(|| P2PError::Transport(crate::error::TransportError::SetupFailed("Quinn endpoint not available".to_string())))?;
         
         let local_addr = quinn_endpoint.local_addr()
-            .map_err(|e| P2PError::Transport(format!("Failed to get local address: {e}")))?;
+            .map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to get local address: {e}"))))?;
         
         let connection_info = ConnectionInfo {
             transport_type: TransportType::QUIC,
@@ -433,3 +462,7 @@ impl QuicTransport {
         Ok(node.peer_id())
     }
 }
+
+#[cfg(test)]
+#[path = "quic_tests.rs"]
+mod quic_tests;

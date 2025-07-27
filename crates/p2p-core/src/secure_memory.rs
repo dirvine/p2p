@@ -29,6 +29,8 @@
 //! - Efficient reuse of protected memory regions
 //! - Minimal overhead for secure operations
 
+#![allow(unsafe_code)] // Required for secure memory operations: mlock, memory zeroing, and protected allocation
+
 use crate::{P2PError, Result};
 use std::alloc::{alloc_zeroed, dealloc, Layout};
 use std::fmt;
@@ -147,12 +149,16 @@ impl SecureMemory {
     /// Allocate secure memory with the given size
     pub fn new(size: usize) -> Result<Self> {
         if size == 0 {
-            return Err(P2PError::Memory("Cannot allocate zero-sized memory".to_string()));
+            return Err(P2PError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Cannot allocate zero-sized memory"
+            )));
         }
 
         if size > MAX_SECURE_ALLOCATION {
-            return Err(P2PError::Memory(format!(
-                "Allocation size {size} exceeds maximum {MAX_SECURE_ALLOCATION}"
+            return Err(P2PError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Allocation size {size} exceeds maximum {MAX_SECURE_ALLOCATION}")
             )));
         }
 
@@ -161,16 +167,25 @@ impl SecureMemory {
         
         // Create layout for allocation
         let layout = Layout::from_size_align(aligned_size, SECURE_ALIGNMENT)
-            .map_err(|e| P2PError::Memory(format!("Invalid layout: {e}")))?;
+            .map_err(|e| P2PError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Invalid layout: {e}")
+            )))?;
 
         // Allocate zeroed memory
         let ptr = unsafe { alloc_zeroed(layout) };
         if ptr.is_null() {
-            return Err(P2PError::Memory("Memory allocation failed".to_string()));
+            return Err(P2PError::Io(std::io::Error::new(
+                std::io::ErrorKind::OutOfMemory,
+                "Memory allocation failed"
+            )));
         }
 
         let ptr = NonNull::new(ptr)
-            .ok_or_else(|| P2PError::Memory("Null pointer returned from allocator".to_string()))?;
+            .ok_or_else(|| P2PError::Io(std::io::Error::new(
+                std::io::ErrorKind::OutOfMemory,
+                "Null pointer returned from allocator"
+            )))?;
 
         let mut memory = Self {
             ptr,
@@ -242,7 +257,10 @@ impl SecureMemory {
         {
             let result = unsafe { mlock(self.ptr.as_ptr() as *const libc::c_void, self.size) };
             if result != 0 {
-                return Err(P2PError::Memory("Failed to lock memory pages".to_string()));
+                return Err(P2PError::Io(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "Failed to lock memory pages"
+                )));
             }
         }
 
@@ -250,7 +268,10 @@ impl SecureMemory {
         {
             let result = unsafe { VirtualLock(self.ptr.as_ptr() as *mut winapi::ctypes::c_void, self.size) };
             if result == 0 {
-                return Err(P2PError::Memory("VirtualLock failed".to_string()));
+                return Err(P2PError::Io(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "VirtualLock failed"
+                )));
             }
         }
 
@@ -349,7 +370,10 @@ impl SecureVec {
     /// Push a byte to the vector
     pub fn push(&mut self, value: u8) -> Result<()> {
         if self.len >= self.capacity() {
-            return Err(P2PError::Memory("SecureVec capacity exceeded".to_string()));
+            return Err(P2PError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "SecureVec capacity exceeded"
+            )));
         }
 
         self.memory.as_mut_slice()[self.len] = value;
@@ -360,7 +384,10 @@ impl SecureVec {
     /// Extend the vector with data from a slice
     pub fn extend_from_slice(&mut self, data: &[u8]) -> Result<()> {
         if self.len + data.len() > self.capacity() {
-            return Err(P2PError::Memory("SecureVec capacity exceeded".to_string()));
+            return Err(P2PError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "SecureVec capacity exceeded"
+            )));
         }
 
         self.memory.as_mut_slice()[self.len..self.len + data.len()].copy_from_slice(data);
@@ -426,7 +453,10 @@ impl SecureString {
     /// Get the string as a str slice
     pub fn as_str(&self) -> Result<&str> {
         std::str::from_utf8(self.vec.as_slice())
-            .map_err(|e| P2PError::Memory(format!("Invalid UTF-8: {e}")))
+            .map_err(|e| P2PError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Invalid UTF-8: {e}")
+            )))
     }
 
     /// Clear the string (zeroizes the data)
@@ -454,7 +484,10 @@ impl SecureMemoryPool {
     /// Create a new secure memory pool
     pub fn new(total_size: usize, chunk_size: usize) -> Result<Self> {
         if chunk_size > total_size {
-            return Err(P2PError::Memory("Chunk size cannot exceed total size".to_string()));
+            return Err(P2PError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Chunk size cannot exceed total size"
+            )));
         }
 
         let pool = Self {

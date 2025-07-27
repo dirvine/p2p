@@ -29,6 +29,7 @@
 //! - Configurable sync intervals
 
 use crate::{P2PError, Result};
+use crate::error::StorageError;
 use crate::peer_record::UserId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -161,7 +162,7 @@ impl MonotonicCounterSystem {
         // Ensure storage directory exists
         if let Some(parent) = storage_path.parent() {
             tokio::fs::create_dir_all(parent).await
-                .map_err(|e| P2PError::Storage(format!("Failed to create storage directory: {e}")))?;
+                .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to create storage directory: {e}"))))?;
         }
 
         // Load existing counters from storage
@@ -392,10 +393,10 @@ impl MonotonicCounterSystem {
         }
 
         let data = tokio::fs::read(storage_path).await
-            .map_err(|e| P2PError::Storage(format!("Failed to read counters file: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read counters file: {e}"))))?;
 
         let counters: HashMap<UserId, PeerCounter> = bincode::deserialize(&data)
-            .map_err(|e| P2PError::Storage(format!("Failed to deserialize counters: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to deserialize counters: {e}"))))?;
 
         Ok(counters)
     }
@@ -412,10 +413,10 @@ impl MonotonicCounterSystem {
         };
 
         let data = bincode::serialize(&counters_snapshot)
-            .map_err(|e| P2PError::Storage(format!("Failed to serialize counters: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize counters: {e}"))))?;
 
         tokio::fs::write(storage_path, data).await
-            .map_err(|e| P2PError::Storage(format!("Failed to write counters file: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to write counters file: {e}"))))?;
 
         // Update statistics
         {

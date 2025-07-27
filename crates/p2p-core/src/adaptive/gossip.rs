@@ -246,7 +246,7 @@ impl AdaptiveGossipSub {
     /// Create a new adaptive gossipsub instance
     pub fn new(local_id: NodeId, trust_provider: Arc<dyn TrustProvider>) -> Self {
         let (control_tx, _control_rx) = mpsc::channel(1000);
-        let (message_tx, message_rx) = mpsc::channel(1000);
+        let (_message_tx, message_rx) = mpsc::channel(1000);
         
         Self {
             local_id,

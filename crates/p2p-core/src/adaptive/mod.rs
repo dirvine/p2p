@@ -190,7 +190,7 @@ pub trait RoutingStrategy: Send + Sync {
     fn update_metrics(&mut self, path: &[NodeId], success: bool);
     
     /// Find closest nodes to a content hash
-    async fn find_closest_nodes(&self, content_hash: &ContentHash, count: usize) -> Result<Vec<NodeId>> {
+    async fn find_closest_nodes(&self, content_hash: &ContentHash, _count: usize) -> Result<Vec<NodeId>> {
         // Default implementation uses node ID from content hash
         let target = NodeId { hash: content_hash.0 };
         self.find_path(&target).await

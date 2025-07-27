@@ -32,6 +32,7 @@
 
 use crate::{P2PError, Result};
 use crate::secure_memory::SecureMemory;
+use crate::error::{StorageError, SecurityError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
@@ -293,10 +294,10 @@ impl WalWriter {
             .create(true)
             .append(true)
             .open(&wal_path)
-            .map_err(|e| P2PError::Storage(format!("Failed to open WAL file: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to open WAL file: {e}"))))?;
         
         let metadata = file.metadata()
-            .map_err(|e| P2PError::Storage(format!("Failed to get WAL metadata: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to get WAL metadata: {e}"))))?;
         
         Ok(Self {
             file,
@@ -312,16 +313,16 @@ impl WalWriter {
     /// Write entry to WAL
     fn write_entry(&mut self, entry: &WalEntry) -> Result<()> {
         let serialized = bincode::serialize(entry)
-            .map_err(|e| P2PError::Storage(format!("Failed to serialize WAL entry: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize WAL entry: {e}"))))?;
         
         // Write entry size first (for recovery)
         let size_bytes = (serialized.len() as u32).to_le_bytes();
         self.file.write_all(&size_bytes)
-            .map_err(|e| P2PError::Storage(format!("Failed to write entry size: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to write entry size: {e}"))))?;
         
         // Write entry data
         self.file.write_all(&serialized)
-            .map_err(|e| P2PError::Storage(format!("Failed to write WAL entry: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to write WAL entry: {e}"))))?;
         
         self.current_size += 4 + serialized.len() as u64;
         self.entry_count += 1;
@@ -330,19 +331,19 @@ impl WalWriter {
         match self.flush_strategy {
             FlushStrategy::Always => {
                 self.file.flush()
-                    .map_err(|e| P2PError::Storage(format!("Failed to flush WAL: {e}")))?;
+                    .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to flush WAL: {e}"))))?;
             }
             FlushStrategy::Periodic(duration) => {
                 if self.last_flush.elapsed() >= duration {
                     self.file.flush()
-                        .map_err(|e| P2PError::Storage(format!("Failed to flush WAL: {e}")))?;
+                        .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to flush WAL: {e}"))))?;
                     self.last_flush = Instant::now();
                 }
             }
             FlushStrategy::BufferSize(size) => {
                 if self.pending_entries.len() >= size {
                     self.file.flush()
-                        .map_err(|e| P2PError::Storage(format!("Failed to flush WAL: {e}")))?;
+                        .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to flush WAL: {e}"))))?;
                     self.pending_entries.clear();
                 }
             }
@@ -354,7 +355,7 @@ impl WalWriter {
                 
                 if should_flush {
                     self.file.flush()
-                        .map_err(|e| P2PError::Storage(format!("Failed to flush WAL: {e}")))?;
+                        .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to flush WAL: {e}"))))?;
                     self.last_flush = Instant::now();
                     self.pending_entries.clear();
                 }
@@ -373,20 +374,20 @@ impl WalWriter {
     fn rotate(&mut self) -> Result<()> {
         // Close current file
         self.file.sync_all()
-            .map_err(|e| P2PError::Storage(format!("Failed to sync WAL: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to sync WAL: {e}"))))?;
         
         // Rename to timestamped file
         let timestamp = current_timestamp();
         let rotated_path = self.path.with_file_name(format!("wal.{timestamp}.{WAL_EXTENSION}"));
         std::fs::rename(&self.path, &rotated_path)
-            .map_err(|e| P2PError::Storage(format!("Failed to rotate WAL: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to rotate WAL: {e}"))))?;
         
         // Create new WAL file
         self.file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&self.path)
-            .map_err(|e| P2PError::Storage(format!("Failed to create new WAL: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to create new WAL: {e}"))))?;
         
         self.current_size = 0;
         self.entry_count = 0;
@@ -400,7 +401,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
     pub async fn new(config: StateConfig) -> Result<Self> {
         // Ensure state directory exists
         std::fs::create_dir_all(&config.state_dir)
-            .map_err(|e| P2PError::Storage(format!("Failed to create state directory: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to create state directory: {e}"))))?;
         
         // Generate HMAC key
         let mut hmac_key_bytes = vec![0u8; 32];
@@ -443,7 +444,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
         
         // Serialize value
         let serialized_value = bincode::serialize(&value)
-            .map_err(|e| P2PError::Storage(format!("Failed to serialize value: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize value: {e}"))))?;
         
         // Create WAL entry
         let wal_entry = self.create_wal_entry(
@@ -584,7 +585,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
             let serialized_value = value.as_ref()
                 .map(|v| bincode::serialize(v))
                 .transpose()
-                .map_err(|e| P2PError::Storage(format!("Failed to serialize value: {e}")))?;
+                .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize value: {e}"))))?;
             
             let wal_entry = self.create_wal_entry(
                 transaction_id,
@@ -619,7 +620,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
         
         // Create snapshot
         let snapshot_data = bincode::serialize(&current_state)
-            .map_err(|e| P2PError::Storage(format!("Failed to serialize snapshot: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize snapshot: {e}"))))?;
         
         // Calculate checksum
         let mut hasher = Sha256::new();
@@ -643,11 +644,11 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
                 .write(true)
                 .truncate(true)
                 .open(&temp_path)
-                .map_err(|e| P2PError::Storage(format!("Failed to create snapshot file: {e}")))?;
+                .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to create snapshot file: {e}"))))?;
             
             // Write header
             let header_data = bincode::serialize(&header)
-                .map_err(|e| P2PError::Storage(format!("Failed to serialize header: {e}")))?;
+                .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize header: {e}"))))?;
             let header_size = (header_data.len() as u32).to_le_bytes();
             file.write_all(&header_size)?;
             file.write_all(&header_data)?;
@@ -656,12 +657,12 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
             file.write_all(&snapshot_data)?;
             
             file.sync_all()
-                .map_err(|e| P2PError::Storage(format!("Failed to sync snapshot: {e}")))?;
+                .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to sync snapshot: {e}"))))?;
         }
         
         // Atomic rename
         std::fs::rename(&temp_path, &snapshot_path)
-            .map_err(|e| P2PError::Storage(format!("Failed to rename snapshot: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to rename snapshot: {e}"))))?;
         
         // Clean up old WAL files
         self.cleanup_old_wal_files(last_transaction_id).await?;
@@ -689,17 +690,17 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
         
         // Create lock file
         File::create(&lock_path)
-            .map_err(|e| P2PError::Storage(format!("Failed to create lock file: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to create lock file: {e}"))))?;
         
         // Find latest snapshot
-        let snapshot_result = self.recover_from_snapshot(&mut stats).await;
+        let _snapshot_result = self.recover_from_snapshot(&mut stats).await;
         
         // Recover from WAL files
         self.recover_from_wal(&mut stats).await?;
         
         // Remove lock file
         std::fs::remove_file(&lock_path)
-            .map_err(|e| P2PError::Storage(format!("Failed to remove lock file: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to remove lock file: {e}"))))?;
         
         stats.end_time = Some(Instant::now());
         
@@ -718,7 +719,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
                 Ok((header, state)) => {
                     // Verify checksum
                     let data = bincode::serialize(&state)
-                        .map_err(|e| P2PError::Storage(format!("Failed to serialize for checksum: {e}")))?;
+                        .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize for checksum: {e}"))))?;
                     
                     let mut hasher = Sha256::new();
                     hasher.update(&data);
@@ -788,7 +789,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
     /// Replay single WAL file
     async fn replay_wal_file(&self, path: &Path, stats: &mut RecoveryStats) -> Result<u64> {
         let mut file = File::open(path)
-            .map_err(|e| P2PError::Storage(format!("Failed to open WAL file: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to open WAL file: {e}"))))?;
         
         let mut entries_recovered = 0u64;
         let mut buffer = Vec::new();
@@ -799,7 +800,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
             match file.read_exact(&mut size_bytes) {
                 Ok(()) => {},
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                Err(e) => return Err(P2PError::Storage(format!("Failed to read entry size: {e}"))),
+                Err(e) => return Err(P2PError::Io(e)),
             }
             
             let entry_size = u32::from_le_bytes(size_bytes) as usize;
@@ -915,7 +916,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
         type HmacSha256 = Hmac<Sha256>;
         
         let mut mac = HmacSha256::new_from_slice(self.hmac_key.as_slice())
-            .map_err(|e| P2PError::Cryptography(format!("Failed to create HMAC: {e}")))?;
+            .map_err(|e| P2PError::Security(SecurityError::InvalidKey(format!("Failed to create HMAC: {e}"))))?;
         
         mac.update(&entry.version.to_le_bytes());
         mac.update(&entry.transaction_id.to_le_bytes());
@@ -952,10 +953,10 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
         let mut snapshots = Vec::new();
         
         let entries = std::fs::read_dir(&self.config.state_dir)
-            .map_err(|e| P2PError::Storage(format!("Failed to read state directory: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read state directory: {e}"))))?;
         
         for entry in entries {
-            let entry = entry.map_err(|e| P2PError::Storage(format!("Failed to read directory entry: {e}")))?;
+            let entry = entry.map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read directory entry: {e}"))))?;
             let path = entry.path();
             
             if path.extension().and_then(|s| s.to_str()) == Some(SNAPSHOT_EXTENSION) {
@@ -974,10 +975,10 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
         let mut wal_files = Vec::new();
         
         let entries = std::fs::read_dir(&self.config.state_dir)
-            .map_err(|e| P2PError::Storage(format!("Failed to read state directory: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read state directory: {e}"))))?;
         
         for entry in entries {
-            let entry = entry.map_err(|e| P2PError::Storage(format!("Failed to read directory entry: {e}")))?;
+            let entry = entry.map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read directory entry: {e}"))))?;
             let path = entry.path();
             
             if path.extension().and_then(|s| s.to_str()) == Some(WAL_EXTENSION) {
@@ -994,31 +995,31 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
     /// Load snapshot from file
     async fn load_snapshot(&self, path: &Path) -> Result<(SnapshotHeader, HashMap<String, T>)> {
         let mut file = File::open(path)
-            .map_err(|e| P2PError::Storage(format!("Failed to open snapshot: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to open snapshot: {e}"))))?;
         
         // Read header size
         let mut size_bytes = [0u8; 4];
         file.read_exact(&mut size_bytes)
-            .map_err(|e| P2PError::Storage(format!("Failed to read header size: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read header size: {e}"))))?;
         
         let header_size = u32::from_le_bytes(size_bytes) as usize;
         
         // Read header
         let mut header_data = vec![0u8; header_size];
         file.read_exact(&mut header_data)
-            .map_err(|e| P2PError::Storage(format!("Failed to read header: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read header: {e}"))))?;
         
         let header: SnapshotHeader = bincode::deserialize(&header_data)
-            .map_err(|e| P2PError::Storage(format!("Failed to deserialize header: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to deserialize header: {e}"))))?;
         
         // Read snapshot data
         let mut snapshot_data = Vec::new();
         file.read_to_end(&mut snapshot_data)
-            .map_err(|e| P2PError::Storage(format!("Failed to read snapshot data: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read snapshot data: {e}"))))?;
         
         // Deserialize state
         let state: HashMap<String, T> = bincode::deserialize(&snapshot_data)
-            .map_err(|e| P2PError::Storage(format!("Failed to deserialize snapshot: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to deserialize snapshot: {e}"))))?;
         
         Ok((header, state))
     }
@@ -1041,7 +1042,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
             
             if can_delete {
                 std::fs::remove_file(&wal_path)
-                    .map_err(|e| P2PError::Storage(format!("Failed to remove old WAL: {e}")))?;
+                    .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to remove old WAL: {e}"))))?;
             }
         }
         
@@ -1051,7 +1052,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
     /// Check maximum transaction ID in WAL file
     async fn check_wal_file_transactions(&self, path: &Path) -> Result<u64> {
         let mut file = File::open(path)
-            .map_err(|e| P2PError::Storage(format!("Failed to open WAL file: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to open WAL file: {e}"))))?;
         
         let mut max_transaction_id = 0u64;
         let mut buffer = Vec::new();
@@ -1062,7 +1063,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
             match file.read_exact(&mut size_bytes) {
                 Ok(()) => {},
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                Err(e) => return Err(P2PError::Storage(format!("Failed to read entry size: {e}"))),
+                Err(e) => return Err(P2PError::Io(e)),
             }
             
             let entry_size = u32::from_le_bytes(size_bytes) as usize;
@@ -1070,7 +1071,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
             // Read entry data
             buffer.resize(entry_size, 0);
             file.read_exact(&mut buffer)
-                .map_err(|e| P2PError::Storage(format!("Failed to read entry: {e}")))?;
+                .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read entry: {e}"))))?;
             
             // Deserialize entry
             if let Ok(entry) = bincode::deserialize::<WalEntry>(&buffer) {
@@ -1089,7 +1090,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
         if snapshots.len() > SNAPSHOT_RETENTION_COUNT {
             for snapshot_path in &snapshots[SNAPSHOT_RETENTION_COUNT..] {
                 std::fs::remove_file(snapshot_path)
-                    .map_err(|e| P2PError::Storage(format!("Failed to remove old snapshot: {e}")))?;
+                    .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to remove old snapshot: {e}"))))?;
             }
         }
         
@@ -1170,7 +1171,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
         
         for (key, value) in state.iter() {
             let serialized = bincode::serialize(value)
-                .map_err(|e| P2PError::Storage(format!("Failed to serialize for size: {e}")))?;
+                .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize for size: {e}"))))?;
             report.total_size += key.len() + serialized.len();
         }
         
@@ -1183,14 +1184,16 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone + PartialEq + Send + Sync 
         
         // Verify checksum
         let data = bincode::serialize(&state)
-            .map_err(|e| P2PError::Storage(format!("Failed to serialize for checksum: {e}")))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize for checksum: {e}"))))?;
         
         let mut hasher = Sha256::new();
         hasher.update(&data);
         let checksum: [u8; 32] = hasher.finalize().into();
         
         if checksum != header.checksum {
-            return Err(P2PError::Storage("Snapshot checksum mismatch".to_string()));
+            return Err(P2PError::Storage(crate::error::StorageError::CorruptionDetected {
+                reason: "Snapshot checksum mismatch".to_string(),
+            }));
         }
         
         Ok(())

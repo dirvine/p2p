@@ -254,7 +254,7 @@ impl ResourceManager {
             while self.connection_semaphore.available_permits() < self.config.max_connections {
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
-        }).await.map_err(|_| P2PError::Network("Shutdown timeout exceeded".to_string()))?;
+        }).await.map_err(|_| P2PError::Network(crate::error::NetworkError::ProtocolError("Shutdown timeout exceeded".to_string())))?;
 
         info!("Resource manager shutdown completed");
         Ok(())
@@ -263,13 +263,13 @@ impl ResourceManager {
     /// Attempt to acquire a connection slot
     pub async fn acquire_connection(&self) -> Result<ConnectionGuard<'_>> {
         if self.is_shutting_down.load(Ordering::SeqCst) {
-            return Err(P2PError::Network("System is shutting down".to_string()));
+            return Err(P2PError::Network(crate::error::NetworkError::ProtocolError("System is shutting down".to_string())));
         }
 
         let permit = self.connection_semaphore.clone()
             .acquire_owned()
             .await
-            .map_err(|_| P2PError::Network("Connection semaphore closed".to_string()))?;
+            .map_err(|_| P2PError::Network(crate::error::NetworkError::ProtocolError("Connection semaphore closed".to_string())))?;
 
         debug!("Connection acquired, {} remaining", self.connection_semaphore.available_permits());
         Ok(ConnectionGuard { permit, _manager: self })
@@ -309,7 +309,7 @@ impl ResourceManager {
         if self.config.max_memory_bytes > 0 && metrics.memory_used > self.config.max_memory_bytes {
             warn!("Memory usage ({} bytes) exceeds limit ({} bytes)", 
                   metrics.memory_used, self.config.max_memory_bytes);
-            return Err(P2PError::Network("Memory limit exceeded".to_string()));
+            return Err(P2PError::Network(crate::error::NetworkError::ProtocolError("Memory limit exceeded".to_string())));
         }
 
         // Check bandwidth usage

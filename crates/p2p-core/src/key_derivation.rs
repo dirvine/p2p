@@ -31,6 +31,7 @@
 
 use crate::{P2PError, Result};
 use crate::secure_memory::SecureMemory;
+use crate::error::SecurityError;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use hkdf::Hkdf;
 use sha2::Sha256;
@@ -201,9 +202,9 @@ impl MasterSeed {
     /// Create master seed from existing entropy
     pub fn from_entropy(entropy: &[u8]) -> Result<Self> {
         if entropy.len() < MASTER_SEED_SIZE {
-            return Err(P2PError::Cryptography(
+            return Err(P2PError::Security(SecurityError::InvalidKey(
                 "Insufficient entropy for master seed".to_string()
-            ));
+            )));
         }
         
         let seed = SecureMemory::from_slice(&entropy[..MASTER_SEED_SIZE])?;
@@ -235,9 +236,9 @@ impl DerivationPath {
     /// Create a new derivation path
     pub fn new(components: Vec<u32>) -> Result<Self> {
         if components.len() > MAX_DERIVATION_DEPTH {
-            return Err(P2PError::Cryptography(
+            return Err(P2PError::Security(SecurityError::InvalidKey(
                 format!("Derivation path too deep: {} > {}", components.len(), MAX_DERIVATION_DEPTH)
-            ));
+            )));
         }
         
         Ok(Self { components })
@@ -248,9 +249,9 @@ impl DerivationPath {
         let parts: Vec<&str> = path_str.split('/').collect();
         
         if parts.is_empty() || parts[0] != "m" {
-            return Err(P2PError::Cryptography(
+            return Err(P2PError::Security(SecurityError::InvalidKey(
                 "Invalid derivation path format".to_string()
-            ));
+            )));
         }
         
         let mut components = Vec::new();
@@ -267,9 +268,9 @@ impl DerivationPath {
             };
             
             let index: u32 = index_str.parse()
-                .map_err(|_| P2PError::Cryptography(
+                .map_err(|_| P2PError::Security(SecurityError::InvalidKey(
                     format!("Invalid path component: {part}")
-                ))?;
+                )))?;
             
             let final_index = if hardened {
                 index + HARDENED_OFFSET
@@ -437,9 +438,9 @@ impl HierarchicalKeyDerivation {
         // Initial HKDF from master seed
         let hkdf = Hkdf::<Sha256>::new(None, &current_key);
         hkdf.expand(b"ed25519 seed", &mut current_key)
-            .map_err(|_| P2PError::Cryptography("HKDF expansion failed".to_string()))?;
+            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("HKDF expansion failed".to_string())))?;
         hkdf.expand(b"chaincode", &mut current_chaincode)
-            .map_err(|_| P2PError::Cryptography("HKDF expansion failed".to_string()))?;
+            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("HKDF expansion failed".to_string())))?;
         
         // Derive through each path component
         for &component in path.components() {
@@ -454,12 +455,12 @@ impl HierarchicalKeyDerivation {
         
         // Generate Ed25519 key pair
         let signing_key = SigningKey::from_bytes(&current_key[..32].try_into()
-            .map_err(|_| P2PError::Cryptography("Invalid Ed25519 secret key length".to_string()))?);
+            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Invalid Ed25519 secret key length".to_string())))?);
         let verifying_key = signing_key.verifying_key();
         
         // Generate X25519 key pair for key exchange
         let x25519_secret: [u8; 32] = current_key[..32].try_into()
-            .map_err(|_| P2PError::Cryptography("Invalid X25519 secret key".to_string()))?;
+            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Invalid X25519 secret key".to_string())))?;
         let x25519_public = x25519_dalek::PublicKey::from(x25519_secret).to_bytes();
         
         // Zeroize temporary key material
@@ -493,7 +494,7 @@ impl HierarchicalKeyDerivation {
         } else {
             // Non-hardened derivation
             let signing_key = SigningKey::from_bytes(&parent_key[..32].try_into()
-                .map_err(|_| P2PError::Cryptography("Invalid parent key length".to_string()))?);
+                .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Invalid parent key length".to_string())))?);
             let verifying_key = signing_key.verifying_key();
             data.extend_from_slice(verifying_key.as_bytes());
         }
@@ -506,9 +507,9 @@ impl HierarchicalKeyDerivation {
         let mut child_chaincode = [0u8; 32];
         
         hkdf.expand(b"key", &mut child_key)
-            .map_err(|_| P2PError::Cryptography("Child key derivation failed".to_string()))?;
+            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Child key derivation failed".to_string())))?;
         hkdf.expand(b"chaincode", &mut child_chaincode)
-            .map_err(|_| P2PError::Cryptography("Child chaincode derivation failed".to_string()))?;
+            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Child chaincode derivation failed".to_string())))?;
         
         // Zeroize temporary data
         data.zeroize();
@@ -708,7 +709,7 @@ mod tests {
 
     #[test]
     fn test_derivation_path_depth_limit() {
-        let mut components = vec![0u32; MAX_DERIVATION_DEPTH + 1];
+        let components = vec![0u32; MAX_DERIVATION_DEPTH + 1];
         let result = DerivationPath::new(components);
         assert!(result.is_err());
     }

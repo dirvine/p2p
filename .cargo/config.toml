@@ -1,0 +1,117 @@
+# Cargo configuration for P2P Foundation
+
+# Build settings
+[build]
+# Use all available cores for building
+jobs = -1
+
+# Lints configuration - Enforce production quality standards
+[target.'cfg(all())']
+rustflags = [
+    "-D", "warnings",
+    "-D", "rust-2018-idioms",
+    "-D", "missing-debug-implementations",
+]
+
+# Workspace-wide lints
+[workspace.lints.rust]
+# Deny dangerous patterns
+unsafe_code = "warn"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+# Correctness
+enum_glob_use = "deny"
+mem_forget = "deny"
+clone_on_ref_ptr = "deny"
+
+# Error handling - CRITICAL for production
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+unimplemented = "deny"
+todo = "warn"
+unreachable = "deny"
+fallible_impl_from = "deny"
+
+# Performance
+inefficient_to_string = "deny"
+large_enum_variant = "warn"
+mutex_atomic = "warn"
+needless_collect = "deny"
+trivially_copy_pass_by_ref = "warn"
+
+# Style and clarity
+needless_return = "warn"
+redundant_closure = "warn"
+redundant_closure_for_method_calls = "warn"
+single_match_else = "warn"
+
+# Security
+lossy_float_literal = "deny"
+
+# Future compatibility
+future_incompatible = "warn"
+nonstandard_style = "warn"
+rust_2018_compatibility = "warn"
+
+# Profile settings
+[profile.dev]
+# Faster builds in development
+opt-level = 0
+debug = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = 'unwind'
+incremental = true
+codegen-units = 256
+rpath = false
+
+[profile.release]
+# Optimized for production
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = "thin"
+panic = 'unwind'
+incremental = false
+codegen-units = 16
+rpath = false
+strip = true
+
+[profile.bench]
+# Optimized for benchmarking
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = "thin"
+incremental = false
+codegen-units = 16
+
+# Test profile for better test performance
+[profile.test]
+opt-level = 2
+debug = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+incremental = true
+codegen-units = 256
+
+# Custom profile for security auditing
+[profile.audit]
+inherits = "release"
+debug-assertions = true
+overflow-checks = true
+
+# Network proxy settings (if needed)
+# [net]
+# git-fetch-with-cli = true
+
+# Registry settings
+[registries.crates-io]
+protocol = "sparse"

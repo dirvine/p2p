@@ -16,7 +16,7 @@
 //! 
 //! Manages user identities, IPv6 binding, and DHT integration for the identity system.
 
-use crate::{P2PError, Result, dht::Key, security::IPv6NodeID};
+use crate::{P2PError, Result, dht::Key, security::IPv6NodeID, error::IdentityError};
 use ant_quic::crypto::raw_public_keys::key_utils::{generate_ed25519_keypair, derive_peer_id_from_public_key};
 use ed25519_dalek::{VerifyingKey as Ed25519PublicKey, SigningKey, Signer};
 use serde::{Deserialize, Serialize};
@@ -107,7 +107,9 @@ impl IPv6BindingProof {
         
         // Create signature data (simplified)
         let signature_data = format!("{}:{}", ipv6_address, 
-            timestamp.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
+            timestamp.duration_since(SystemTime::UNIX_EPOCH)
+                .map_err(|e| P2PError::Identity(IdentityError::SystemTime(format!("System time error: {}", e))))?
+                .as_secs());
         let signature = user_keypair.sign(signature_data.as_bytes()).to_bytes().to_vec();
         
         Ok(Self {
@@ -413,13 +415,13 @@ impl EncryptedUserProfile {
         
         // Parse the public key
         let public_key_bytes: [u8; 32] = self.public_key.as_slice().try_into()
-            .map_err(|_| P2PError::Identity("Invalid public key length".to_string()))?;
+            .map_err(|_| P2PError::Identity(IdentityError::InvalidFormat { reason: "Invalid public key length".to_string() }))?;
         let public_key = VerifyingKey::from_bytes(&public_key_bytes)
-            .map_err(|e| P2PError::Identity(format!("Invalid public key: {e}")))?;
+            .map_err(|e| P2PError::Identity(IdentityError::InvalidFormat { reason: format!("Invalid public key: {e}") }))?;
         
         // Parse the signature
         let signature_bytes: [u8; 64] = self.signature.as_slice().try_into()
-            .map_err(|_| P2PError::Identity("Invalid signature length".to_string()))?;
+            .map_err(|_| P2PError::Identity(IdentityError::InvalidFormat { reason: "Invalid signature length".to_string() }))?;
         let signature = Signature::from_bytes(&signature_bytes);
         
         // Verify signature against encrypted data
@@ -435,7 +437,7 @@ impl EncryptedUserProfile {
         use rand::RngCore;
         
         if key.len() != 32 {
-            return Err(P2PError::Identity("Invalid encryption key length - must be 32 bytes".to_string()));
+            return Err(P2PError::Identity(IdentityError::InvalidFormat { reason: "Invalid encryption key length - must be 32 bytes".to_string() }));
         }
         
         let cipher_key = aes_gcm::Key::<Aes256Gcm>::from_slice(key);
@@ -449,7 +451,7 @@ impl EncryptedUserProfile {
         // Encrypt the data
         let mut ciphertext = data.to_vec();
         let tag = cipher.encrypt_in_place_detached(nonce, b"", &mut ciphertext)
-            .map_err(|e| P2PError::Identity(format!("Profile encryption failed: {e}")))?;
+            .map_err(|e| P2PError::Identity(IdentityError::InvalidFormat { reason: format!("Profile encryption failed: {e}") }))?;
         
         // Combine nonce + ciphertext + tag
         let mut result = Vec::with_capacity(12 + ciphertext.len() + 16);
@@ -465,11 +467,11 @@ impl EncryptedUserProfile {
         use aes_gcm::{Aes256Gcm, Nonce, AeadInPlace, KeyInit};
         
         if key.len() != 32 {
-            return Err(P2PError::Identity("Invalid decryption key length - must be 32 bytes".to_string()));
+            return Err(P2PError::Identity(IdentityError::InvalidFormat { reason: "Invalid decryption key length - must be 32 bytes".to_string() }));
         }
         
         if encrypted.len() < 28 {
-            return Err(P2PError::Identity("Invalid encrypted profile data - too short".to_string()));
+            return Err(P2PError::Identity(IdentityError::InvalidFormat { reason: "Invalid encrypted profile data - too short".to_string() }));
         }
         
         let cipher_key = aes_gcm::Key::<Aes256Gcm>::from_slice(key);
@@ -483,7 +485,7 @@ impl EncryptedUserProfile {
         
         // Decrypt the data
         cipher.decrypt_in_place_detached(nonce, b"", &mut plaintext, tag.into())
-            .map_err(|e| P2PError::Identity(format!("Profile decryption failed: {e}")))?;
+            .map_err(|e| P2PError::Identity(IdentityError::InvalidFormat { reason: format!("Profile decryption failed: {e}") }))?;
         
         Ok(plaintext)
     }
@@ -973,13 +975,13 @@ impl ChallengeProof {
         
         // Parse the public key
         let public_key_bytes: [u8; 32] = self.public_key.as_slice().try_into()
-            .map_err(|_| P2PError::Identity("Invalid public key length in proof".to_string()))?;
+            .map_err(|_| P2PError::Identity(IdentityError::VerificationFailed { reason: "Invalid public key length in proof".to_string() }))?;
         let public_key = VerifyingKey::from_bytes(&public_key_bytes)
-            .map_err(|e| P2PError::Identity(format!("Invalid public key in proof: {e}")))?;
+            .map_err(|e| P2PError::Identity(IdentityError::VerificationFailed { reason: format!("Invalid public key in proof: {e}") }))?;
         
         // Parse the signature
         let signature_bytes: [u8; 64] = self.signature.as_slice().try_into()
-            .map_err(|_| P2PError::Identity("Invalid signature length in proof".to_string()))?;
+            .map_err(|_| P2PError::Identity(IdentityError::VerificationFailed { reason: "Invalid signature length in proof".to_string() }))?;
         let signature = Signature::from_bytes(&signature_bytes);
         
         // Create the signed data: challenge_id + proof_data
@@ -1056,7 +1058,9 @@ impl IdentityManager {
             let serialized = serde_json::to_vec(identity)?;
             Ok(serialized)
         } else {
-            Err(P2PError::Identity("Identity not found".to_string()))
+            Err(P2PError::Identity(crate::error::IdentityError::NotFound {
+                id: "current".to_string(),
+            }))
         }
     }
     
@@ -1106,7 +1110,7 @@ mod tests {
             "forest.lightning.compass".to_string(),
             None,
             None,
-        ).await.unwrap();
+        ).await.expect("Should create identity in test");
         
         assert_eq!(identity.display_name_hint, "Test User");
         assert_eq!(identity.three_word_address, "forest.lightning.compass");
@@ -1124,13 +1128,15 @@ mod tests {
             "ocean.thunder.falcon".to_string(),
             None,
             None,
-        ).await.unwrap();
+        ).await.expect("Should create identity for export test");
         
         // Export identity
-        let exported_data = manager.export_identity(&original_identity.user_id).await.unwrap();
+        let exported_data = manager.export_identity(&original_identity.user_id).await
+            .expect("Should export identity in test");
         
         // Import identity
-        let imported_identity = manager.import_identity(&exported_data, "password123").await.unwrap();
+        let imported_identity = manager.import_identity(&exported_data, "password123").await
+            .expect("Should import identity in test");
         
         // Verify identities match
         assert_eq!(original_identity.user_id, imported_identity.user_id);
@@ -1148,7 +1154,7 @@ mod tests {
             "test.user.example".to_string(),
             None,
             None,
-        ).await.unwrap();
+        ).await.expect("Should create identity for challenge test");
         
         // Create challenge
         let challenge = manager.create_challenge(Duration::from_secs(300)).await;
@@ -1163,7 +1169,8 @@ mod tests {
         };
         
         // Verify response
-        let is_valid = manager.verify_challenge_response(&proof, &identity.public_key).await.unwrap();
+        let is_valid = manager.verify_challenge_response(&proof, &identity.public_key).await
+            .expect("Should verify challenge response in test");
         assert!(is_valid);
     }
 }

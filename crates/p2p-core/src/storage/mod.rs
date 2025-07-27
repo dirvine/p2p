@@ -183,7 +183,7 @@ impl StorageManager {
         &mut self,
         key: &str,
         data: &T,
-        ttl: Duration,
+        _ttl: Duration,
         metadata: Option<serde_json::Value>,
     ) -> Result<()> {
         // Serialize data
@@ -240,7 +240,7 @@ impl StorageManager {
         &mut self,
         key: &str,
         data: &T,
-        ttl: Duration,
+        _ttl: Duration,
     ) -> Result<()> {
         let value = bincode::serialize(data)?;
         
@@ -275,7 +275,7 @@ impl StorageManager {
     }
     
     /// List keys with prefix (for discovery)
-    pub async fn list_keys(&self, prefix: &str) -> Result<Vec<String>> {
+    pub async fn list_keys(&self, _prefix: &str) -> Result<Vec<String>> {
         // In a real implementation, this would query the DHT for keys with prefix
         // For now, return empty list
         Ok(vec![])

@@ -29,7 +29,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::{Semaphore, mpsc};
-use futures::future::FutureExt;
 
 /// Performance configuration
 #[derive(Debug, Clone)]
@@ -375,6 +374,7 @@ impl<T: Send + 'static> BatchProcessor<T> {
 }
 
 /// Concurrent operation limiter
+#[derive(Clone)]
 pub struct ConcurrencyLimiter {
     semaphore: Arc<Semaphore>,
 }

@@ -250,12 +250,13 @@ impl PasskeyAuthManager {
     
     /// Generate keypair
     fn generate_keypair(&self) -> Result<(Vec<u8>, Vec<u8>)> {
-        use ed25519_dalek::{Keypair, PublicKey, SecretKey};
+        use ed25519_dalek::{SigningKey, VerifyingKey};
         use rand::rngs::OsRng;
         
-        let keypair = Keypair::generate(&mut OsRng);
-        let public_key = keypair.public.to_bytes().to_vec();
-        let private_key = keypair.secret.to_bytes().to_vec();
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let verifying_key: VerifyingKey = signing_key.verifying_key();
+        let public_key = verifying_key.to_bytes().to_vec();
+        let private_key = signing_key.to_bytes().to_vec();
         
         Ok((public_key, private_key))
     }
@@ -271,13 +272,17 @@ impl PasskeyAuthManager {
     
     /// Sign challenge with private key
     fn sign_challenge(&self, private_key: &[u8], challenge: &[u8]) -> Result<Vec<u8>> {
-        use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signer};
+        use ed25519_dalek::{Signer, SigningKey};
         
-        let secret = SecretKey::from_bytes(private_key)?;
-        let public = PublicKey::from(&secret);
-        let keypair = Keypair { secret, public };
+        // Convert the private key bytes to a proper array
+        let mut key_bytes = [0u8; 32];
+        if private_key.len() != 32 {
+            return Err(anyhow::anyhow!("Invalid private key length"));
+        }
+        key_bytes.copy_from_slice(private_key);
         
-        let signature = keypair.sign(challenge);
+        let signing_key = SigningKey::from_bytes(&key_bytes);
+        let signature = signing_key.sign(challenge);
         Ok(signature.to_bytes().to_vec())
     }
     

@@ -1,617 +1,488 @@
-// Copyright 2024 Saorsa Labs Limited
-//
-// This software is dual-licensed under:
-// - GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
-// - Commercial License
-//
-// For AGPL-3.0 license, see LICENSE-AGPL-3.0
-// For commercial licensing, contact: saorsalabs@gmail.com
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under these licenses is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// Copyright 2024 P2P Foundation
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Self-Organizing Map (SOM) implementation for content clustering
+//! Self-Organizing Map (SOM) Implementation
 //!
-//! Groups nodes based on content similarity, computational capabilities,
-//! network proximity, and storage availability
+//! This module provides a Self-Organizing Map for intelligent clustering and organization
+//! of nodes in the P2P network based on multi-dimensional features such as content
+//! specialization, compute capability, network latency, and storage availability.
 
-use super::*;
-use std::collections::{HashSet, HashMap};
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, RwLock};
+use rand::Rng;
 
-/// Self-Organizing Map for node clustering
-pub struct SelfOrganizingMap {
-    /// SOM grid
-    map: Vec<Vec<SOMNode>>,
-    
-    /// Feature dimensions
-    feature_dim: usize,
-    
-    /// Current learning rate
-    learning_rate: f64,
-    
-    /// Neighborhood radius
-    neighborhood_radius: f64,
-    
-    /// Training iteration counter
-    iteration: u64,
-    
-    /// Feature extractor
-    extractor: Arc<RwLock<FeatureExtractor>>,
-    
-    /// Node feature cache
-    feature_cache: Arc<RwLock<HashMap<NodeId, [f64; 4]>>>,
+/// Configuration for Self-Organizing Map
+#[derive(Debug, Clone)]
+pub struct SomConfig {
+    /// Initial learning rate (typically 0.1 - 0.5)
+    pub initial_learning_rate: f64,
+    /// Initial neighborhood radius
+    pub initial_radius: f64,
+    /// Number of training iterations
+    pub iterations: usize,
+    /// Grid size configuration
+    pub grid_size: GridSize,
 }
 
-/// A single node in the SOM grid
-struct SOMNode {
-    /// Weight vector
-    weights: Vec<f64>,
-    
-    /// Assigned network nodes
-    assigned_nodes: HashSet<NodeId>,
+/// Grid size configuration
+#[derive(Debug, Clone)]
+pub enum GridSize {
+    /// Fixed grid dimensions
+    Fixed(usize, usize),
+    /// Dynamic grid that grows with network size
+    Dynamic { min: usize, max: usize },
 }
 
-/// Feature extractor for SOM training
-pub struct FeatureExtractor {
-    /// Content type history for nodes
-    content_history: HashMap<NodeId, HashMap<ContentType, u64>>,
-    
-    /// Maximum values for normalization
-    max_storage: f64,
-    max_compute: f64,
-    max_bandwidth: f64,
+/// Multi-dimensional features representing a node's characteristics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeFeatures {
+    /// Content vector (128-dimensional semantic hash)
+    pub content_vector: Vec<f64>,
+    /// Compute capability (0-1000 benchmark score)
+    pub compute_capability: f64,
+    /// Average network latency in milliseconds
+    pub network_latency: f64,
+    /// Available storage in GB
+    pub storage_available: f64,
 }
 
-impl Default for FeatureExtractor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl FeatureExtractor {
-    /// Create a new feature extractor
-    pub fn new() -> Self {
-        Self {
-            content_history: HashMap::new(),
-            max_storage: 1000.0,    // 1TB default max
-            max_compute: 1000.0,    // Arbitrary compute units
-            max_bandwidth: 1000.0,  // 1Gbps default max
-        }
-    }
-    
-    /// Extract 4D features from a node descriptor
-    /// Features: [content_affinity, storage_capacity, compute_capability, network_quality]
-    pub fn extract_features(&self, node: &NodeDescriptor) -> [f64; 4] {
-        // Feature 1: Content type affinity (based on historical content types)
-        let content_affinity = if let Some(history) = self.content_history.get(&node.id) {
-            let total: u64 = history.values().sum();
-            if total > 0 {
-                // Calculate dominant content type ratio
-                let max_count = history.values().max().copied().unwrap_or(0);
-                max_count as f64 / total as f64
-            } else {
-                0.5 // Neutral affinity if no history
-            }
+impl NodeFeatures {
+    /// Normalize features to ensure consistent scale
+    pub fn normalize(&self) -> Self {
+        // Normalize content vector to unit length
+        let content_magnitude = self.content_vector.iter()
+            .map(|x| x * x)
+            .sum::<f64>()
+            .sqrt();
+        
+        let normalized_content = if content_magnitude > 0.0 {
+            self.content_vector.iter()
+                .map(|x| x / content_magnitude)
+                .collect()
         } else {
-            0.5
+            vec![0.0; self.content_vector.len()]
         };
         
-        // Feature 2: Storage capacity (normalized)
-        let storage_capacity = (node.capabilities.storage as f64 / self.max_storage).min(1.0);
-        
-        // Feature 3: Computational capability (normalized)
-        let compute_capability = (node.capabilities.compute as f64 / self.max_compute).min(1.0);
-        
-        // Feature 4: Network quality (bandwidth * trust)
-        let bandwidth_norm = (node.capabilities.bandwidth as f64 / self.max_bandwidth).min(1.0);
-        let network_quality = bandwidth_norm * node.trust;
-        
-        [content_affinity, storage_capacity, compute_capability, network_quality]
-    }
-    
-    /// Update content history for a node
-    pub fn update_content_history(&mut self, node_id: &NodeId, content_type: ContentType) {
-        let history = self.content_history.entry(node_id.clone()).or_default();
-        *history.entry(content_type).or_insert(0) += 1;
-    }
-    
-    /// Update normalization maximums
-    pub fn update_max_values(&mut self, storage: f64, compute: f64, bandwidth: f64) {
-        self.max_storage = self.max_storage.max(storage);
-        self.max_compute = self.max_compute.max(compute);
-        self.max_bandwidth = self.max_bandwidth.max(bandwidth);
-    }
-}
-
-impl SelfOrganizingMap {
-    /// Create a new SOM with given dimensions
-    pub fn new(width: usize, height: usize) -> Self {
-        let feature_dim = 4; // Fixed 4D features
-        let mut map = Vec::with_capacity(height);
-        
-        for _ in 0..height {
-            let mut row = Vec::with_capacity(width);
-            for _ in 0..width {
-                row.push(SOMNode {
-                    weights: (0..feature_dim)
-                        .map(|_| rand::random::<f64>())
-                        .collect(),
-                    assigned_nodes: HashSet::new(),
-                });
-            }
-            map.push(row);
-        }
-        
+        // Normalize other features to [0, 1] range
         Self {
-            map,
-            feature_dim,
-            learning_rate: 0.1,
-            neighborhood_radius: 3.0,
-            iteration: 0,
-            extractor: Arc::new(RwLock::new(FeatureExtractor::new())),
-            feature_cache: Arc::new(RwLock::new(HashMap::new())),
+            content_vector: normalized_content,
+            compute_capability: self.compute_capability / 1000.0, // Max 1000
+            network_latency: (self.network_latency / 200.0).min(1.0), // Max 200ms
+            storage_available: (self.storage_available / 5000.0).min(1.0), // Max 5TB
         }
     }
     
-    /// Create a new SOM with dynamic sizing based on network size
-    pub fn new_dynamic(expected_nodes: usize) -> Self {
-        // Calculate grid dimensions based on expected network size
-        // Rule: sqrt(5 * sqrt(N)) for optimal coverage
-        let grid_size = ((5.0 * (expected_nodes as f64).sqrt()).sqrt() as usize).max(5);
-        Self::new(grid_size, grid_size)
-    }
-    
-    /// Update the SOM with a new node descriptor
-    pub async fn update_node(&mut self, node: &NodeDescriptor) {
-        // Extract features
-        let features = {
-            let extractor = self.extractor.read().await;
-            extractor.extract_features(node)
-        };
+    /// Calculate Euclidean distance to another feature vector
+    pub fn euclidean_distance(&self, other: &Self) -> f64 {
+        let normalized_self = self.normalize();
+        let normalized_other = other.normalize();
         
-        // Cache the features
-        {
-            let mut cache = self.feature_cache.write().await;
-            cache.insert(node.id.clone(), features);
-        }
+        // Combine all features into a single vector for distance calculation
+        let self_vec = normalized_self.to_weight_vector();
+        let other_vec = normalized_other.to_weight_vector();
         
-        // Update the SOM
-        self.update(&node.id, &features);
-        
-        // Update extractor's max values
-        {
-            let mut extractor = self.extractor.write().await;
-            extractor.update_max_values(
-                node.capabilities.storage as f64,
-                node.capabilities.compute as f64,
-                node.capabilities.bandwidth as f64,
-            );
-        }
-    }
-    
-    /// Update the SOM with a new node's features
-    fn update(&mut self, node_id: &NodeId, features: &[f64]) {
-        assert_eq!(features.len(), self.feature_dim);
-        
-        // Find best matching unit (BMU)
-        let bmu = self.find_bmu(features);
-        
-        // Update BMU and neighbors
-        let learning_rate = self.current_learning_rate();
-        let neighborhood_radius = self.current_neighborhood_radius();
-        
-        for (i, row) in self.map.iter_mut().enumerate() {
-            for (j, som_node) in row.iter_mut().enumerate() {
-                let distance = ((i as f64 - bmu.0 as f64).powi(2) + 
-                               (j as f64 - bmu.1 as f64).powi(2)).sqrt();
-                
-                if distance <= neighborhood_radius {
-                    let influence = (-distance.powi(2) / 
-                                    (2.0 * neighborhood_radius.powi(2))).exp();
-                    
-                    for (k, weight) in som_node.weights.iter_mut().enumerate() {
-                        *weight += learning_rate * influence * 
-                                  (features[k] - *weight);
-                    }
-                }
-            }
-        }
-        
-        // Update node assignment
-        self.map[bmu.0][bmu.1].assigned_nodes.insert(node_id.clone());
-        self.iteration += 1;
-    }
-    
-    /// Find the best matching unit for given features
-    fn find_bmu(&self, features: &[f64]) -> (usize, usize) {
-        let mut min_distance = f64::MAX;
-        let mut bmu = (0, 0);
-        
-        for (i, row) in self.map.iter().enumerate() {
-            for (j, node) in row.iter().enumerate() {
-                let distance = self.euclidean_distance(&node.weights, features);
-                if distance < min_distance {
-                    min_distance = distance;
-                    bmu = (i, j);
-                }
-            }
-        }
-        
-        bmu
-    }
-    
-    /// Calculate Euclidean distance between two vectors
-    fn euclidean_distance(&self, a: &[f64], b: &[f64]) -> f64 {
-        a.iter()
-            .zip(b.iter())
-            .map(|(x, y)| (x - y).powi(2))
+        self_vec.iter()
+            .zip(other_vec.iter())
+            .map(|(a, b)| (a - b).powi(2))
             .sum::<f64>()
             .sqrt()
     }
     
-    /// Get current learning rate (decreases over time)
-    fn current_learning_rate(&self) -> f64 {
-        self.learning_rate * (-(self.iteration as f64) / 1000.0).exp()
+    /// Convert to weight vector for SOM operations
+    pub fn to_weight_vector(&self) -> Vec<f64> {
+        let normalized = self.normalize();
+        let mut weights = normalized.content_vector.clone();
+        weights.push(normalized.compute_capability);
+        weights.push(normalized.network_latency);
+        weights.push(normalized.storage_available);
+        weights
     }
-    
-    /// Get current neighborhood radius (decreases over time)
-    fn current_neighborhood_radius(&self) -> f64 {
-        self.neighborhood_radius * (-(self.iteration as f64) / 500.0).exp()
-    }
-    
-    /// Find nodes in the same region as the given node
-    pub fn find_similar_nodes(&self, node_id: &NodeId) -> Vec<NodeId> {
-        for row in &self.map {
-            for som_node in row {
-                if som_node.assigned_nodes.contains(node_id) {
-                    return som_node.assigned_nodes.iter().cloned().collect();
-                }
-            }
+}
+
+/// A single neuron in the SOM grid
+#[derive(Debug, Clone)]
+pub struct Neuron {
+    /// Weight vector
+    weights: Vec<f64>,
+    /// Node IDs assigned to this neuron
+    assigned_nodes: HashSet<NodeId>,
+}
+
+impl Neuron {
+    /// Create a new neuron with random weights
+    fn new(weight_dim: usize) -> Self {
+        let mut rng = rand::thread_rng();
+        let weights = (0..weight_dim)
+            .map(|_| rng.gen_range(0.0..1.0))
+            .collect();
+        
+        Self {
+            weights,
+            assigned_nodes: HashSet::new(),
         }
-        
-        Vec::new()
     }
     
-    /// Get the grid position of a node
-    pub fn get_node_position(&self, node_id: &NodeId) -> Option<(usize, usize)> {
-        for (i, row) in self.map.iter().enumerate() {
-            for (j, som_node) in row.iter().enumerate() {
-                if som_node.assigned_nodes.contains(node_id) {
-                    return Some((i, j));
-                }
-            }
+    /// Calculate distance to input vector
+    fn distance(&self, input: &[f64]) -> f64 {
+        self.weights.iter()
+            .zip(input.iter())
+            .map(|(w, i)| (w - i).powi(2))
+            .sum::<f64>()
+            .sqrt()
+    }
+    
+    /// Update weights based on input and influence
+    fn update_weights(&mut self, input: &[f64], learning_rate: f64, influence: f64) {
+        for (weight, &input_val) in self.weights.iter_mut().zip(input.iter()) {
+            *weight += learning_rate * influence * (input_val - *weight);
         }
-        
-        None
     }
-    
-    /// Get cached features for a node
-    pub async fn get_node_features(&self, node_id: &NodeId) -> Option<[f64; 4]> {
-        let cache = self.feature_cache.read().await;
-        cache.get(node_id).copied()
-    }
-    
-    /// Update content history for a node
-    pub async fn update_content_history(&self, node_id: &NodeId, content_type: ContentType) {
-        let mut extractor = self.extractor.write().await;
-        extractor.update_content_history(node_id, content_type);
-    }
-    
-    /// Find nodes best suited for a content type
-    pub async fn find_nodes_for_content(&self, content_type: ContentType, count: usize) -> Vec<NodeId> {
-        let mut candidates = Vec::new();
-        
-        // Get content type weights (example mapping)
-        let target_features = match content_type {
-            ContentType::DHTLookup => [0.8, 0.2, 0.5, 0.9],     // High affinity, high network
-            ContentType::DataRetrieval => [0.7, 0.9, 0.3, 0.8], // High storage, high network
-            ContentType::ComputeRequest => [0.5, 0.3, 0.9, 0.7], // High compute
-            ContentType::RealtimeMessage => [0.6, 0.1, 0.4, 1.0], // Highest network quality
+}
+
+/// Self-Organizing Map for node clustering
+pub struct SelfOrganizingMap {
+    /// Grid of neurons
+    grid: Arc<RwLock<Vec<Vec<Neuron>>>>,
+    /// Current grid dimensions
+    width: usize,
+    height: usize,
+    /// Configuration
+    config: SomConfig,
+    /// Weight dimension (features + metadata)
+    weight_dim: usize,
+    /// Node to grid position mapping for fast lookups
+    node_positions: Arc<RwLock<HashMap<NodeId, (usize, usize)>>>,
+}
+
+impl SelfOrganizingMap {
+    /// Create a new Self-Organizing Map
+    pub fn new(config: SomConfig) -> Self {
+        let (width, height) = match &config.grid_size {
+            GridSize::Fixed(w, h) => (*w, *h),
+            GridSize::Dynamic { min, .. } => (*min, *min),
         };
         
-        // Find BMU for target features
-        let bmu = self.find_bmu(&target_features);
+        // Weight dimension = 128 (content) + 3 (other features)
+        let weight_dim = 131;
         
-        // Collect nodes from BMU and neighbors
-        let radius = 2;
-        for di in -radius..=radius {
-            for dj in -radius..=radius {
-                let i = (bmu.0 as i32 + di) as usize;
-                let j = (bmu.1 as i32 + dj) as usize;
+        // Initialize grid with random neurons
+        let grid = (0..height)
+            .map(|_| {
+                (0..width)
+                    .map(|_| Neuron::new(weight_dim))
+                    .collect()
+            })
+            .collect();
+        
+        Self {
+            grid: Arc::new(RwLock::new(grid)),
+            width,
+            height,
+            config,
+            weight_dim,
+            node_positions: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+    
+    /// Find the Best Matching Unit (BMU) for given features
+    pub fn find_best_matching_unit(&self, features: &NodeFeatures) -> (usize, usize) {
+        let input = features.to_weight_vector();
+        let grid = self.grid.read().unwrap();
+        
+        let mut best_x = 0;
+        let mut best_y = 0;
+        let mut best_distance = f64::MAX;
+        
+        for (y, row) in grid.iter().enumerate() {
+            for (x, neuron) in row.iter().enumerate() {
+                let distance = neuron.distance(&input);
+                if distance < best_distance {
+                    best_distance = distance;
+                    best_x = x;
+                    best_y = y;
+                }
+            }
+        }
+        
+        (best_x, best_y)
+    }
+    
+    /// Calculate Gaussian neighborhood function
+    pub fn gaussian_neighborhood(distance: f64, radius: f64) -> f64 {
+        (-distance.powi(2) / (2.0 * radius.powi(2))).exp()
+    }
+    
+    /// Get current neighborhood radius based on iteration
+    pub fn get_neighborhood_radius(&self, iteration: usize) -> f64 {
+        self.config.initial_radius * (-(iteration as f64) / self.config.iterations as f64).exp()
+    }
+    
+    /// Get current learning rate based on iteration
+    pub fn get_learning_rate(&self, iteration: usize) -> f64 {
+        self.config.initial_learning_rate * (-(iteration as f64) / self.config.iterations as f64).exp()
+    }
+    
+    /// Train the SOM with a single sample
+    pub fn train_single(&mut self, features: &NodeFeatures, iteration: usize) {
+        let input = features.to_weight_vector();
+        let (bmu_x, bmu_y) = self.find_best_matching_unit(features);
+        
+        let learning_rate = self.get_learning_rate(iteration);
+        let radius = self.get_neighborhood_radius(iteration);
+        
+        let mut grid = self.grid.write().unwrap();
+        
+        // Update all neurons based on their distance to BMU
+        for (y, row) in grid.iter_mut().enumerate() {
+            for (x, neuron) in row.iter_mut().enumerate() {
+                let distance = ((x as f64 - bmu_x as f64).powi(2) + 
+                               (y as f64 - bmu_y as f64).powi(2)).sqrt();
                 
-                if i < self.map.len() && j < self.map[0].len() {
-                    for node_id in &self.map[i][j].assigned_nodes {
-                        candidates.push(node_id.clone());
+                if distance <= radius * 3.0 { // Only update within 3 * radius
+                    let influence = Self::gaussian_neighborhood(distance, radius);
+                    neuron.update_weights(&input, learning_rate, influence);
+                }
+            }
+        }
+    }
+    
+    /// Train the SOM with a batch of samples
+    pub fn train_batch(&mut self, features_batch: &[NodeFeatures]) {
+        for iteration in 0..self.config.iterations {
+            // Random sampling for each iteration
+            let sample_idx = rand::thread_rng().gen_range(0..features_batch.len());
+            self.train_single(&features_batch[sample_idx], iteration);
+        }
+    }
+    
+    /// Assign a node to its BMU
+    pub fn assign_node(&mut self, node_id: NodeId, features: NodeFeatures) {
+        let (x, y) = self.find_best_matching_unit(&features);
+        
+        // Remove from old position if exists
+        let mut positions = self.node_positions.write().unwrap();
+        if let Some((old_x, old_y)) = positions.get(&node_id) {
+            let mut grid = self.grid.write().unwrap();
+            grid[*old_y][*old_x].assigned_nodes.remove(&node_id);
+        }
+        
+        // Assign to new position
+        positions.insert(node_id.clone(), (x, y));
+        let mut grid = self.grid.write().unwrap();
+        grid[y][x].assigned_nodes.insert(node_id);
+        
+        // Check if we need to resize (for dynamic grids)
+        drop(grid);
+        drop(positions);
+        self.check_and_resize();
+    }
+    
+    /// Get nodes assigned to a specific neuron
+    pub fn get_assigned_nodes(&self, x: usize, y: usize) -> HashSet<NodeId> {
+        let grid = self.grid.read().unwrap();
+        grid.get(y)
+            .and_then(|row| row.get(x))
+            .map(|neuron| neuron.assigned_nodes.clone())
+            .unwrap_or_default()
+    }
+    
+    /// Get all assigned nodes
+    pub fn get_all_assigned_nodes(&self) -> HashSet<NodeId> {
+        let grid = self.grid.read().unwrap();
+        grid.iter()
+            .flat_map(|row| row.iter())
+            .flat_map(|neuron| neuron.assigned_nodes.iter())
+            .cloned()
+            .collect()
+    }
+    
+    /// Find nodes similar to given features
+    pub fn find_similar_nodes(&self, features: &NodeFeatures, radius: usize) -> Vec<NodeId> {
+        let (bmu_x, bmu_y) = self.find_best_matching_unit(features);
+        let grid = self.grid.read().unwrap();
+        
+        let mut similar_nodes = Vec::new();
+        
+        // Search in neighborhood around BMU
+        let x_start = bmu_x.saturating_sub(radius);
+        let x_end = (bmu_x + radius + 1).min(self.width);
+        let y_start = bmu_y.saturating_sub(radius);
+        let y_end = (bmu_y + radius + 1).min(self.height);
+        
+        for y in y_start..y_end {
+            for x in x_start..x_end {
+                if let Some(neuron) = grid.get(y).and_then(|row| row.get(x)) {
+                    similar_nodes.extend(neuron.assigned_nodes.iter().cloned());
+                }
+            }
+        }
+        
+        similar_nodes
+    }
+    
+    /// Get current grid dimensions
+    pub fn get_grid_dimensions(&self) -> (usize, usize) {
+        (self.width, self.height)
+    }
+    
+    /// Set neuron weights (for testing)
+    pub fn set_neuron_weights(&mut self, x: usize, y: usize, weights: Vec<f64>) {
+        let mut grid = self.grid.write().unwrap();
+        if let Some(neuron) = grid.get_mut(y).and_then(|row| row.get_mut(x)) {
+            neuron.weights = weights;
+        }
+    }
+    
+    /// Get neuron weights (for testing)
+    pub fn get_neuron_weights(&self, x: usize, y: usize) -> Option<Vec<f64>> {
+        let grid = self.grid.read().unwrap();
+        grid.get(y)
+            .and_then(|row| row.get(x))
+            .map(|neuron| neuron.weights.clone())
+    }
+    
+    /// Check if grid needs resizing and resize if necessary
+    fn check_and_resize(&mut self) {
+        if let GridSize::Dynamic { max, .. } = self.config.grid_size {
+            let node_count = self.node_positions.read().unwrap().len();
+            let current_capacity = self.width * self.height;
+            
+            // Resize if we're at 80% capacity and haven't hit max
+            if node_count as f64 > current_capacity as f64 * 0.8 {
+                let new_size = ((current_capacity as f64 * 1.5).sqrt() as usize).min(max);
+                if new_size > self.width || new_size > self.height {
+                    self.resize_grid(new_size, new_size);
+                }
+            }
+        }
+    }
+    
+    /// Resize the grid while preserving node assignments
+    fn resize_grid(&mut self, new_width: usize, new_height: usize) {
+        let mut old_grid = self.grid.write().unwrap();
+        let mut new_grid = vec![vec![Neuron::new(self.weight_dim); new_width]; new_height];
+        
+        // Copy neurons that fit in new grid
+        for (y, row) in old_grid.iter().enumerate() {
+            if y >= new_height {
+                break;
+            }
+            for (x, neuron) in row.iter().enumerate() {
+                if x >= new_width {
+                    break;
+                }
+                new_grid[y][x] = neuron.clone();
+            }
+        }
+        
+        *old_grid = new_grid;
+        self.width = new_width;
+        self.height = new_height;
+        
+        // Re-assign nodes that were outside the new grid
+        let positions = self.node_positions.read().unwrap().clone();
+        for (node_id, (x, y)) in positions {
+            if x >= new_width || y >= new_height {
+                // Find new position for this node
+                // For simplicity, we'll just find a nearby valid position
+                let new_x = x.min(new_width - 1);
+                let new_y = y.min(new_height - 1);
+                old_grid[new_y][new_x].assigned_nodes.insert(node_id.clone());
+                self.node_positions.write().unwrap().insert(node_id, (new_x, new_y));
+            }
+        }
+    }
+    
+    /// Get visualization data for the SOM
+    pub fn get_visualization_data(&self) -> VisualizationData {
+        let grid = self.grid.read().unwrap();
+        let neurons = grid.iter()
+            .enumerate()
+            .flat_map(|(y, row)| {
+                row.iter().enumerate().map(move |(x, neuron)| {
+                    NeuronVisualization {
+                        x,
+                        y,
+                        weights: neuron.weights.clone(),
+                        assigned_nodes: neuron.assigned_nodes.iter().cloned().collect(),
+                    }
+                })
+            })
+            .collect();
+        
+        VisualizationData {
+            grid_width: self.width,
+            grid_height: self.height,
+            neurons,
+        }
+    }
+    
+    /// Generate U-Matrix (unified distance matrix) for visualization
+    pub fn generate_u_matrix(&self) -> Vec<Vec<f64>> {
+        let grid = self.grid.read().unwrap();
+        let mut u_matrix = vec![vec![0.0; self.width]; self.height];
+        
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let mut distances = Vec::new();
+                let current = &grid[y][x];
+                
+                // Calculate distances to neighbors
+                for dy in -1i32..=1 {
+                    for dx in -1i32..=1 {
+                        if dx == 0 && dy == 0 {
+                            continue;
+                        }
+                        
+                        let nx = (x as i32 + dx) as usize;
+                        let ny = (y as i32 + dy) as usize;
+                        
+                        if nx < self.width && ny < self.height {
+                            let neighbor = &grid[ny][nx];
+                            let distance = current.weights.iter()
+                                .zip(neighbor.weights.iter())
+                                .map(|(a, b)| (a - b).powi(2))
+                                .sum::<f64>()
+                                .sqrt();
+                            distances.push(distance);
+                        }
                     }
                 }
-            }
-        }
-        
-        // Return up to count nodes
-        candidates.into_iter().take(count).collect()
-    }
-}
-
-/// SOM-based routing strategy
-pub struct SOMRoutingStrategy {
-    /// Reference to the SOM
-    som: Arc<RwLock<SelfOrganizingMap>>,
-    
-    /// Local node ID
-    local_id: NodeId,
-}
-
-impl SOMRoutingStrategy {
-    /// Create a new SOM routing strategy
-    pub fn new(som: Arc<RwLock<SelfOrganizingMap>>, local_id: NodeId) -> Self {
-        Self { som, local_id }
-    }
-    
-    /// Calculate similarity between two feature vectors
-    fn feature_similarity(a: &[f64], b: &[f64]) -> f64 {
-        let distance: f64 = a.iter()
-            .zip(b.iter())
-            .map(|(x, y)| (x - y).powi(2))
-            .sum::<f64>()
-            .sqrt();
-        
-        // Convert distance to similarity score [0, 1]
-        1.0 / (1.0 + distance)
-    }
-}
-
-#[async_trait]
-impl RoutingStrategy for SOMRoutingStrategy {
-    async fn find_path(&self, target: &NodeId) -> Result<Vec<NodeId>> {
-        let som = self.som.read().await;
-        
-        // Get target node features
-        let target_features = match som.get_node_features(target).await {
-            Some(features) => features,
-            None => {
-                // Target not in SOM, can't route
-                return Err(AdaptiveNetworkError::Routing(
-                    "Target node not found in SOM".to_string()
-                ));
-            }
-        };
-        
-        // Get our features
-        let _our_features = match som.get_node_features(&self.local_id).await {
-            Some(features) => features,
-            None => {
-                return Err(AdaptiveNetworkError::Routing(
-                    "Local node not found in SOM".to_string()
-                ));
-            }
-        };
-        
-        // Find nodes in similar regions
-        let similar_nodes = som.find_similar_nodes(target);
-        
-        if similar_nodes.is_empty() {
-            return Err(AdaptiveNetworkError::Routing(
-                "No similar nodes found".to_string()
-            ));
-        }
-        
-        // Sort by feature similarity and create path
-        let mut scored_nodes: Vec<(NodeId, f64)> = Vec::new();
-        
-        for node_id in similar_nodes {
-            if node_id != self.local_id && node_id != *target {
-                if let Some(features) = som.get_node_features(&node_id).await {
-                    let similarity = Self::feature_similarity(&features, &target_features);
-                    scored_nodes.push((node_id, similarity));
+                
+                // Average distance to neighbors
+                if !distances.is_empty() {
+                    u_matrix[y][x] = distances.iter().sum::<f64>() / distances.len() as f64;
                 }
             }
         }
         
-        scored_nodes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        
-        // Return top nodes as path
-        Ok(scored_nodes.into_iter()
-            .take(3)
-            .map(|(id, _)| id)
-            .chain(std::iter::once(target.clone()))
-            .collect())
-    }
-    
-    fn route_score(&self, neighbor: &NodeId, target: &NodeId) -> f64 {
-        // This is synchronous, so we can't access async SOM data
-        // Return a default score - actual routing logic is in find_path
-        0.5
-    }
-    
-    fn update_metrics(&mut self, _path: &[NodeId], _success: bool) {
-        // Metrics handled by SOM update_node
+        u_matrix
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_som_creation() {
-        let som = SelfOrganizingMap::new(10, 10);
-        assert_eq!(som.map.len(), 10);
-        assert_eq!(som.map[0].len(), 10);
-        assert_eq!(som.feature_dim, 4);
-    }
-    
-    #[test]
-    fn test_dynamic_sizing() {
-        let som = SelfOrganizingMap::new_dynamic(100);
-        let size = som.map.len();
-        assert!(size >= 5);
-        assert_eq!(som.map[0].len(), size);
-    }
-    
-    #[tokio::test]
-    async fn test_som_update() {
-        use rand::RngCore;
-        
-        let mut som = SelfOrganizingMap::new(5, 5);
-        let mut hash = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut hash);
-        let node_id = NodeId::from_bytes(hash);
-        
-        let node = NodeDescriptor {
-            id: node_id.clone(),
-            public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
-            addresses: vec!["127.0.0.1:8080".to_string()],
-            hyperbolic: None,
-            som_position: None,
-            trust: 0.8,
-            capabilities: NodeCapabilities {
-                storage: 500,
-                compute: 300,
-                bandwidth: 100,
-            },
-        };
-        
-        som.update_node(&node).await;
-        
-        // Check that the node was assigned
-        let similar = som.find_similar_nodes(&node_id);
-        assert!(similar.contains(&node_id));
-        
-        // Check features were cached
-        let features = som.get_node_features(&node_id).await;
-        assert!(features.is_some());
-    }
-    
-    #[test]
-    fn test_learning_rate_decay() {
-        let mut som = SelfOrganizingMap::new(5, 5);
-        let initial_rate = som.current_learning_rate();
-        
-        som.iteration = 1000;
-        let later_rate = som.current_learning_rate();
-        
-        assert!(later_rate < initial_rate);
-    }
-    
-    #[test]
-    fn test_feature_extraction() {
-        use rand::RngCore;
-        
-        let extractor = FeatureExtractor::new();
-        let mut hash = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut hash);
-        let node_id = NodeId::from_bytes(hash);
-        
-        let node = NodeDescriptor {
-            id: node_id,
-            public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
-            addresses: vec![],
-            hyperbolic: None,
-            som_position: None,
-            trust: 0.9,
-            capabilities: NodeCapabilities {
-                storage: 750,
-                compute: 500,
-                bandwidth: 250,
-            },
-        };
-        
-        let features = extractor.extract_features(&node);
-        
-        // Check all features are in range [0, 1]
-        for &f in &features {
-            assert!(f >= 0.0 && f <= 1.0);
-        }
-        
-        // Check specific feature values
-        assert_eq!(features[0], 0.5); // No content history
-        assert!(features[1] > 0.7);    // High storage
-        assert_eq!(features[2], 0.5);  // Medium compute
-        assert!(features[3] > 0.2);    // Good network quality
-    }
-    
-    #[tokio::test]
-    async fn test_find_nodes_for_content() {
-        use rand::RngCore;
-        
-        let mut som = SelfOrganizingMap::new(5, 5);
-        
-        // Add some test nodes
-        for i in 0..10 {
-            let mut hash = [0u8; 32];
-            rand::thread_rng().fill_bytes(&mut hash);
-            let node_id = NodeId::from_bytes(hash);
-            
-            let node = NodeDescriptor {
-                id: node_id,
-                public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
-                addresses: vec![],
-                hyperbolic: None,
-                som_position: None,
-                trust: 0.5 + (i as f64) * 0.05,
-                capabilities: NodeCapabilities {
-                    storage: 100 * i,
-                    compute: 50 * i,
-                    bandwidth: 25 * i,
-                },
-            };
-            
-            som.update_node(&node).await;
-        }
-        
-        // Find nodes for different content types
-        let dht_nodes = som.find_nodes_for_content(ContentType::DHTLookup, 3).await;
-        assert!(!dht_nodes.is_empty());
-        
-        let storage_nodes = som.find_nodes_for_content(ContentType::DataRetrieval, 3).await;
-        assert!(!storage_nodes.is_empty());
-    }
-    
-    #[tokio::test]
-    async fn test_som_routing_strategy() {
-        use rand::RngCore;
-        
-        let som = Arc::new(RwLock::new(SelfOrganizingMap::new(5, 5)));
-        
-        // Create some test nodes
-        let mut hash1 = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut hash1);
-        let local_id = NodeId::from_bytes(hash1);
-        
-        let mut hash2 = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut hash2);
-        let target_id = NodeId::from_bytes(hash2);
-        
-        // Add nodes to SOM
-        for (id, storage) in [(local_id.clone(), 100), (target_id.clone(), 900)] {
-            let node = NodeDescriptor {
-                id: id.clone(),
-                public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
-                addresses: vec![],
-                hyperbolic: None,
-                som_position: None,
-                trust: 0.8,
-                capabilities: NodeCapabilities {
-                    storage,
-                    compute: 100,
-                    bandwidth: 100,
-                },
-            };
-            
-            som.write().await.update_node(&node).await;
-        }
-        
-        // Create routing strategy
-        let strategy = SOMRoutingStrategy::new(som.clone(), local_id);
-        
-        // Try to find path (will fail without more nodes in similar regions)
-        let result = strategy.find_path(&target_id).await;
-        
-        // Should fail because no intermediate nodes in similar regions
-        assert!(result.is_err());
-    }
+/// Visualization data for a single neuron
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NeuronVisualization {
+    pub x: usize,
+    pub y: usize,
+    pub weights: Vec<f64>,
+    pub assigned_nodes: Vec<NodeId>,
 }
+
+/// Complete visualization data for the SOM
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VisualizationData {
+    pub grid_width: usize,
+    pub grid_height: usize,
+    pub neurons: Vec<NeuronVisualization>,
+}
+
+// Legacy support types
+use super::*;
+
+/// SOM-based routing strategy
+pub struct SOMRoutingStrategy;
+
+/// Feature extractor for SOM
+pub struct FeatureExtractor;

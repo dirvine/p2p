@@ -725,7 +725,7 @@ impl QLearnCacheManager {
     pub fn get_stats(&self) -> CacheStats {
         let hits = self.hit_count.load(std::sync::atomic::Ordering::Relaxed);
         let misses = self.miss_count.load(std::sync::atomic::Ordering::Relaxed);
-        let hit_rate = if hits + misses > 0 { hits as f64 / (hits + misses) as f64 } else { 0.0 };
+        let _hit_rate = if hits + misses > 0 { hits as f64 / (hits + misses) as f64 } else { 0.0 };
         
         CacheStats {
             hits,
@@ -1894,7 +1894,7 @@ mod tests {
         predictor.update_node_behavior(&node_id, features).await.unwrap();
         
         // Should recommend replication for high-risk node
-        let should_replicate = predictor.should_replicate(&node_id).await;
+        let _should_replicate = predictor.should_replicate(&node_id).await;
         // Without full model training, this might not always be true, but test structure is correct
         let prediction = predictor.predict(&node_id).await;
         assert!(prediction.probability_1h > 0.0);

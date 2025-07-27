@@ -21,7 +21,7 @@ use saorsa_core::identity::{
 };
 use saorsa_core::identity::manager::{IdentityManager, IdentityManagerConfig};
 use saorsa_core::{Result, P2PError};
-use ed25519_dalek::Keypair;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use anyhow;
 use std::path::PathBuf;
@@ -64,8 +64,9 @@ impl Default for IdentityStorageConfig {
 struct StoredIdentityData {
     /// Encrypted identity bytes
     encrypted_identity: String,
-    /// Encrypted keypair bytes
-    encrypted_keypair: String,
+    /// Encrypted signing key bytes
+    #[serde(alias = "encrypted_keypair")] // For backward compatibility
+    encrypted_signing_key: String,
     /// Encrypted profile bytes
     encrypted_profile: Option<String>,
     /// Encrypted passkey credentials
@@ -74,8 +75,9 @@ struct StoredIdentityData {
     salt: String,
     /// Nonce for identity encryption
     identity_nonce: String,
-    /// Nonce for keypair encryption
-    keypair_nonce: String,
+    /// Nonce for signing key encryption
+    #[serde(alias = "keypair_nonce")] // For backward compatibility
+    signing_key_nonce: String,
     /// Nonce for profile encryption
     profile_nonce: Option<String>,
     /// Nonce for passkey credentials encryption
@@ -247,7 +249,7 @@ impl IdentityStorage {
     /// 
     /// # Arguments
     /// * `identity` - User identity to save
-    /// * `keypair` - Associated Ed25519 keypair
+    /// * `signing_key` - Associated Ed25519 signing key
     /// * `profile` - Optional encrypted user profile
     /// * `password` - Password for encryption
     /// 
@@ -261,7 +263,7 @@ impl IdentityStorage {
     pub async fn save_identity(
         &self,
         identity: &UserIdentity,
-        keypair: &Keypair,
+        signing_key: &SigningKey,
         profile: Option<&EncryptedUserProfile>,
         password: &str,
     ) -> Result<()> {
@@ -278,8 +280,7 @@ impl IdentityStorage {
         // Serialize data
         let identity_bytes = bincode::serialize(identity)
             .map_err(|e| P2PError::Generic(anyhow::anyhow!("Failed to serialize identity: {}", e)))?;
-        let keypair_bytes = bincode::serialize(keypair)
-            .map_err(|e| P2PError::Generic(anyhow::anyhow!("Failed to serialize keypair: {}", e)))?;
+        let signing_key_bytes = signing_key.to_bytes();
         let profile_bytes = if let Some(p) = profile {
             Some(bincode::serialize(p)
                 .map_err(|e| P2PError::Generic(anyhow::anyhow!("Failed to serialize profile: {}", e)))?)
@@ -298,13 +299,13 @@ impl IdentityStorage {
         
         // Generate nonces
         let identity_nonce = Self::generate_nonce();
-        let keypair_nonce = Self::generate_nonce();
+        let signing_key_nonce = Self::generate_nonce();
         let profile_nonce = profile_bytes.as_ref().map(|_| Self::generate_nonce());
         let passkey_nonce = passkey_bytes.as_ref().map(|_| Self::generate_nonce());
         
         // Encrypt data
         let encrypted_identity = self.encrypt_data(&identity_bytes, &identity_nonce).await?;
-        let encrypted_keypair = self.encrypt_data(&keypair_bytes, &keypair_nonce).await?;
+        let encrypted_signing_key = self.encrypt_data(&signing_key_bytes, &signing_key_nonce).await?;
         let encrypted_profile = if let Some(pb) = profile_bytes {
             Some(self.encrypt_data(&pb, profile_nonce.as_ref().unwrap()).await?)
         } else {
@@ -319,12 +320,12 @@ impl IdentityStorage {
         // Create storage structure
         let stored_data = StoredIdentityData {
             encrypted_identity: general_purpose::STANDARD.encode(&encrypted_identity),
-            encrypted_keypair: general_purpose::STANDARD.encode(&encrypted_keypair),
+            encrypted_signing_key: general_purpose::STANDARD.encode(&encrypted_signing_key),
             encrypted_profile: encrypted_profile.map(|d| general_purpose::STANDARD.encode(&d)),
             encrypted_passkey_credentials: encrypted_passkey_credentials.map(|d| general_purpose::STANDARD.encode(&d)),
             salt: general_purpose::STANDARD.encode(&salt),
             identity_nonce: general_purpose::STANDARD.encode(&identity_nonce),
-            keypair_nonce: general_purpose::STANDARD.encode(&keypair_nonce),
+            signing_key_nonce: general_purpose::STANDARD.encode(&signing_key_nonce),
             profile_nonce: profile_nonce.map(|n| general_purpose::STANDARD.encode(&n)),
             passkey_nonce: passkey_nonce.map(|n| general_purpose::STANDARD.encode(&n)),
             version: 1,
@@ -345,7 +346,7 @@ impl IdentityStorage {
     pub async fn load_identity(
         &self,
         password: &str,
-    ) -> Result<Option<(UserIdentity, Keypair, Option<EncryptedUserProfile>)>> {
+    ) -> Result<Option<(UserIdentity, SigningKey, Option<EncryptedUserProfile>)>> {
         if !self.storage_path.exists() {
             debug!("No identity file found");
             return Ok(None);
@@ -369,29 +370,34 @@ impl IdentityStorage {
         // Decode base64 data
         let encrypted_identity = general_purpose::STANDARD.decode(&stored_data.encrypted_identity)
             .map_err(|e| P2PError::Generic(anyhow::anyhow!("Failed to decode identity: {}", e)))?;
-        let encrypted_keypair = general_purpose::STANDARD.decode(&stored_data.encrypted_keypair)
-            .map_err(|e| P2PError::Generic(anyhow::anyhow!("Failed to decode keypair: {}", e)))?;
+        let encrypted_signing_key = general_purpose::STANDARD.decode(&stored_data.encrypted_signing_key)
+            .map_err(|e| P2PError::Generic(anyhow::anyhow!("Failed to decode signing key: {}", e)))?;
         
         // Decode nonces
         let identity_nonce_bytes = general_purpose::STANDARD.decode(&stored_data.identity_nonce)
             .map_err(|e| P2PError::Generic(anyhow::anyhow!("Failed to decode identity nonce: {}", e)))?;
-        let keypair_nonce_bytes = general_purpose::STANDARD.decode(&stored_data.keypair_nonce)
-            .map_err(|e| P2PError::Generic(anyhow::anyhow!("Failed to decode keypair nonce: {}", e)))?;
+        let signing_key_nonce_bytes = general_purpose::STANDARD.decode(&stored_data.signing_key_nonce)
+            .map_err(|e| P2PError::Generic(anyhow::anyhow!("Failed to decode signing key nonce: {}", e)))?;
         
         let mut identity_nonce = [0u8; 12];
-        let mut keypair_nonce = [0u8; 12];
+        let mut signing_key_nonce = [0u8; 12];
         identity_nonce.copy_from_slice(&identity_nonce_bytes);
-        keypair_nonce.copy_from_slice(&keypair_nonce_bytes);
+        signing_key_nonce.copy_from_slice(&signing_key_nonce_bytes);
         
         // Decrypt data
         let identity_bytes = self.decrypt_data(&encrypted_identity, &identity_nonce).await?;
-        let keypair_bytes = self.decrypt_data(&encrypted_keypair, &keypair_nonce).await?;
+        let signing_key_bytes = self.decrypt_data(&encrypted_signing_key, &signing_key_nonce).await?;
         
         // Deserialize
         let identity: UserIdentity = bincode::deserialize(&identity_bytes)
             .map_err(|e| P2PError::Generic(anyhow::anyhow!("Failed to deserialize identity: {}", e)))?;
-        let keypair: Keypair = bincode::deserialize(&keypair_bytes)
-            .map_err(|e| P2PError::Generic(anyhow::anyhow!("Failed to deserialize keypair: {}", e)))?;
+        // Convert bytes to array and create signing key
+        let mut key_array = [0u8; 32];
+        if signing_key_bytes.len() != 32 {
+            return Err(P2PError::Generic(anyhow::anyhow!("Invalid signing key length")));
+        }
+        key_array.copy_from_slice(&signing_key_bytes);
+        let signing_key = SigningKey::from_bytes(&key_array);
         
         // Handle profile if present
         let profile = if let Some(encrypted_profile_str) = stored_data.encrypted_profile {
@@ -437,7 +443,7 @@ impl IdentityStorage {
         }
         
         info!("Identity loaded successfully");
-        Ok(Some((identity, keypair, profile)))
+        Ok(Some((identity, signing_key, profile)))
     }
     
     /// Delete stored identity
@@ -477,8 +483,8 @@ impl IdentityStorage {
         // Save to encrypted storage
         if self.identity_exists() {
             // Load existing identity and re-save with new credentials
-            if let Ok(Some((identity, keypair, profile))) = self.load_identity(password).await {
-                self.save_identity(&identity, &keypair, profile.as_ref(), password).await?;
+            if let Ok(Some((identity, signing_key, profile))) = self.load_identity(password).await {
+                self.save_identity(&identity, &signing_key, profile.as_ref(), password).await?;
             }
         }
         
@@ -506,8 +512,8 @@ impl IdentityStorage {
         if removed {
             // Save updated credentials to storage
             if self.identity_exists() {
-                if let Ok(Some((identity, keypair, profile))) = self.load_identity(password).await {
-                    self.save_identity(&identity, &keypair, profile.as_ref(), password).await?;
+                if let Ok(Some((identity, signing_key, profile))) = self.load_identity(password).await {
+                    self.save_identity(&identity, &signing_key, profile.as_ref(), password).await?;
                 }
             }
         }

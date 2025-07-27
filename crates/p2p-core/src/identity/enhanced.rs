@@ -35,6 +35,9 @@ pub enum EnhancedIdentityError {
     
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
+    
+    #[error("System time error: {0}")]
+    SystemTime(String),
 }
 
 type Result<T> = std::result::Result<T, EnhancedIdentityError>;
@@ -306,7 +309,9 @@ impl EnhancedIdentityManager {
         
         // Create device registry
         let device_id = DeviceId(format!("{}-{}", base_identity.user_id, 
-            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
+            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)
+                .map_err(|e| EnhancedIdentityError::SystemTime(format!("System time error: {}", e)))?
+                .as_secs()
         ));
         
         let device_info = DeviceInfo {
@@ -400,7 +405,7 @@ impl EnhancedIdentityManager {
         org_id: &OrganizationId,
         role: OrganizationRole,
     ) -> Result<()> {
-        let org = self.organizations.get(org_id)
+        let _org = self.organizations.get(org_id)
             .ok_or_else(|| EnhancedIdentityError::OrganizationError(
                 "Organization not found".to_string()
             ))?;

@@ -339,7 +339,14 @@ impl Client {
         
         // Create routing components
         let hyperbolic = Arc::new(crate::adaptive::hyperbolic::HyperbolicSpace::new());
-        let som = Arc::new(crate::adaptive::som::SelfOrganizingMap::new(10, 10));
+        let som = Arc::new(crate::adaptive::som::SelfOrganizingMap::new(
+            crate::adaptive::som::SomConfig {
+                initial_learning_rate: 0.3,
+                initial_radius: 5.0,
+                iterations: 1000,
+                grid_size: crate::adaptive::som::GridSize::Fixed(10, 10),
+            }
+        ));
         let router = Arc::new(AdaptiveRouter::new(
             trust_provider.clone(),
             hyperbolic,
@@ -544,7 +551,7 @@ impl AdaptiveP2PClient for Client {
             .map_err(|e| ClientError::Storage(e.to_string()).into())
     }
     
-    async fn submit_compute_job(&self, job: ComputeJob) -> Result<JobId> {
+    async fn submit_compute_job(&self, _job: ComputeJob) -> Result<JobId> {
         let state = self.state.read().await;
         if !state.connected {
             return Err(ClientError::NotConnected.into());
@@ -770,7 +777,7 @@ mod tests {
         let client = connect("localhost:4001").await.unwrap();
         
         // Subscribe to topic
-        let mut stream = client.subscribe("test_topic").await.unwrap();
+        let _stream = client.subscribe("test_topic").await.unwrap();
         
         // Publish message
         let message = b"Test message".to_vec();

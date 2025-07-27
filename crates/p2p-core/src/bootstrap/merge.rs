@@ -18,6 +18,7 @@
 //! are running locally and sharing the same bootstrap cache.
 
 use crate::{PeerId, Result, P2PError};
+use crate::error::BootstrapError;
 use crate::bootstrap::{ContactEntry, BootstrapCache};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -92,7 +93,7 @@ impl MergeCoordinator {
         
         // Ensure instance cache directory exists
         std::fs::create_dir_all(&instance_cache_dir)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to create instance cache directory: {e}")))?;
+            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to create instance cache directory: {e}"))))?;
         
         Ok(Self {
             cache_dir,
@@ -153,7 +154,7 @@ impl MergeCoordinator {
         }
         
         let entries = std::fs::read_dir(&self.instance_cache_dir)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to read instance cache directory: {e}")))?;
+            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to read instance cache directory: {e}"))))?;
         
         for entry in entries {
             let entry = entry?;
@@ -204,10 +205,10 @@ impl MergeCoordinator {
     /// Load a single instance cache
     async fn load_instance_cache(&self, cache_file: &PathBuf) -> Result<InstanceCacheData> {
         let json_data = std::fs::read_to_string(cache_file)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to read instance cache: {e}")))?;
+            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to read instance cache: {e}"))))?;
         
         let cache_data: InstanceCacheData = serde_json::from_str(&json_data)
-            .map_err(|e| P2PError::Bootstrap(format!("Failed to parse instance cache: {e}")))?;
+            .map_err(|e| P2PError::Bootstrap(BootstrapError::InvalidData(format!("Failed to parse instance cache: {e}"))))?;
         
         Ok(cache_data)
     }

@@ -257,7 +257,10 @@ impl DisjointPathLookup {
     /// Add initial nodes to paths ensuring disjointness
     pub fn initialize_paths(&mut self, initial_nodes: Vec<DHTNode>) -> Result<()> {
         if initial_nodes.len() < self.path_count {
-            return Err(P2PError::DHT("Not enough initial nodes for disjoint paths".to_string()));
+            return Err(P2PError::Dht(crate::error::DhtError::InsufficientReplicas {
+                available: initial_nodes.len(),
+                required: self.path_count,
+            }));
         }
 
         // Distribute nodes across paths to minimize overlap
@@ -596,7 +599,10 @@ impl SKademlia {
         if let Some(lookup) = self.active_lookups.get(&target) {
             Ok(lookup.get_results())
         } else {
-            Err(P2PError::DHT("Lookup disappeared".to_string()))
+            Err(P2PError::Dht(crate::error::DhtError::LookupFailed {
+                key: target.to_string(),
+                reason: "Lookup disappeared".to_string(),
+            }))
         }
     }
 
@@ -666,7 +672,7 @@ impl SKademlia {
     pub fn verify_distance_proof(&self, proof: &DistanceProof) -> Result<bool> {
         // Verify proof timestamps
         let elapsed = proof.challenge.timestamp.elapsed()
-            .map_err(|e| P2PError::DHT(format!("Invalid timestamp: {e}")))?;
+            .map_err(|e| P2PError::Dht(crate::error::DhtError::RoutingError(format!("Invalid timestamp: {e}"))))?;
         
         if elapsed > Duration::from_secs(300) {
             return Ok(false); // Proof too old
@@ -747,7 +753,7 @@ impl SKademlia {
     /// Calculate consensus distance from multiple measurements
     fn calculate_consensus_distance(&self, measurements: &[DistanceMeasurement]) -> Result<Key> {
         if measurements.is_empty() {
-            return Err(P2PError::DHT("No measurements provided".to_string()));
+            return Err(P2PError::Dht(crate::error::DhtError::RoutingError("No measurements provided".to_string())));
         }
         
         // For simplicity, use the distance from the most confident measurement

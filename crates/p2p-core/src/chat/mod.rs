@@ -381,7 +381,7 @@ impl ChatManager {
         organization_id: Option<OrganizationId>,
     ) -> Result<Channel> {
         // Check permissions
-        if let Some(org_id) = &organization_id {
+        if let Some(_org_id) = &organization_id {
             // Verify user has permission to create channels in org
             // TODO: Implement permission check
         }

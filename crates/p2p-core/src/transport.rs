@@ -233,7 +233,7 @@ impl TransportManager {
     pub async fn connect(&self, addr: NetworkAddress) -> Result<PeerId> {
         let transport_type = self.select_transport(&addr).await?;
         let transport = self.transports.get(&transport_type)
-            .ok_or_else(|| P2PError::Transport(format!("Transport {transport_type:?} not available")))?;
+            .ok_or_else(|| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Transport {transport_type:?} not available"))))?;
         
         debug!("Connecting to {} using {:?}", addr, transport_type);
         
@@ -250,7 +250,7 @@ impl TransportManager {
     /// Connect with specific transport
     pub async fn connect_with_transport(&self, addr: NetworkAddress, transport_type: TransportType) -> Result<PeerId> {
         let transport = self.transports.get(&transport_type)
-            .ok_or_else(|| P2PError::Transport(format!("Transport {transport_type:?} not available")))?;
+            .ok_or_else(|| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Transport {transport_type:?} not available"))))?;
         
         let connection = transport.connect_with_options(addr.clone(), self.options.clone()).await?;
         let peer_id = format!("peer_from_{}_{}", addr.ip(), addr.port());
@@ -263,7 +263,10 @@ impl TransportManager {
     pub async fn send_message(&self, peer_id: &PeerId, data: Vec<u8>) -> Result<()> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(format!("No connection to peer {peer_id}")))?;
+            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::ConnectionFailed {
+                peer: peer_id.to_string(),
+                reason: "No active connection".to_string(),
+            }))?;
         
         let mut pool_guard = pool.lock().await;
         let connection = pool_guard.get_connection()?;
@@ -279,7 +282,10 @@ impl TransportManager {
     pub async fn get_connection_info(&self, peer_id: &PeerId) -> Result<ConnectionInfo> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(format!("No connection to peer {peer_id}")))?;
+            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::ConnectionFailed {
+                peer: peer_id.to_string(),
+                reason: "No active connection".to_string(),
+            }))?;
         
         let mut pool_guard = pool.lock().await;
         let connection = pool_guard.get_connection()?;
@@ -292,7 +298,10 @@ impl TransportManager {
     pub async fn get_connection_pool_info(&self, peer_id: &PeerId) -> Result<ConnectionPoolInfo> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(format!("No connection to peer {peer_id}")))?;
+            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::ConnectionFailed {
+                peer: peer_id.to_string(),
+                reason: "No active connection".to_string(),
+            }))?;
         
         let pool_guard = pool.lock().await;
         Ok(ConnectionPoolInfo {
@@ -307,7 +316,10 @@ impl TransportManager {
     pub async fn get_connection_pool_stats(&self, peer_id: &PeerId) -> Result<ConnectionPoolStats> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(format!("No connection to peer {peer_id}")))?;
+            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::ConnectionFailed {
+                peer: peer_id.to_string(),
+                reason: "No active connection".to_string(),
+            }))?;
         
         let pool_guard = pool.lock().await;
         Ok(pool_guard.stats.clone())
@@ -317,7 +329,10 @@ impl TransportManager {
     pub async fn measure_connection_quality(&self, peer_id: &PeerId) -> Result<ConnectionQuality> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(format!("No connection to peer {peer_id}")))?;
+            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::ConnectionFailed {
+                peer: peer_id.to_string(),
+                reason: "No active connection".to_string(),
+            }))?;
         
         let mut pool_guard = pool.lock().await;
         let connection = pool_guard.get_connection()?;
@@ -337,13 +352,15 @@ impl TransportManager {
     }
     
     /// Select transport for an address (always QUIC)
-    async fn select_transport(&self, addr: &NetworkAddress) -> Result<TransportType> {
+    async fn select_transport(&self, _addr: &NetworkAddress) -> Result<TransportType> {
         match &self.selection {
             TransportSelection::QUIC => {
                 if self.transports.contains_key(&TransportType::QUIC) {
                     Ok(TransportType::QUIC)
                 } else {
-                    Err(P2PError::Transport("QUIC transport not available".to_string()))
+                    Err(P2PError::Transport(crate::error::TransportError::SetupFailed(
+                        "QUIC transport not available".to_string()
+                    )))
                 }
             }
         }
@@ -361,7 +378,7 @@ impl TransportManager {
             }
         }
         
-        Err(P2PError::Transport("QUIC transport not available or address not supported".to_string()))
+        Err(P2PError::Transport(crate::error::TransportError::SetupFailed("QUIC transport not available or address not supported".to_string())))
     }
     
     /// Add connection to pool
@@ -414,7 +431,7 @@ impl ConnectionPool {
     /// Get a connection using round-robin load balancing
     fn get_connection(&mut self) -> Result<Arc<Mutex<Box<dyn Connection>>>> {
         if self.connections.is_empty() {
-            return Err(P2PError::Network("No connections available".to_string()));
+            return Err(P2PError::Network(crate::error::NetworkError::ProtocolError("No connections available".to_string())));
         }
         
         let connection = self.connections[self.round_robin_index % self.connections.len()].clone();
@@ -508,14 +525,14 @@ mod tests {
     impl Transport for MockTransport {
         async fn listen(&self, addr: NetworkAddress) -> Result<NetworkAddress> {
             if self.should_fail {
-                return Err(P2PError::Transport("Listen failed".to_string()));
+                return Err(P2PError::Transport(crate::error::TransportError::SetupFailed("Listen failed".to_string())));
             }
             Ok(addr)
         }
 
         async fn connect(&self, addr: NetworkAddress) -> Result<Box<dyn Connection>> {
             if self.should_fail {
-                return Err(P2PError::Transport("Connection failed".to_string()));
+                return Err(P2PError::Transport(crate::error::TransportError::SetupFailed("Connection failed".to_string())));
             }
             Ok(Box::new(MockConnection::new(addr)))
         }
@@ -526,9 +543,14 @@ mod tests {
 
         async fn accept(&self) -> Result<Box<dyn Connection>> {
             if self.should_fail {
-                return Err(P2PError::Transport("Accept failed".to_string()));
+                return Err(P2PError::Transport(crate::error::TransportError::SetupFailed(
+                    "Accept failed".to_string()
+                )));
             }
-            Ok(Box::new(MockConnection::new(NetworkAddress::from_str("127.0.0.1:9000").unwrap())))
+            Ok(Box::new(MockConnection::new(NetworkAddress::from_str("127.0.0.1:9000")
+                .map_err(|e| crate::error::TransportError::SetupFailed(
+                    format!("Invalid mock address: {}", e) 
+                ))?)))
         }
 
         fn supports_ipv6(&self) -> bool {
@@ -568,7 +590,10 @@ mod tests {
     impl Connection for MockConnection {
         async fn send(&mut self, data: &[u8]) -> Result<()> {
             if !self.is_alive {
-                return Err(P2PError::Network("Connection closed".to_string()));
+                return Err(P2PError::Network(crate::error::NetworkError::PeerDisconnected {
+                    peer: "unknown".to_string(),
+                    reason: "Connection closed".to_string(),
+                }));
             }
             self.bytes_sent.fetch_add(data.len(), Ordering::Relaxed);
             Ok(())
@@ -576,7 +601,10 @@ mod tests {
 
         async fn receive(&mut self) -> Result<Vec<u8>> {
             if !self.is_alive {
-                return Err(P2PError::Network("Connection closed".to_string()));
+                return Err(P2PError::Network(crate::error::NetworkError::PeerDisconnected {
+                    peer: "unknown".to_string(),
+                    reason: "Connection closed".to_string(),
+                }));
             }
             let data = b"mock_response".to_vec();
             self.bytes_received.fetch_add(data.len(), Ordering::Relaxed);
@@ -586,7 +614,8 @@ mod tests {
         async fn info(&self) -> ConnectionInfo {
             ConnectionInfo {
                 transport_type: TransportType::QUIC,
-                local_addr: NetworkAddress::from_str("127.0.0.1:9000").unwrap(),
+                local_addr: NetworkAddress::from_str("127.0.0.1:9000")
+                    .expect("Test address should be valid"),
                 remote_addr: self.remote_addr.clone(),
                 is_encrypted: true,
                 cipher_suite: "TLS_AES_256_GCM_SHA384".to_string(),
@@ -616,7 +645,8 @@ mod tests {
         }
 
         fn local_addr(&self) -> NetworkAddress {
-            NetworkAddress::from_str("127.0.0.1:9000").unwrap()
+            NetworkAddress::from_str("127.0.0.1:9000")
+                .expect("Test address should be valid")
         }
 
         fn remote_addr(&self) -> NetworkAddress {
@@ -998,7 +1028,10 @@ mod tests {
 
         // Add connections
         for i in 0..3 {
-            let conn = Box::new(MockConnection::new(format!("127.0.0.1:{}", 9020 + i).parse().unwrap()));
+            let conn = Box::new(MockConnection::new(
+                format!("127.0.0.1:{}", 9020 + i).parse()
+                    .expect("Test address should be valid")
+            ));
             pool.add_connection(conn).await?;
         }
 
