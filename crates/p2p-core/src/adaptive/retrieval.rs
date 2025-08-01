@@ -22,7 +22,6 @@
 use super::*;
 use crate::adaptive::{
     routing::AdaptiveRouter,
-    RoutingStrategy,
     learning::QLearnCacheManager,
     storage::ContentStore,
     ContentType,
@@ -442,14 +441,20 @@ mod tests {
     use crate::adaptive::{
         trust::MockTrustProvider,
         hyperbolic::HyperbolicSpace,
-        som::SelfOrganizingMap,
+        som::{SelfOrganizingMap, SomConfig, GridSize},
     };
     use tempfile::TempDir;
     
     async fn create_test_retrieval_manager() -> RetrievalManager {
         let trust_provider = Arc::new(MockTrustProvider::new());
         let hyperbolic = Arc::new(HyperbolicSpace::new());
-        let som = Arc::new(SelfOrganizingMap::new(10, 10, 4));
+        let som_config = SomConfig {
+            initial_learning_rate: 0.3,
+            initial_radius: 5.0,
+            iterations: 100,
+            grid_size: GridSize::Fixed(10, 10),
+        };
+        let som = Arc::new(SelfOrganizingMap::new(som_config));
         let router = Arc::new(AdaptiveRouter::new(trust_provider, hyperbolic, som));
         
         let temp_dir = TempDir::new().unwrap();

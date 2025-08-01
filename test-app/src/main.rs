@@ -158,7 +158,7 @@ async fn test_p2p_node_creation() -> P2PResult<()> {
         },
         Err(_) => {
             error!("  ❌ P2P node creation timed out");
-            return Err(saorsa_core::error::P2PError::Network("Node creation timed out".to_string()).into());
+            return Err(saorsa_core::error::P2PError::Network(saorsa_core::error::NetworkError::Timeout).into());
         }
     }
     
@@ -186,7 +186,7 @@ async fn test_multi_node_communication() -> P2PResult<()> {
         },
         Err(_) => {
             error!("  ❌ Node 1 creation timed out");
-            return Err(saorsa_core::error::P2PError::Network("Node 1 creation timed out".to_string()).into());
+            return Err(saorsa_core::error::P2PError::Network(saorsa_core::error::NetworkError::Timeout).into());
         }
     };
     
@@ -204,7 +204,7 @@ async fn test_multi_node_communication() -> P2PResult<()> {
         },
         Err(_) => {
             error!("  ❌ Node 2 creation timed out");
-            return Err(saorsa_core::error::P2PError::Network("Node 2 creation timed out".to_string()).into());
+            return Err(saorsa_core::error::P2PError::Network(saorsa_core::error::NetworkError::Timeout).into());
         }
     };
     

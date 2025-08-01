@@ -227,7 +227,7 @@ pub struct FrostCoordinator {
 }
 
 /// Group information for FROST
-struct GroupInfo {
+pub struct GroupInfo {
     pub group_public_key: FrostGroupPublicKey,
     pub threshold: u16,
     pub participants: Vec<ParticipantId>,
@@ -337,8 +337,8 @@ impl FrostCoordinator {
     }
     
     /// Clean up old sessions
-    pub fn cleanup_old_sessions(&mut self, max_age: std::time::Duration) {
-        let now = std::time::SystemTime::now();
+    pub fn cleanup_old_sessions(&mut self, _max_age: std::time::Duration) {
+        let _now = std::time::SystemTime::now();
         
         self.sessions.retain(|_, session| {
             // In practice, would check session creation time

@@ -259,11 +259,11 @@ impl QuicTransport {
 #[async_trait]
 impl Transport for QuicTransport {
     async fn listen(&self, _addr: SocketAddr) -> Result<Box<dyn TransportListener>> {
-        Err(AdaptiveNetworkError::Other("QUIC transport not yet implemented".to_string()))
+        Err(AdaptiveNetworkError::Other("QUIC transport not yet implemented".to_string().into()))
     }
     
     async fn connect(&self, _addr: SocketAddr) -> Result<Box<dyn TransportConnection>> {
-        Err(AdaptiveNetworkError::Other("QUIC transport not yet implemented".to_string()))
+        Err(AdaptiveNetworkError::Other("QUIC transport not yet implemented".to_string().into()))
     }
     
     fn protocol(&self) -> TransportProtocol {
@@ -284,7 +284,7 @@ pub struct TransportManager {
     listeners: Arc<RwLock<Vec<Box<dyn TransportListener>>>>,
     
     /// Connection pool
-    connections: Arc<RwLock<HashMap<SocketAddr, Box<dyn TransportConnection>>>>,
+    _connections: Arc<RwLock<HashMap<SocketAddr, Box<dyn TransportConnection>>>>,
     
     /// Protocol preferences
     protocol_preference: Vec<TransportProtocol>,
@@ -306,7 +306,7 @@ impl TransportManager {
         Self {
             transports,
             listeners: Arc::new(RwLock::new(Vec::new())),
-            connections: Arc::new(RwLock::new(HashMap::new())),
+            _connections: Arc::new(RwLock::new(HashMap::new())),
             protocol_preference: vec![TransportProtocol::Quic, TransportProtocol::Tcp],
         }
     }
@@ -330,7 +330,7 @@ impl TransportManager {
         }
         
         if listeners.is_empty() {
-            return Err(AdaptiveNetworkError::Other("Failed to listen on any protocol".to_string()));
+            return Err(AdaptiveNetworkError::Other("Failed to listen on any protocol".to_string().into()));
         }
         
         Ok(())
@@ -353,7 +353,7 @@ impl TransportManager {
             }
         }
         
-        Err(AdaptiveNetworkError::Other("Failed to connect with any protocol".to_string()))
+        Err(AdaptiveNetworkError::Other("Failed to connect with any protocol".to_string().into()))
     }
     
     /// Accept incoming connection from any listener
@@ -361,7 +361,7 @@ impl TransportManager {
         let listeners = self.listeners.read().await;
         
         if listeners.is_empty() {
-            return Err(AdaptiveNetworkError::Other("No active listeners".to_string()));
+            return Err(AdaptiveNetworkError::Other("No active listeners".to_string().into()));
         }
         
         // For now, just try the first listener
@@ -373,10 +373,10 @@ impl TransportManager {
 /// NAT traversal helper
 pub struct NatTraversal {
     /// STUN servers for address discovery
-    stun_servers: Vec<String>,
+    _stun_servers: Vec<String>,
     
     /// Known public addresses
-    public_addresses: Arc<RwLock<Vec<SocketAddr>>>,
+    _public_addresses: Arc<RwLock<Vec<SocketAddr>>>,
 }
 
 impl Default for NatTraversal {
@@ -388,11 +388,11 @@ impl Default for NatTraversal {
 impl NatTraversal {
     pub fn new() -> Self {
         Self {
-            stun_servers: vec![
+            _stun_servers: vec![
                 "stun.l.google.com:19302".to_string(),
                 "stun1.l.google.com:19302".to_string(),
             ],
-            public_addresses: Arc::new(RwLock::new(Vec::new())),
+            _public_addresses: Arc::new(RwLock::new(Vec::new())),
         }
     }
     
@@ -404,7 +404,7 @@ impl NatTraversal {
     }
     
     /// Attempt NAT hole punching
-    pub async fn hole_punch(&self, target: SocketAddr) -> Result<()> {
+    pub async fn hole_punch(&self, _target: SocketAddr) -> Result<()> {
         // TODO: Implement hole punching protocol
         Ok(())
     }

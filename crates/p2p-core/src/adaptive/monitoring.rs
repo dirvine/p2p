@@ -112,6 +112,7 @@ pub enum LogLevel {
 }
 
 /// Core network metrics exposed via Prometheus
+#[allow(dead_code)]
 struct NetworkMetrics {
     // Node metrics
     connected_nodes: IntGauge,
@@ -346,7 +347,7 @@ struct Profile {
 #[derive(Debug, Clone)]
 struct ProfileSample {
     /// Timestamp
-    timestamp: Instant,
+    _timestamp: Instant,
     
     /// CPU usage
     cpu_usage: f64,
@@ -355,7 +356,7 @@ struct ProfileSample {
     memory_bytes: u64,
     
     /// Active operations
-    operations: HashMap<String, u64>,
+    _operations: HashMap<String, u64>,
 }
 
 /// Completed profile
@@ -634,8 +635,8 @@ impl MonitoringSystem {
                     // Create alert if severe
                     if anomaly.severity > 0.7 {
                         let alert = Alert {
-                            id: format!("anomaly_{}", anomaly.metric),
-                            name: format!("{} Anomaly", anomaly.metric),
+                            id: format!("anomaly_{}", anomaly.metric).into(),
+                            name: format!("{} Anomaly", anomaly.metric).into(),
                             severity: AlertSeverity::Warning,
                             message: format!(
                                 "Anomaly detected in {}: value {} outside expected range {:?}",
@@ -688,7 +689,7 @@ impl MonitoringSystem {
         ];
         
         for rule in rules {
-            alert_manager.add_rule(rule).await;
+            let _ = alert_manager.add_rule(rule).await;
         }
         
         // Start rule evaluation
@@ -924,7 +925,7 @@ impl AlertManager {
     pub async fn evaluate_rules(&self) -> Result<()> {
         let rules = self.rules.read().await.clone();
         
-        for rule in rules {
+        for _rule in rules {
             // Evaluate condition
             // This would check actual metric values
             // For now, this is a placeholder
@@ -977,10 +978,10 @@ impl PerformanceProfiler {
         
         if let Some(profile) = profiles.get_mut(profile_name) {
             profile.samples.push(ProfileSample {
-                timestamp: Instant::now(),
+                _timestamp: Instant::now(),
                 cpu_usage: Self::get_cpu_usage(),
                 memory_bytes: Self::get_memory_usage(),
-                operations: HashMap::new(), // Would track actual operations
+                _operations: HashMap::new(), // Would track actual operations
             });
         }
     }

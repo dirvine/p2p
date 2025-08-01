@@ -451,7 +451,7 @@ impl RoutingStrategy for TrustBasedRoutingStrategy {
             .collect();
         
         // Sort by trust descending
-        trusted_nodes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        trusted_nodes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         
         // Create path through highest trust nodes
         let path: Vec<NodeId> = trusted_nodes

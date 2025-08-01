@@ -190,12 +190,10 @@ impl IPv6DHTIdentityManager {
                 Ok(())
             }
             Ok(false) => {
-                Err(P2PError::Security(SecurityError::SignatureVerificationFailed))
+                Err(P2PError::Security(SecurityError::SignatureVerificationFailed("Failed to verify IPv6 identity signature".to_string().into())))
             }
-            Err(e) => {
-                Err(P2PError::Security(crate::error::SecurityError::AuthenticationFailed {
-                    reason: format!("Identity verification error: {e}"),
-                }))
+            Err(_e) => {
+                Err(P2PError::Security(crate::error::SecurityError::AuthenticationFailed))
             }
         }
     }
@@ -217,12 +215,12 @@ impl IPv6DHTIdentityManager {
         let verification_result = self.verify_ipv6_identity(&ipv6_identity).await?;
         
         if !verification_result.is_valid {
-            return Err(P2PError::Security(crate::error::SecurityError::AuthorizationFailed {
-                reason: format!(
+            return Err(P2PError::Security(crate::error::SecurityError::AuthorizationFailed(
+                format!(
                     "IPv6 identity verification failed: {}",
                     verification_result.error_message.unwrap_or_default()
-                ),
-            }));
+                ).into()
+            )));
         }
 
         // Analyze IP for diversity enforcement
@@ -230,17 +228,17 @@ impl IPv6DHTIdentityManager {
 
         // Check IP diversity constraints
         if self.config.enable_ip_diversity && !self.ip_enforcer.can_accept_node(&ip_analysis) {
-            return Err(P2PError::Security(crate::error::SecurityError::AuthorizationFailed {
-                reason: "IP diversity constraints violated".to_string(),
-            }));
+            return Err(P2PError::Security(crate::error::SecurityError::AuthorizationFailed(
+                "IP diversity constraints violated".into()
+            )));
         }
 
         // Add to IP diversity tracking
         if self.config.enable_ip_diversity {
             self.ip_enforcer.add_node(&ip_analysis)
-                .map_err(|e| P2PError::Security(crate::error::SecurityError::AuthorizationFailed {
-                    reason: format!("IP diversity error: {e}"),
-                }))?;
+                .map_err(|e| P2PError::Security(crate::error::SecurityError::AuthorizationFailed(
+                    format!("IP diversity error: {e}").into()
+                )))?;
         }
 
         let enhanced_node = IPv6DHTNode {
@@ -282,7 +280,7 @@ impl IPv6DHTIdentityManager {
                 return Ok(IPv6VerificationResult {
                     is_valid: false,
                     confidence: 0.0,
-                    error_message: Some(format!("Signature verification failed: {e}")),
+                    error_message: Some(format!("Signature verification failed: {e}").into()),
                     ip_diversity_ok: false,
                     identity_age_secs: 0,
                 });
@@ -367,9 +365,7 @@ impl IPv6DHTIdentityManager {
 
         // Perform IP analysis
         let analysis = self.ip_enforcer.analyze_ip(ipv6_addr)
-            .map_err(|e| P2PError::Security(crate::error::SecurityError::AuthenticationFailed {
-                reason: format!("IP analysis error: {e}"),
-            }))?;
+            .map_err(|_e| P2PError::Security(crate::error::SecurityError::AuthenticationFailed))?;
 
         // Cache the analysis
         self.ip_analysis_cache.insert(ipv6_addr, (analysis.clone(), SystemTime::now()));

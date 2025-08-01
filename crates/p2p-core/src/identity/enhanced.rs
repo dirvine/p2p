@@ -310,7 +310,7 @@ impl EnhancedIdentityManager {
         // Create device registry
         let device_id = DeviceId(format!("{}-{}", base_identity.user_id, 
             SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)
-                .map_err(|e| EnhancedIdentityError::SystemTime(format!("System time error: {}", e)))?
+                .map_err(|e| EnhancedIdentityError::SystemTime(format!("System time error: {}", e).into()))?
                 .as_secs()
         ));
         
@@ -367,7 +367,7 @@ impl EnhancedIdentityManager {
             threshold: 1,
             participants: vec![owner_info],
             metadata: crate::threshold::GroupMetadata {
-                name: format!("{name} Root Group"),
+                name: format!("{name} Root Group").into(),
                 description: "Organization root authority".to_string(),
                 purpose: crate::threshold::GroupPurpose::Governance,
                 parent_group: None,
@@ -461,7 +461,7 @@ impl EnhancedIdentityManager {
             Ok(())
         } else {
             Err(EnhancedIdentityError::PermissionDenied(
-                format!("Permission {:?} denied for role {:?}", permission, membership.role)
+                format!("Permission {:?} denied for role {:?}", permission, membership.role).into()
             ))
         }
     }

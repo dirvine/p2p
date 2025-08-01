@@ -188,7 +188,7 @@ impl SelfOrganizingMap {
     /// Find the Best Matching Unit (BMU) for given features
     pub fn find_best_matching_unit(&self, features: &NodeFeatures) -> (usize, usize) {
         let input = features.to_weight_vector();
-        let grid = self.grid.read().unwrap();
+        let grid = self.grid.read().expect("SOM grid lock poisoned");
         
         let mut best_x = 0;
         let mut best_y = 0;
@@ -231,7 +231,7 @@ impl SelfOrganizingMap {
         let learning_rate = self.get_learning_rate(iteration);
         let radius = self.get_neighborhood_radius(iteration);
         
-        let mut grid = self.grid.write().unwrap();
+        let mut grid = self.grid.write().expect("SOM grid lock poisoned");
         
         // Update all neurons based on their distance to BMU
         for (y, row) in grid.iter_mut().enumerate() {
@@ -261,15 +261,15 @@ impl SelfOrganizingMap {
         let (x, y) = self.find_best_matching_unit(&features);
         
         // Remove from old position if exists
-        let mut positions = self.node_positions.write().unwrap();
+        let mut positions = self.node_positions.write().expect("SOM grid lock poisoned");
         if let Some((old_x, old_y)) = positions.get(&node_id) {
-            let mut grid = self.grid.write().unwrap();
+            let mut grid = self.grid.write().expect("SOM grid lock poisoned");
             grid[*old_y][*old_x].assigned_nodes.remove(&node_id);
         }
         
         // Assign to new position
         positions.insert(node_id.clone(), (x, y));
-        let mut grid = self.grid.write().unwrap();
+        let mut grid = self.grid.write().expect("SOM grid lock poisoned");
         grid[y][x].assigned_nodes.insert(node_id);
         
         // Check if we need to resize (for dynamic grids)
@@ -280,7 +280,7 @@ impl SelfOrganizingMap {
     
     /// Get nodes assigned to a specific neuron
     pub fn get_assigned_nodes(&self, x: usize, y: usize) -> HashSet<NodeId> {
-        let grid = self.grid.read().unwrap();
+        let grid = self.grid.read().expect("SOM grid lock poisoned");
         grid.get(y)
             .and_then(|row| row.get(x))
             .map(|neuron| neuron.assigned_nodes.clone())
@@ -289,7 +289,7 @@ impl SelfOrganizingMap {
     
     /// Get all assigned nodes
     pub fn get_all_assigned_nodes(&self) -> HashSet<NodeId> {
-        let grid = self.grid.read().unwrap();
+        let grid = self.grid.read().expect("SOM grid lock poisoned");
         grid.iter()
             .flat_map(|row| row.iter())
             .flat_map(|neuron| neuron.assigned_nodes.iter())
@@ -300,7 +300,7 @@ impl SelfOrganizingMap {
     /// Find nodes similar to given features
     pub fn find_similar_nodes(&self, features: &NodeFeatures, radius: usize) -> Vec<NodeId> {
         let (bmu_x, bmu_y) = self.find_best_matching_unit(features);
-        let grid = self.grid.read().unwrap();
+        let grid = self.grid.read().expect("SOM grid lock poisoned");
         
         let mut similar_nodes = Vec::new();
         
@@ -328,7 +328,7 @@ impl SelfOrganizingMap {
     
     /// Set neuron weights (for testing)
     pub fn set_neuron_weights(&mut self, x: usize, y: usize, weights: Vec<f64>) {
-        let mut grid = self.grid.write().unwrap();
+        let mut grid = self.grid.write().expect("SOM grid lock poisoned");
         if let Some(neuron) = grid.get_mut(y).and_then(|row| row.get_mut(x)) {
             neuron.weights = weights;
         }
@@ -336,7 +336,7 @@ impl SelfOrganizingMap {
     
     /// Get neuron weights (for testing)
     pub fn get_neuron_weights(&self, x: usize, y: usize) -> Option<Vec<f64>> {
-        let grid = self.grid.read().unwrap();
+        let grid = self.grid.read().expect("SOM grid lock poisoned");
         grid.get(y)
             .and_then(|row| row.get(x))
             .map(|neuron| neuron.weights.clone())
@@ -345,7 +345,7 @@ impl SelfOrganizingMap {
     /// Check if grid needs resizing and resize if necessary
     fn check_and_resize(&mut self) {
         if let GridSize::Dynamic { max, .. } = self.config.grid_size {
-            let node_count = self.node_positions.read().unwrap().len();
+            let node_count = self.node_positions.read().expect("SOM grid lock poisoned").len();
             let current_capacity = self.width * self.height;
             
             // Resize if we're at 80% capacity and haven't hit max
@@ -360,7 +360,7 @@ impl SelfOrganizingMap {
     
     /// Resize the grid while preserving node assignments
     fn resize_grid(&mut self, new_width: usize, new_height: usize) {
-        let mut old_grid = self.grid.write().unwrap();
+        let mut old_grid = self.grid.write().expect("SOM grid lock poisoned");
         let mut new_grid = vec![vec![Neuron::new(self.weight_dim); new_width]; new_height];
         
         // Copy neurons that fit in new grid
@@ -381,7 +381,7 @@ impl SelfOrganizingMap {
         self.height = new_height;
         
         // Re-assign nodes that were outside the new grid
-        let positions = self.node_positions.read().unwrap().clone();
+        let positions = self.node_positions.read().expect("SOM grid lock poisoned").clone();
         for (node_id, (x, y)) in positions {
             if x >= new_width || y >= new_height {
                 // Find new position for this node
@@ -389,14 +389,14 @@ impl SelfOrganizingMap {
                 let new_x = x.min(new_width - 1);
                 let new_y = y.min(new_height - 1);
                 old_grid[new_y][new_x].assigned_nodes.insert(node_id.clone());
-                self.node_positions.write().unwrap().insert(node_id, (new_x, new_y));
+                self.node_positions.write().expect("SOM grid lock poisoned").insert(node_id, (new_x, new_y));
             }
         }
     }
     
     /// Get visualization data for the SOM
     pub fn get_visualization_data(&self) -> VisualizationData {
-        let grid = self.grid.read().unwrap();
+        let grid = self.grid.read().expect("SOM grid lock poisoned");
         let neurons = grid.iter()
             .enumerate()
             .flat_map(|(y, row)| {
@@ -420,7 +420,7 @@ impl SelfOrganizingMap {
     
     /// Generate U-Matrix (unified distance matrix) for visualization
     pub fn generate_u_matrix(&self) -> Vec<Vec<f64>> {
-        let grid = self.grid.read().unwrap();
+        let grid = self.grid.read().expect("SOM grid lock poisoned");
         let mut u_matrix = vec![vec![0.0; self.width]; self.height];
         
         for y in 0..self.height {

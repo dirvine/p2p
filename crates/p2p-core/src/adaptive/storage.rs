@@ -136,6 +136,21 @@ pub struct ContentMetadata {
     pub replication_factor: u32,
 }
 
+impl Default for ContentMetadata {
+    fn default() -> Self {
+        Self {
+            size: 0,
+            content_type: ContentType::DataRetrieval,
+            created_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
+            chunk_count: None,
+            replication_factor: 8,
+        }
+    }
+}
+
 /// Storage statistics
 #[derive(Debug, Default, Clone)]
 pub struct StorageStats {
@@ -257,7 +272,7 @@ impl ContentStore {
                     ContentMetadata {
                         size: data.len(),
                         content_type: ContentType::DataRetrieval,
-                        created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                        created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
                         chunk_count: None,
                         replication_factor: 8,
                     }
@@ -481,7 +496,7 @@ mod tests {
         let metadata = ContentMetadata {
             size: content.len(),
             content_type: ContentType::DataRetrieval,
-            created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
             chunk_count: None,
             replication_factor: 8,
         };
@@ -540,7 +555,7 @@ mod tests {
         let metadata = ContentMetadata {
             size: content.len(),
             content_type: ContentType::DataRetrieval,
-            created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
             chunk_count: None,
             replication_factor: 8,
         };

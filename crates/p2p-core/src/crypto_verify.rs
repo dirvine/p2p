@@ -34,7 +34,6 @@
 use crate::{P2PError, Result};
 use crate::peer_record::PeerDHTRecord;
 use ed25519_dalek::{VerifyingKey, Signature, Verifier};
-use sha2::Digest;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use blake3::Hash;
@@ -62,7 +61,7 @@ struct CachedVerificationKey {
     /// The verifying key
     key: VerifyingKey,
     /// Precomputed point for batch verification
-    precomputed_point: Option<Vec<u8>>, // Placeholder for actual precomputed data
+    _precomputed_point: Option<Vec<u8>>, // Placeholder for actual precomputed data
     /// Last access timestamp
     last_used: Instant,
     /// Number of times this key has been used
@@ -130,7 +129,7 @@ impl EnhancedSignatureVerifier {
         // Perform constant-time signature verification
         let verification_result = self.verify_signature_constant_time(
             &cached_key.key,
-            &record.create_signable_message(),
+            &record.create_signable_message()?,
             &record.signature,
         );
         
@@ -163,7 +162,7 @@ impl EnhancedSignatureVerifier {
             results.push(BatchVerificationResult {
                 index,
                 success: result.is_ok(),
-                error: result.err().map(|e| format!("Verification failed: {e}")),
+                error: result.err().map(|e| format!("Verification failed: {e}").into()),
             });
         }
         
@@ -191,18 +190,18 @@ impl EnhancedSignatureVerifier {
     fn validate_timestamp_freshness(&self, record: &PeerDHTRecord) -> Result<()> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("valid crypto operation")
             .as_secs();
         
         let age = now.saturating_sub(record.timestamp);
         
         if age > SIGNATURE_FRESHNESS_WINDOW.as_secs() {
-            return Err(P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed));
+            return Err(P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed("Signature verification failed".to_string().into())));
         }
         
         // Also check for future timestamps (clock skew protection)
         if record.timestamp > now + 60 {
-            return Err(P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed));
+            return Err(P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed("Signature verification failed".to_string().into())));
         }
         
         Ok(())
@@ -224,7 +223,7 @@ impl EnhancedSignatureVerifier {
         let verifying_key = self.create_verifying_key(public_key)?;
         let cached_key = CachedVerificationKey {
             key: verifying_key,
-            precomputed_point: None, // Would contain actual precomputed data
+            _precomputed_point: None, // Would contain actual precomputed data
             last_used: Instant::now(),
             usage_count: 1,
         };
@@ -247,7 +246,7 @@ impl EnhancedSignatureVerifier {
         
         // Check for low-order points and other curve attacks
         if self.is_low_order_point(key_bytes) {
-            return Err(P2PError::Security(crate::error::SecurityError::InvalidKey("Invalid curve point".to_string())));
+            return Err(P2PError::Security(crate::error::SecurityError::InvalidKey("Invalid curve point".to_string().into())));
         }
         
         // For ed25519_dalek 1.0, we just return the public key as-is
@@ -279,7 +278,7 @@ impl EnhancedSignatureVerifier {
     ) -> Result<()> {
         // Use constant-time verification
         verifying_key.verify(message, signature)
-            .map_err(|_| P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed))
+            .map_err(|_| P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed("Signature verification failed".to_string().into())))
     }
 
     /// Evict the least recently used key from cache
@@ -376,7 +375,7 @@ mod tests {
         let user_id = UserId::from_public_key(verifying_key);
         let endpoint = PeerEndpoint::new(
             EndpointId::new(),
-            NetworkAddress::from_str("192.168.1.1:8080").unwrap(),
+            NetworkAddress::from_str("192.168.1.1:8080").expect("valid crypto operation"),
             NatType::FullCone,
             vec!["coordinator1".to_string()],
             Some("test-device".to_string()),
@@ -389,9 +388,9 @@ mod tests {
             Some("test-user".to_string()),
             vec![endpoint],
             300,
-        ).unwrap();
+        ).expect("valid crypto operation");
         
-        record.sign(signing_key).unwrap();
+        record.sign(signing_key).expect("valid crypto operation");
         record
     }
 
@@ -430,7 +429,7 @@ mod tests {
                 message,
                 signature,
                 public_key,
-                context: Some(format!("test_{}", i)),
+                context: Some(format!("test_{}", i).into()),
             });
         }
         
@@ -455,11 +454,11 @@ mod tests {
         // Set old timestamp
         record.timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("valid crypto operation")
             .as_secs() - 400; // 400 seconds ago (older than 5 minutes)
         
         // Re-sign with old timestamp
-        record.sign(&secret_key).unwrap();
+        record.sign(&secret_key).expect("valid crypto operation");
         
         let mut verifier = EnhancedSignatureVerifier::new();
         

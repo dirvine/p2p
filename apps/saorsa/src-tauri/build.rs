@@ -65,17 +65,17 @@ fn bundle_frontend_assets() {
         println!("cargo:warning=Reading frontend files from ../src");
         let index = fs::read_to_string(src_dir.join("index.html"))
             .unwrap_or_else(|e| {
-                println!("cargo:warning=Failed to read index.html: {}", e);
+                println!("cargo:warning=Failed to read index.html: {e}");
                 get_fallback_index()
             });
         let styles = fs::read_to_string(src_dir.join("styles.css"))
             .unwrap_or_else(|e| {
-                println!("cargo:warning=Failed to read styles.css: {}", e);
+                println!("cargo:warning=Failed to read styles.css: {e}");
                 get_fallback_styles()
             });
         let main = fs::read_to_string(src_dir.join("main.js"))
             .unwrap_or_else(|e| {
-                println!("cargo:warning=Failed to read main.js: {}", e);
+                println!("cargo:warning=Failed to read main.js: {e}");
                 get_fallback_main()
             });
         (index, styles, main)
@@ -107,18 +107,18 @@ fn bundle_frontend_assets() {
         .replace('\t', "\\t");
     
     // Generate the Rust code
-    content.push(format!(r#"pub const INDEX_HTML: &str = "{}";"#, index_escaped));
+    content.push(format!(r#"pub const INDEX_HTML: &str = "{index_escaped}";"#));
     content.push("".to_string());
-    content.push(format!(r#"pub const STYLES_CSS: &str = "{}";"#, styles_escaped));
+    content.push(format!(r#"pub const STYLES_CSS: &str = "{styles_escaped}";"#));
     content.push("".to_string());
-    content.push(format!(r#"pub const MAIN_JS: &str = "{}";"#, main_escaped));
+    content.push(format!(r#"pub const MAIN_JS: &str = "{main_escaped}";"#));
     
     // Write the generated file
     let generated_content = content.join("\n");
     fs::write(&generated_path, generated_content)
         .expect("Failed to write generated frontend bundle");
     
-    println!("cargo:warning=Generated frontend bundle at {:?}", generated_path);
+    println!("cargo:warning=Generated frontend bundle at {generated_path:?}");
 }
 
 fn get_fallback_index() -> String {

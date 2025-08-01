@@ -293,16 +293,14 @@ impl PeerDHTRecord {
         if let Some(name) = name {
             if name.len() > 255 {
                 return Err(P2PError::Config(crate::error::ConfigError::InvalidValue {
-                    field: "name".to_string(),
-                    value: format!("{} chars", name.len()),
-                    reason: "Name too long (max 255)".to_string(),
+                    field: "name".to_string().into(),
+                    reason: format!("Name too long (max 255), got {} chars", name.len()).into(),
                 }));
             }
             if name.is_empty() {
                 return Err(P2PError::Config(crate::error::ConfigError::InvalidValue {
-                    field: "name".to_string(),
-                    value: "empty".to_string(),
-                    reason: "Name cannot be empty".to_string(),
+                    field: "name".to_string().into(),
+                    reason: "Name cannot be empty".to_string().into(),
                 }));
             }
         }
@@ -310,32 +308,28 @@ impl PeerDHTRecord {
         // Validate endpoints
         if endpoints.is_empty() {
             return Err(P2PError::Config(crate::error::ConfigError::InvalidValue {
-                field: "endpoints".to_string(),
-                value: "empty".to_string(),
-                reason: "At least one endpoint required".to_string(),
+                field: "endpoints".to_string().into(),
+                reason: "At least one endpoint required".to_string().into(),
             }));
         }
         if endpoints.len() > MAX_ENDPOINTS_PER_PEER {
             return Err(P2PError::Config(crate::error::ConfigError::InvalidValue {
-                field: "endpoints".to_string(),
-                value: format!("{} endpoints", endpoints.len()),
-                reason: format!("Too many endpoints (max {})", MAX_ENDPOINTS_PER_PEER),
+                field: "endpoints".to_string().into(),
+                reason: format!("Too many endpoints ({}, max {})", endpoints.len(), MAX_ENDPOINTS_PER_PEER).into(),
             }));
         }
 
         // Validate TTL
         if ttl == 0 {
             return Err(P2PError::Config(crate::error::ConfigError::InvalidValue {
-                field: "ttl".to_string(),
-                value: "0".to_string(),
-                reason: "TTL cannot be zero".to_string(),
+                field: "ttl".to_string().into(),
+                reason: "TTL cannot be zero".to_string().into(),
             }));
         }
         if ttl > MAX_TTL_SECONDS {
             return Err(P2PError::Config(crate::error::ConfigError::InvalidValue {
-                field: "ttl".to_string(),
-                value: ttl.to_string(),
-                reason: format!("TTL too large (max {})", MAX_TTL_SECONDS),
+                field: "ttl".to_string().into(),
+                reason: format!("TTL too large ({}, max {})", ttl, MAX_TTL_SECONDS).into(),
             }));
         }
 
@@ -343,7 +337,7 @@ impl PeerDHTRecord {
     }
 
     /// Create the canonical message for signing
-    pub fn create_signable_message(&self) -> Vec<u8> {
+    pub fn create_signable_message(&self) -> Result<Vec<u8>> {
         let mut message = Vec::new();
         
         // Version
@@ -368,7 +362,8 @@ impl PeerDHTRecord {
         }
         
         // Endpoints (serialized deterministically)
-        let endpoints_data = bincode::serialize(&self.endpoints).unwrap();
+        let endpoints_data = bincode::serialize(&self.endpoints)
+            .map_err(|e| P2PError::Storage(crate::error::StorageError::Database(format!("Failed to serialize endpoints: {}", e).into())))?;
         message.extend_from_slice(&(endpoints_data.len() as u32).to_be_bytes());
         message.extend_from_slice(&endpoints_data);
         
@@ -378,21 +373,21 @@ impl PeerDHTRecord {
         // TTL
         message.extend_from_slice(&self.ttl.to_be_bytes());
         
-        message
+        Ok(message)
     }
 
     /// Sign the record with the given private key
     pub fn sign(&mut self, signing_key: &ed25519_dalek::SigningKey) -> Result<()> {
-        let message = self.create_signable_message();
+        let message = self.create_signable_message()?;
         self.signature = signing_key.sign(&message);
         Ok(())
     }
 
     /// Verify the record signature
     pub fn verify_signature(&self) -> Result<()> {
-        let message = self.create_signable_message();
+        let message = self.create_signable_message()?;
         self.public_key.verify(&message, &self.signature)
-            .map_err(|_| P2PError::Security(SecurityError::SignatureVerificationFailed))?;
+            .map_err(|_| P2PError::Security(SecurityError::SignatureVerificationFailed("Failed to verify signature".to_string().into())))?;
         Ok(())
     }
 
@@ -415,14 +410,13 @@ impl PeerDHTRecord {
     /// Serialize the record using bincode for efficiency
     pub fn serialize(&self) -> Result<Vec<u8>> {
         let serialized = bincode::serialize(self)
-            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize record: {e}"))))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize record: {e}").into())))?;
         
         // Enforce size limits
         if serialized.len() > MAX_DHT_RECORD_SIZE {
             return Err(P2PError::Config(crate::error::ConfigError::InvalidValue {
-                field: "record_size".to_string(),
-                value: format!("{} bytes", serialized.len()),
-                reason: format!("Record too large (max {})", MAX_DHT_RECORD_SIZE),
+                field: "record_size".to_string().into(),
+                reason: format!("Record too large ({} bytes, max {})", serialized.len(), MAX_DHT_RECORD_SIZE).into(),
             }));
         }
         
@@ -434,21 +428,19 @@ impl PeerDHTRecord {
         // Check size limits
         if data.len() > MAX_DHT_RECORD_SIZE {
             return Err(P2PError::Config(crate::error::ConfigError::InvalidValue {
-                field: "record_size".to_string(),
-                value: format!("{} bytes", data.len()),
-                reason: format!("Record too large (max {})", MAX_DHT_RECORD_SIZE),
+                field: "record_size".to_string().into(),
+                reason: format!("Record too large ({} bytes, max {})", data.len(), MAX_DHT_RECORD_SIZE).into(),
             }));
         }
         
         let record: PeerDHTRecord = bincode::deserialize(data)
-            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to deserialize record: {e}"))))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to deserialize record: {e}").into())))?;
         
         // Validate version
         if record.version > Self::CURRENT_VERSION {
             return Err(P2PError::Config(crate::error::ConfigError::InvalidValue {
-                field: "record_version".to_string(),
-                value: record.version.to_string(),
-                reason: "Unsupported record version".to_string(),
+                field: "record_version".to_string().into(),
+                reason: format!("Unsupported record version: {}", record.version).into(),
             }));
         }
         
@@ -475,8 +467,8 @@ impl PeerDHTRecord {
 fn current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Signature verification cache for performance optimization
@@ -503,7 +495,7 @@ impl SignatureCache {
             return if result {
                 Ok(())
             } else {
-                Err(P2PError::Security(SecurityError::SignatureVerificationFailed))
+                Err(P2PError::Security(SecurityError::SignatureVerificationFailed("Invalid signature in cache".to_string().into())))
             };
         }
         

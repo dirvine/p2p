@@ -17,6 +17,7 @@
 //! and LSTM for churn prediction
 
 use super::*;
+use super::beta_distribution::BetaDistribution;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -41,13 +42,11 @@ pub struct ThompsonSampling {
     metrics: Arc<RwLock<RoutingMetrics>>,
 }
 
-/// Beta distribution parameters
-#[derive(Debug, Clone, Copy)]
+/// Beta distribution parameters with proper distribution
+#[derive(Debug, Clone)]
 struct BetaParams {
-    /// Number of successes + 1 (alpha parameter)
-    alpha: f64,
-    /// Number of failures + 1 (beta parameter)
-    beta: f64,
+    /// Beta distribution instance
+    distribution: BetaDistribution,
     /// Total number of trials
     trials: u32,
     /// Last update timestamp
@@ -57,8 +56,7 @@ struct BetaParams {
 impl Default for BetaParams {
     fn default() -> Self {
         Self {
-            alpha: 1.0,  // Uniform prior
-            beta: 1.0,   // Uniform prior
+            distribution: BetaDistribution::new(1.0, 1.0).expect("valid parameters"),
             trials: 0,
             last_update: std::time::Instant::now(),
         }
@@ -122,13 +120,17 @@ impl ThompsonSampling {
             if params.trials > 0 {
                 let elapsed = params.last_update.elapsed().as_secs() as f64;
                 let decay = self.decay_factor.powf(elapsed / 3600.0); // Hourly decay
-                params.alpha = 1.0 + (params.alpha - 1.0) * decay;
-                params.beta = 1.0 + (params.beta - 1.0) * decay;
+                let alpha = params.distribution.alpha;
+                let beta = params.distribution.beta;
+                let new_alpha = 1.0 + (alpha - 1.0) * decay;
+                let new_beta = 1.0 + (beta - 1.0) * decay;
+                params.distribution = BetaDistribution::new(new_alpha, new_beta)
+                    .expect("valid decay parameters");
             }
             
-            // Sample from Beta distribution using simple approximation
-            // For production, use rand_distr crate
-            let sample = self.sample_beta(params.alpha, params.beta);
+            // Sample from Beta distribution using proper implementation
+            let mut rng = rand::thread_rng();
+            let sample = params.distribution.sample(&mut rng);
             
             // Add exploration bonus for under-sampled strategies
             let exploration_bonus = if params.trials < self.min_samples {
@@ -150,7 +152,7 @@ impl ThompsonSampling {
     
     /// Update strategy performance based on outcome
     pub async fn update(&self, 
-        content_type: ContentType, 
+        _content_type: ContentType, 
         strategy: StrategyChoice, 
         success: bool,
         latency_ms: u64
@@ -158,20 +160,16 @@ impl ThompsonSampling {
         let mut arms = self.arms.write().await;
         let mut metrics = self.metrics.write().await;
         
-        let key = (content_type, strategy);
+        let key = (_content_type, strategy);
         let params = arms.entry(key).or_default();
         
         // Update Beta parameters
-        if success {
-            params.alpha += 1.0;
-        } else {
-            params.beta += 1.0;
-        }
+        params.distribution.update(success);
         params.trials += 1;
         params.last_update = std::time::Instant::now();
         
         // Update success rate (exponential moving average)
-        let success_rate = params.alpha / (params.alpha + params.beta);
+        let success_rate = params.distribution.mean();
         let current_rate = metrics.strategy_success_rates.entry(strategy).or_insert(0.5);
         *current_rate = 0.9 * (*current_rate) + 0.1 * success_rate;
         
@@ -190,54 +188,28 @@ impl ThompsonSampling {
     /// Get confidence interval for a strategy's success rate
     pub async fn get_confidence_interval(
         &self, 
-        content_type: ContentType, 
+        _content_type: ContentType, 
         strategy: StrategyChoice
     ) -> (f64, f64) {
         let arms = self.arms.read().await;
-        let key = (content_type, strategy);
+        let key = (_content_type, strategy);
         
         if let Some(params) = arms.get(&key) {
-            // Use Wilson score interval for binomial proportion
-            let n = params.trials as f64;
-            let p = params.alpha / (params.alpha + params.beta);
-            
-            if n == 0.0 {
+            if params.trials == 0 {
                 return (0.0, 1.0);
             }
             
-            let z = 1.96; // 95% confidence
-            let denominator = 1.0 + z * z / n;
-            let center = (p + z * z / (2.0 * n)) / denominator;
-            let spread = z * (p * (1.0 - p) / n + z * z / (4.0 * n * n)).sqrt() / denominator;
-            
-            ((center - spread).max(0.0), (center + spread).min(1.0))
+            // Use the Beta distribution's confidence interval method
+            params.distribution.confidence_interval()
         } else {
             (0.0, 1.0)
         }
     }
     
     /// Reset statistics for a specific strategy
-    pub async fn reset_strategy(&self, content_type: ContentType, strategy: StrategyChoice) {
+    pub async fn reset_strategy(&self, _content_type: ContentType, strategy: StrategyChoice) {
         let mut arms = self.arms.write().await;
-        arms.remove(&(content_type, strategy));
-    }
-    
-    /// Simple Beta distribution sampling approximation
-    /// Uses the mean with some random variation
-    fn sample_beta(&self, alpha: f64, beta: f64) -> f64 {
-        use rand::Rng;
-        let mean = alpha / (alpha + beta);
-        let variance = (alpha * beta) / ((alpha + beta).powi(2) * (alpha + beta + 1.0));
-        let std_dev = variance.sqrt();
-        
-        // Simple normal approximation for Beta distribution
-        let mut rng = rand::thread_rng();
-        let uniform: f64 = rng.gen_range(0.0..1.0);
-        let normal_sample = uniform - 0.5;
-        let sample = mean + normal_sample * std_dev * 2.0;
-        
-        // Clamp to [0, 1]
-        sample.max(0.0).min(1.0)
+        arms.remove(&(_content_type, strategy));
     }
 }
 
@@ -326,7 +298,7 @@ pub struct QLearnCacheManager {
     miss_count: Arc<std::sync::atomic::AtomicU64>,
     
     /// Bandwidth tracking
-    bandwidth_used: Arc<std::sync::atomic::AtomicU64>,
+    _bandwidth_used: Arc<std::sync::atomic::AtomicU64>,
 }
 
 /// Request statistics for tracking content popularity
@@ -399,7 +371,7 @@ impl QLearnCacheManager {
             request_stats: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             hit_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             miss_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            bandwidth_used: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            _bandwidth_used: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
     
@@ -416,7 +388,7 @@ impl QLearnCacheManager {
             q_table.get(&state)
                 .and_then(|actions| {
                     actions.iter()
-                        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
                         .map(|(action, _)| *action)
                 })
                 .unwrap_or(CacheAction::NoAction)
@@ -444,7 +416,7 @@ impl QLearnCacheManager {
             .get(&next_state)
             .and_then(|actions| {
                 actions.values()
-                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
                     .copied()
             })
             .unwrap_or(0.0);
@@ -742,9 +714,9 @@ impl QLearnCacheManager {
         &self,
         hash: ContentHash,
         data: Vec<u8>,
-        content_type: ContentType,
+        _content_type: ContentType,
     ) -> Result<()> {
-        let state = self.get_current_state_async(&hash).await;
+        let _state = self.get_current_state_async(&hash).await;
         let action = self.decide_action(&hash).await;
         
         if matches!(action, CacheAction::Cache) {
@@ -849,7 +821,7 @@ pub struct ChurnPredictor {
     max_buffer_size: usize,
     
     /// Update frequency
-    update_interval: std::time::Duration,
+    _update_interval: std::time::Duration,
 }
 
 /// Simulated LSTM model weights
@@ -924,7 +896,7 @@ impl ChurnPredictor {
             model_weights: Arc::new(tokio::sync::RwLock::new(ModelWeights::default())),
             experience_buffer: Arc::new(tokio::sync::RwLock::new(Vec::new())),
             max_buffer_size: 10000,
-            update_interval: std::time::Duration::from_secs(3600), // 1 hour
+            _update_interval: std::time::Duration::from_secs(3600), // 1 hour
         }
     }
     
@@ -958,7 +930,7 @@ impl ChurnPredictor {
         let entry = history.entry(node_id.clone()).or_insert(FeatureHistory::new());
         
         // Add or update session with new features
-        if entry.sessions.is_empty() || entry.sessions.last().unwrap().1.is_some() {
+        if entry.sessions.is_empty() || entry.sessions.last().map(|s| s.1.is_some()).unwrap_or(true) {
             // Start a new session if there's no session or the last one has ended
             entry.sessions.push((std::time::Instant::now(), None));
         }

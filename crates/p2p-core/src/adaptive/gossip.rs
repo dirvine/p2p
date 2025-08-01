@@ -47,6 +47,13 @@ pub enum TopicPriority {
     Critical,
 }
 
+/// Message validation trait
+#[async_trait::async_trait]
+pub trait MessageValidator: Send + Sync {
+    /// Validate a message before propagation
+    async fn validate(&self, message: &GossipMessage) -> Result<bool>;
+}
+
 /// Gossip statistics
 #[derive(Debug, Clone, Default)]
 pub struct GossipStats {
@@ -72,7 +79,7 @@ pub struct GossipStats {
 /// Adaptive GossipSub implementation
 pub struct AdaptiveGossipSub {
     /// Local node ID
-    local_id: NodeId,
+    _local_id: NodeId,
     
     /// Mesh peers for each topic
     mesh: Arc<RwLock<HashMap<Topic, HashSet<NodeId>>>>,
@@ -96,13 +103,16 @@ pub struct AdaptiveGossipSub {
     topic_priorities: Arc<RwLock<HashMap<Topic, TopicPriority>>>,
     
     /// Heartbeat interval
-    heartbeat_interval: Duration,
+    _heartbeat_interval: Duration,
+    
+    /// Message validators by topic
+    message_validators: Arc<RwLock<HashMap<Topic, Box<dyn MessageValidator + Send + Sync>>>>,
     
     /// Trust provider for peer scoring
     trust_provider: Arc<dyn TrustProvider>,
     
     /// Message receiver channel
-    message_rx: Arc<RwLock<Option<mpsc::Receiver<(NodeId, GossipMessage)>>>>,
+    _message_rx: Arc<RwLock<Option<mpsc::Receiver<(NodeId, GossipMessage)>>>>,
     
     /// Control message sender
     control_tx: Arc<RwLock<Option<mpsc::Sender<(NodeId, ControlMessage)>>>>,
@@ -136,6 +146,7 @@ pub struct PeerScore {
 }
 
 impl PeerScore {
+    #[allow(dead_code)]
     fn new() -> Self {
         Self {
             time_in_mesh: Duration::ZERO,
@@ -198,9 +209,32 @@ pub struct ChurnDetector {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum ChurnEvent {
     PeerJoined(NodeId),
     PeerLeft(NodeId),
+}
+
+/// Churn statistics for a time window
+#[derive(Debug)]
+pub struct ChurnStats {
+    /// Number of nodes that joined
+    pub joins: usize,
+    /// Number of nodes that left
+    pub leaves: usize,
+    /// Average session duration
+    pub avg_session_duration: Duration,
+    /// Node join times for uptime calculation
+    node_join_times: HashMap<NodeId, Instant>,
+}
+
+impl ChurnStats {
+    /// Get uptime for a specific node
+    pub fn get_node_uptime(&self, node_id: &NodeId) -> Duration {
+        self.node_join_times.get(node_id)
+            .map(|join_time| Instant::now().duration_since(*join_time))
+            .unwrap_or(Duration::from_secs(0))
+    }
 }
 
 impl ChurnDetector {
@@ -240,6 +274,66 @@ impl ChurnDetector {
     fn get_rate(&self) -> f64 {
         self.churn_rate
     }
+    
+    pub async fn get_hourly_rates(&self, hours: usize) -> Vec<f64> {
+        let now = Instant::now();
+        let mut hourly_rates = vec![0.0; hours];
+        
+        for (time, event) in &self.events {
+            let age = now.duration_since(*time);
+            let hour_index = (age.as_secs() / 3600) as usize;
+            
+            if hour_index < hours {
+                match event {
+                    ChurnEvent::PeerJoined(_) | ChurnEvent::PeerLeft(_) => {
+                        hourly_rates[hour_index] += 1.0;
+                    }
+                }
+            }
+        }
+        
+        // Normalize to rates
+        for rate in &mut hourly_rates {
+            *rate /= 3600.0; // Events per second
+        }
+        
+        hourly_rates
+    }
+    
+    pub async fn get_recent_stats(&self, window: Duration) -> ChurnStats {
+        let now = Instant::now();
+        let mut joins = 0;
+        let mut leaves = 0;
+        let mut _session_durations = Vec::new();
+        let mut _node_join_times = HashMap::new();
+        
+        for (time, event) in &self.events {
+            if now.duration_since(*time) <= window {
+                match event {
+                    ChurnEvent::PeerJoined(node_id) => {
+                        joins += 1;
+                        _node_join_times.insert(node_id.clone(), *time);
+                    }
+                    ChurnEvent::PeerLeft(_) => leaves += 1,
+                }
+            }
+        }
+        
+        let avg_session_duration = if _session_durations.is_empty() {
+            Duration::from_secs(3600) // Default 1 hour
+        } else {
+            Duration::from_secs(
+                _session_durations.iter().map(|d: &Duration| d.as_secs()).sum::<u64>() / _session_durations.len() as u64
+            )
+        };
+        
+        ChurnStats {
+            joins,
+            leaves,
+            avg_session_duration,
+            node_join_times: _node_join_times,
+        }
+    }
 }
 
 impl AdaptiveGossipSub {
@@ -249,7 +343,7 @@ impl AdaptiveGossipSub {
         let (_message_tx, message_rx) = mpsc::channel(1000);
         
         Self {
-            local_id,
+            _local_id: local_id,
             mesh: Arc::new(RwLock::new(HashMap::new())),
             fanout: Arc::new(RwLock::new(HashMap::new())),
             seen_messages: Arc::new(RwLock::new(HashMap::new())),
@@ -257,9 +351,10 @@ impl AdaptiveGossipSub {
             peer_scores: Arc::new(RwLock::new(HashMap::new())),
             topics: Arc::new(RwLock::new(HashMap::new())),
             topic_priorities: Arc::new(RwLock::new(HashMap::new())),
-            heartbeat_interval: Duration::from_secs(1),
+            _heartbeat_interval: Duration::from_secs(1),
+            message_validators: Arc::new(RwLock::new(HashMap::new())),
             trust_provider,
-            message_rx: Arc::new(RwLock::new(Some(message_rx))),
+            _message_rx: Arc::new(RwLock::new(Some(message_rx))),
             control_tx: Arc::new(RwLock::new(Some(control_tx))),
             churn_detector: Arc::new(RwLock::new(ChurnDetector::new())),
             stats: Arc::new(RwLock::new(GossipStats::default())),
@@ -288,6 +383,11 @@ impl AdaptiveGossipSub {
     
     /// Publish a message to a topic
     pub async fn publish(&self, topic: &str, message: GossipMessage) -> Result<()> {
+        // Validate message before publishing
+        if !self.validate_message(&message).await? {
+            return Err(AdaptiveNetworkError::Gossip("Message validation failed".to_string().into()).into());
+        }
+        
         let msg_id = self.compute_message_id(&message);
         
         // Add to seen messages and cache
@@ -327,7 +427,7 @@ impl AdaptiveGossipSub {
         if let Some(tx) = control_tx.as_ref() {
             let msg = ControlMessage::Graft { topic: topic.to_string() };
             tx.send((peer.clone(), msg)).await
-                .map_err(|_| AdaptiveNetworkError::Other("Failed to send GRAFT".to_string()))?;
+                .map_err(|_| AdaptiveNetworkError::Other("Failed to send GRAFT".to_string().into()))?;
         }
         Ok(())
     }
@@ -341,7 +441,7 @@ impl AdaptiveGossipSub {
                 backoff 
             };
             tx.send((peer.clone(), msg)).await
-                .map_err(|_| AdaptiveNetworkError::Other("Failed to send PRUNE".to_string()))?;
+                .map_err(|_| AdaptiveNetworkError::Other("Failed to send PRUNE".to_string().into()))?;
         }
         Ok(())
     }
@@ -355,7 +455,7 @@ impl AdaptiveGossipSub {
                 message_ids 
             };
             tx.send((peer.clone(), msg)).await
-                .map_err(|_| AdaptiveNetworkError::Other("Failed to send IHAVE".to_string()))?;
+                .map_err(|_| AdaptiveNetworkError::Other("Failed to send IHAVE".to_string().into()))?;
         }
         Ok(())
     }
@@ -366,7 +466,7 @@ impl AdaptiveGossipSub {
         if let Some(tx) = control_tx.as_ref() {
             let msg = ControlMessage::IWant { message_ids };
             tx.send((peer.clone(), msg)).await
-                .map_err(|_| AdaptiveNetworkError::Other("Failed to send IWANT".to_string()))?;
+                .map_err(|_| AdaptiveNetworkError::Other("Failed to send IWANT".to_string().into()))?;
         }
         Ok(())
     }
@@ -475,7 +575,7 @@ impl AdaptiveGossipSub {
             .map(|(peer_id, score)| (peer_id.clone(), score.score()))
             .collect();
         
-        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         candidates.first().map(|(peer, _)| peer.clone())
     }
     
@@ -592,6 +692,25 @@ impl AdaptiveGossipSub {
         priorities.insert(topic.to_string(), priority);
     }
     
+    /// Register a message validator for a topic
+    pub async fn register_validator(&self, topic: &str, validator: Box<dyn MessageValidator + Send + Sync>) -> Result<()> {
+        let mut validators = self.message_validators.write().await;
+        validators.insert(topic.to_string(), validator);
+        Ok(())
+    }
+    
+    /// Validate a message before processing
+    async fn validate_message(&self, message: &GossipMessage) -> Result<bool> {
+        let validators = self.message_validators.read().await;
+        
+        if let Some(validator) = validators.get(&message.topic) {
+            validator.validate(message).await
+        } else {
+            // No validator registered, accept by default
+            Ok(true)
+        }
+    }
+    
     /// Reduce gossip fanout during high churn
     pub async fn reduce_fanout(&self, factor: f64) {
         // In a real implementation, would reduce mesh degree based on factor
@@ -628,6 +747,7 @@ mod tests {
             fn get_global_trust(&self) -> HashMap<NodeId, f64> {
                 HashMap::new()
             }
+            fn remove_node(&self, _node: &NodeId) {}
         }
         
         use crate::peer_record::UserId;
@@ -664,6 +784,7 @@ mod tests {
             fn get_global_trust(&self) -> HashMap<NodeId, f64> {
                 HashMap::new()
             }
+            fn remove_node(&self, _node: &NodeId) {}
         }
         
         use crate::peer_record::UserId;
@@ -705,6 +826,7 @@ mod tests {
             fn get_global_trust(&self) -> HashMap<NodeId, f64> {
                 HashMap::new()
             }
+            fn remove_node(&self, _node: &NodeId) {}
         }
         
         let mut hash = [0u8; 32];
@@ -764,6 +886,7 @@ mod tests {
             fn get_global_trust(&self) -> HashMap<NodeId, f64> {
                 HashMap::new()
             }
+            fn remove_node(&self, _node: &NodeId) {}
         }
         
         let mut hash = [0u8; 32];
@@ -790,6 +913,65 @@ mod tests {
     }
     
     #[tokio::test]
+    async fn test_message_validation() {
+        use crate::peer_record::UserId;
+        use rand::RngCore;
+        
+        struct MockTrustProvider;
+        impl TrustProvider for MockTrustProvider {
+            fn get_trust(&self, _node: &NodeId) -> f64 { 0.8 }
+            fn update_trust(&self, _from: &NodeId, _to: &NodeId, _success: bool) {}
+            fn get_global_trust(&self) -> HashMap<NodeId, f64> {
+                HashMap::new()
+            }
+            fn remove_node(&self, _node: &NodeId) {}
+        }
+        
+        // Custom validator that rejects messages with "bad" in the data
+        struct TestValidator;
+        #[async_trait::async_trait]
+        impl MessageValidator for TestValidator {
+            async fn validate(&self, message: &GossipMessage) -> Result<bool> {
+                Ok(!message.data.windows(3).any(|w| w == b"bad"))
+            }
+        }
+        
+        let mut hash = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut hash);
+        let local_id = UserId::from_bytes(hash);
+        
+        let trust_provider = Arc::new(MockTrustProvider);
+        let gossip = AdaptiveGossipSub::new(local_id, trust_provider);
+        
+        // Register validator
+        gossip.register_validator("test-topic", Box::new(TestValidator)).await.unwrap();
+        
+        // Test valid message
+        let valid_message = GossipMessage {
+            topic: "test-topic".to_string(),
+            data: vec![1, 2, 3, 4], // No "bad" in data
+            from: UserId::from_bytes([0; 32]),
+            seqno: 1,
+            timestamp: 12345,
+        };
+        
+        // Should succeed
+        assert!(gossip.publish("test-topic", valid_message).await.is_ok());
+        
+        // Test invalid message
+        let invalid_message = GossipMessage {
+            topic: "test-topic".to_string(),
+            data: vec![b'b', b'a', b'd', b'!'], // Contains "bad"
+            from: UserId::from_bytes([0; 32]),
+            seqno: 2,
+            timestamp: 12346,
+        };
+        
+        // Should fail validation
+        assert!(gossip.publish("test-topic", invalid_message).await.is_err());
+    }
+    
+    #[tokio::test]
     async fn test_ihave_iwant_flow() {
         use crate::peer_record::UserId;
         use rand::RngCore;
@@ -801,6 +983,7 @@ mod tests {
             fn get_global_trust(&self) -> HashMap<NodeId, f64> {
                 HashMap::new()
             }
+            fn remove_node(&self, _node: &NodeId) {}
         }
         
         let mut hash = [0u8; 32];

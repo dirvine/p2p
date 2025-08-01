@@ -306,13 +306,13 @@ mod tests {
     #[test]
     fn test_peer_id_display() {
         let peer_id = PeerId(vec![0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]);
-        assert_eq!(format!("{}", peer_id), "123456789abcdef0");
+        assert_eq!(format!("{}", peer_id).into(), "123456789abcdef0");
     }
     
     #[test]
     fn test_sensitive_debug() {
         let private_key = MlDsaPrivateKey(vec![0x42; 32]);
-        let debug_str = format!("{:?}", private_key);
+        let debug_str = format!("{:?}", private_key).into();
         assert!(!debug_str.contains("0x42"));
         assert!(debug_str.contains("***"));
     }

@@ -201,7 +201,7 @@ pub struct SecurityManager {
     auditor: Arc<SecurityAuditor>,
     
     /// Node identity for signing
-    identity: NodeIdentity,
+    _identity: NodeIdentity,
 }
 
 /// Rate limiter
@@ -216,7 +216,7 @@ pub struct RateLimiter {
     ip_requests: Arc<RwLock<HashMap<IpAddr, RequestWindow>>>,
     
     /// Connection counts
-    connections: Arc<RwLock<HashMap<NodeId, u32>>>,
+    _connections: Arc<RwLock<HashMap<NodeId, u32>>>,
     
     /// Join request tracking
     join_requests: Arc<RwLock<VecDeque<Instant>>>,
@@ -295,7 +295,7 @@ pub struct EclipseDetector {
 #[derive(Debug, Default)]
 struct AnomalyPatterns {
     /// Rapid connection attempts
-    rapid_connections: HashMap<NodeId, Vec<Instant>>,
+    _rapid_connections: HashMap<NodeId, Vec<Instant>>,
     
     /// Subnet distribution
     subnet_distribution: HashMap<String, u32>,
@@ -308,10 +308,10 @@ struct AnomalyPatterns {
 #[derive(Debug, Clone)]
 struct RoutingAnomaly {
     /// Node exhibiting anomaly
-    node_id: NodeId,
+    _node_id: NodeId,
     
     /// Type of anomaly
-    anomaly_type: AnomalyType,
+    _anomaly_type: AnomalyType,
     
     /// Detection time
     timestamp: Instant,
@@ -319,7 +319,7 @@ struct RoutingAnomaly {
 
 /// Anomaly types
 #[derive(Debug, Clone)]
-enum AnomalyType {
+pub enum AnomalyType {
     /// Too many nodes from same subnet
     SubnetConcentration,
     
@@ -336,7 +336,7 @@ enum AnomalyType {
 /// Data integrity verifier
 pub struct IntegrityVerifier {
     /// Configuration
-    config: IntegrityConfig,
+    _config: IntegrityConfig,
     
     /// Message verification stats
     stats: Arc<RwLock<VerificationStats>>,
@@ -355,7 +355,7 @@ struct VerificationStats {
     invalid_hashes: u64,
     
     /// Invalid signatures
-    invalid_signatures: u64,
+    _invalid_signatures: u64,
 }
 
 /// Security auditor
@@ -468,7 +468,7 @@ impl SecurityManager {
             eclipse_detector,
             integrity_verifier,
             auditor,
-            identity,
+            _identity: identity,
         }
     }
     
@@ -523,7 +523,7 @@ impl SecurityManager {
             if !self.rate_limiter.check_ip_rate(&ip_addr).await {
                 self.auditor.log_event(SecurityEvent::RateLimitExceeded,
                     None,
-                    format!("IP {ip_addr} rate limit exceeded"),
+                    format!("IP {ip_addr} rate limit exceeded").into(),
                     Severity::Warning).await;
                 return Err(SecurityError::RateLimitExceeded);
             }
@@ -539,7 +539,7 @@ impl SecurityManager {
         if diversity_score < self.config.eclipse_detection.min_diversity_score {
             self.auditor.log_event(SecurityEvent::EclipseAttackDetected,
                 None,
-                format!("Low routing table diversity: {diversity_score:.2}"),
+                format!("Low routing table diversity: {diversity_score:.2}").into(),
                 Severity::Critical).await;
             return Err(SecurityError::EclipseAttackDetected);
         }
@@ -596,7 +596,7 @@ impl SecurityManager {
         
         self.auditor.log_event(SecurityEvent::NodeBlacklisted,
             Some(node_id),
-            format!("Node blacklisted: {reason:?}"),
+            format!("Node blacklisted: {reason:?}").into(),
             Severity::Warning).await;
     }
     
@@ -619,7 +619,7 @@ impl SecurityManager {
     }
     
     /// Verify node identity
-    async fn verify_identity(&self, node: &NodeDescriptor) -> bool {
+    async fn verify_identity(&self, _node: &NodeDescriptor) -> bool {
         // Verify that the node ID matches the public key hash
         // This is a simplified check - real implementation would be more thorough
         true
@@ -633,7 +633,7 @@ impl RateLimiter {
             config,
             node_requests: Arc::new(RwLock::new(HashMap::new())),
             ip_requests: Arc::new(RwLock::new(HashMap::new())),
-            connections: Arc::new(RwLock::new(HashMap::new())),
+            _connections: Arc::new(RwLock::new(HashMap::new())),
             join_requests: Arc::new(RwLock::new(VecDeque::new())),
         }
     }
@@ -851,7 +851,7 @@ impl EclipseDetector {
         patterns.subnet_distribution.clear();
         
         for node_id in routing_table {
-            let subnet = format!("{:02x}{:02x}", node_id.hash[0], node_id.hash[1]);
+            let subnet = format!("{:02x}{:02x}", node_id.hash[0], node_id.hash[1]).into();
             *patterns.subnet_distribution.entry(subnet).or_insert(0) += 1;
         }
         
@@ -871,8 +871,8 @@ impl EclipseDetector {
         let mut patterns = self.patterns.write().await;
         
         patterns.routing_anomalies.push(RoutingAnomaly {
-            node_id,
-            anomaly_type,
+            _node_id: node_id,
+            _anomaly_type: anomaly_type,
             timestamp: Instant::now(),
         });
         
@@ -891,7 +891,7 @@ impl IntegrityVerifier {
     /// Create new integrity verifier
     pub fn new(config: IntegrityConfig) -> Self {
         Self {
-            config,
+            _config: config,
             stats: Arc::new(RwLock::new(VerificationStats::default())),
         }
     }
@@ -968,7 +968,7 @@ impl SecurityAuditor {
         }
         
         // Update event counts
-        let event_name = format!("{event_type:?}");
+        let event_name = format!("{event_type:?}").into();
         let mut counts = self.event_counts.write().await;
         *counts.entry(event_name).or_insert(0) += 1;
     }
@@ -1194,7 +1194,7 @@ mod tests {
     #[tokio::test]
     async fn test_security_manager_integration() {
         let config = SecurityConfig::default();
-        let identity = NodeIdentity::generate().await.unwrap();
+        let identity = NodeIdentity::generate().unwrap();
         let manager = SecurityManager::new(config, identity);
         
         // Test node join validation

@@ -24,7 +24,9 @@ use std::net::SocketAddr;
 use serde::{Deserialize, Serialize};
 
 // Temporary compatibility types for iroh removal
+#[allow(dead_code)]
 type NodeId = String; // Simplified placeholder
+#[allow(dead_code)]
 type RelayUrl = String; // Simplified placeholder
 
 /// QUIC-specific contact information for direct connectivity
@@ -258,7 +260,7 @@ impl ContactEntry {
     /// Get a summary string for debugging
     pub fn summary(&self) -> String {
         let quic_info = if let Some(ref quic_contact) = self.quic_contact {
-            format!(" QUIC: Setup:{:.0}ms", quic_contact.quic_quality.avg_connection_setup_time_ms)
+            format!(" QUIC: Setup:{:.0}ms", quic_contact.quic_quality.avg_connection_setup_time_ms).into()
         } else {
             " QUIC: None".to_string()
         };

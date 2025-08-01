@@ -23,6 +23,7 @@
 //! - Health checks and diagnostics
 
 use crate::{P2PError, Result};
+use crate::error::NetworkError;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -254,7 +255,7 @@ impl ResourceManager {
             while self.connection_semaphore.available_permits() < self.config.max_connections {
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
-        }).await.map_err(|_| P2PError::Network(crate::error::NetworkError::ProtocolError("Shutdown timeout exceeded".to_string())))?;
+        }).await.map_err(|_| P2PError::Network(crate::error::NetworkError::ProtocolError("Shutdown timeout exceeded".to_string().into())))?;
 
         info!("Resource manager shutdown completed");
         Ok(())
@@ -263,13 +264,13 @@ impl ResourceManager {
     /// Attempt to acquire a connection slot
     pub async fn acquire_connection(&self) -> Result<ConnectionGuard<'_>> {
         if self.is_shutting_down.load(Ordering::SeqCst) {
-            return Err(P2PError::Network(crate::error::NetworkError::ProtocolError("System is shutting down".to_string())));
+            return Err(P2PError::Network(crate::error::NetworkError::ProtocolError("System is shutting down".to_string().into())));
         }
 
         let permit = self.connection_semaphore.clone()
             .acquire_owned()
             .await
-            .map_err(|_| P2PError::Network(crate::error::NetworkError::ProtocolError("Connection semaphore closed".to_string())))?;
+            .map_err(|_| P2PError::Network(crate::error::NetworkError::ProtocolError("Connection semaphore closed".to_string().into())))?;
 
         debug!("Connection acquired, {} remaining", self.connection_semaphore.available_permits());
         Ok(ConnectionGuard { permit, _manager: self })
@@ -288,7 +289,7 @@ impl ResourceManager {
         let limiter = limiters.entry(peer_id.to_string())
             .or_insert_with(|| RateLimiter::new(limit as f64, self.config.rate_limits.burst_capacity as f64));
 
-        Ok(limiter.try_acquire())
+        limiter.try_acquire()
     }
 
     /// Record bandwidth usage
@@ -309,7 +310,7 @@ impl ResourceManager {
         if self.config.max_memory_bytes > 0 && metrics.memory_used > self.config.max_memory_bytes {
             warn!("Memory usage ({} bytes) exceeds limit ({} bytes)", 
                   metrics.memory_used, self.config.max_memory_bytes);
-            return Err(P2PError::Network(crate::error::NetworkError::ProtocolError("Memory limit exceeded".to_string())));
+            return Err(P2PError::Network(crate::error::NetworkError::ProtocolError("Memory limit exceeded".to_string().into())));
         }
 
         // Check bandwidth usage
@@ -417,7 +418,13 @@ impl ResourceManager {
         // Clean up expired rate limiters
         let mut limiters = self.rate_limiters.write().await;
         let now = Instant::now();
-        limiters.retain(|_, limiter| !limiter.is_expired(now));
+        limiters.retain(|_, limiter| {
+            // If is_expired fails, assume it's expired and remove it
+            match limiter.is_expired(now) {
+                Ok(expired) => !expired,
+                Err(_) => false,
+            }
+        });
         
         debug!("Cleanup completed, {} rate limiters remaining", limiters.len());
     }
@@ -514,34 +521,34 @@ impl RateLimiter {
         }
     }
 
-    fn try_acquire(&self) -> bool {
+    fn try_acquire(&self) -> Result<bool> {
         let now = Instant::now();
         
         // Refill tokens based on elapsed time
         {
-            let mut last_refill = self.last_refill.lock().unwrap();
+            let mut last_refill = self.last_refill.lock().map_err(|_| P2PError::Network(NetworkError::ProtocolError("mutex lock failed".to_string().into())))?;
             let elapsed = now.duration_since(*last_refill).as_secs_f64();
             
             if elapsed > 0.0 {
-                let mut tokens = self.tokens.lock().unwrap();
+                let mut tokens = self.tokens.lock().map_err(|_| P2PError::Network(NetworkError::ProtocolError("mutex lock failed".to_string().into())))?;
                 *tokens = (*tokens + elapsed * self.refill_rate).min(self.max_tokens);
                 *last_refill = now;
             }
         }
 
         // Try to consume a token
-        let mut tokens = self.tokens.lock().unwrap();
+        let mut tokens = self.tokens.lock().map_err(|_| P2PError::Network(NetworkError::ProtocolError("mutex lock failed".to_string().into())))?;
         if *tokens >= 1.0 {
             *tokens -= 1.0;
-            true
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 
-    fn is_expired(&self, now: Instant) -> bool {
-        let last_refill = *self.last_refill.lock().unwrap();
-        now.duration_since(last_refill) > Duration::from_secs(300) // 5 minutes
+    fn is_expired(&self, now: Instant) -> Result<bool> {
+        let last_refill = *self.last_refill.lock().map_err(|_| P2PError::Network(NetworkError::ProtocolError("mutex lock failed".to_string().into())))?;
+        Ok(now.duration_since(last_refill) > Duration::from_secs(300)) // 5 minutes
     }
 }
 
@@ -1071,7 +1078,7 @@ mod tests {
         let limiter = RateLimiter::new(10.0, 5.0); // 10 tokens max, 5 per second refill
         
         // Should start with full capacity
-        assert!(limiter.try_acquire());
+        assert!(limiter.try_acquire().unwrap());
     }
 
     #[test]
@@ -1079,11 +1086,11 @@ mod tests {
         let limiter = RateLimiter::new(2.0, 1.0); // 2 tokens max, 1 per second refill
         
         // Should allow 2 acquisitions
-        assert!(limiter.try_acquire());
-        assert!(limiter.try_acquire());
+        assert!(limiter.try_acquire().unwrap());
+        assert!(limiter.try_acquire().unwrap());
         
         // Should deny third acquisition
-        assert!(!limiter.try_acquire());
+        assert!(!limiter.try_acquire().unwrap());
     }
 
     #[tokio::test]
@@ -1091,14 +1098,14 @@ mod tests {
         let limiter = RateLimiter::new(1.0, 10.0); // 1 token max, 10 per second refill
         
         // Exhaust tokens
-        assert!(limiter.try_acquire());
-        assert!(!limiter.try_acquire());
+        assert!(limiter.try_acquire().unwrap());
+        assert!(!limiter.try_acquire().unwrap());
         
         // Wait for refill
         sleep(Duration::from_millis(200)).await; // Should refill at least 2 tokens
         
         // Should allow acquisition again
-        assert!(limiter.try_acquire());
+        assert!(limiter.try_acquire().unwrap());
     }
 
     #[test]

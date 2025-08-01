@@ -317,7 +317,7 @@ impl MCPSecurityManager {
     pub async fn generate_token(&self, peer_id: &PeerId, permissions: Vec<MCPPermission>, ttl: Duration) -> Result<String> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}"))))?;
+            .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}").into())))?;
         
         let payload = TokenPayload {
             iss: peer_id.clone(),
@@ -330,7 +330,7 @@ impl MCPSecurityManager {
             claims: {
                 let mut claims = HashMap::new();
                 claims.insert("permissions".to_string(), 
-                    serde_json::to_value(permissions.iter().map(|p| p.as_str()).collect::<Vec<_>>()).unwrap());
+                    serde_json::to_value(permissions.iter().map(|p| p.as_str()).collect::<Vec<_>>()).expect("valid security operation"));
                 claims
             },
         };
@@ -343,56 +343,56 @@ impl MCPSecurityManager {
         
         // Create token without signature first
         let header_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header)
-            .map_err(P2PError::Serialization)?);
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?);
         let payload_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload)
-            .map_err(P2PError::Serialization)?);
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?);
         
         // Sign the token
         let signing_input = format!("{header_b64}.{payload_b64}");
         let signature = self.sign_data(signing_input.as_bytes());
         let signature_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(signature);
         
-        Ok(format!("{header_b64}.{payload_b64}.{signature_b64}"))
+        Ok(format!("{header_b64}.{payload_b64}.{signature_b64}").into())
     }
     
     /// Verify authentication token
     pub async fn verify_token(&self, token: &str) -> Result<TokenPayload> {
         let parts: Vec<&str> = token.split('.').collect();
         if parts.len() != 3 {
-            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Invalid token format".to_string())));
+            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Invalid token format".to_string().into())));
         }
         
         let _header_data = base64::prelude::BASE64_URL_SAFE_NO_PAD.decode(parts[0])
-            .map_err(|e| P2PError::Mcp(crate::error::McpError::InvalidRequest(format!("Invalid header encoding: {e}"))))?;
+            .map_err(|e| P2PError::Mcp(crate::error::McpError::InvalidRequest(format!("Invalid header encoding: {e}").into())))?;
         let payload_data = base64::prelude::BASE64_URL_SAFE_NO_PAD.decode(parts[1])
-            .map_err(|e| P2PError::Mcp(crate::error::McpError::InvalidRequest(format!("Invalid payload encoding: {e}"))))?;
+            .map_err(|e| P2PError::Mcp(crate::error::McpError::InvalidRequest(format!("Invalid payload encoding: {e}").into())))?;
         let signature = base64::prelude::BASE64_URL_SAFE_NO_PAD.decode(parts[2])
-            .map_err(|e| P2PError::Mcp(crate::error::McpError::InvalidRequest(format!("Invalid signature encoding: {e}"))))?;
+            .map_err(|e| P2PError::Mcp(crate::error::McpError::InvalidRequest(format!("Invalid signature encoding: {e}").into())))?;
         
         // Verify signature
         let signing_input = format!("{}.{}", parts[0], parts[1]);
         let expected_signature = self.sign_data(signing_input.as_bytes());
         
         if signature != expected_signature {
-            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Invalid token signature".to_string())));
+            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Invalid token signature".to_string().into())));
         }
         
         // Parse payload
         let payload: TokenPayload = serde_json::from_slice(&payload_data)
-            .map_err(|e| P2PError::Mcp(crate::error::McpError::InvalidRequest(format!("Invalid payload: {e}"))))?;
+            .map_err(|e| P2PError::Mcp(crate::error::McpError::InvalidRequest(format!("Invalid payload: {e}").into())))?;
         
         // Check expiration
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}"))))?
+            .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}").into())))?
             .as_secs();
         
         if payload.exp < now {
-            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Token expired".to_string())));
+            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Token expired".to_string().into())));
         }
         
         if payload.nbf > now {
-            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Token not yet valid".to_string())));
+            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Token not yet valid".to_string().into())));
         }
         
         Ok(payload)
@@ -594,7 +594,7 @@ mod tests {
 
     /// Helper function to create a test PeerId
     fn create_test_peer() -> PeerId {
-        format!("test_peer_{}", rand::random::<u32>())
+        format!("test_peer_{}", rand::random::<u32>().into())
     }
 
     /// Helper function to create a test security manager
@@ -814,7 +814,7 @@ mod tests {
         // Should still have request history
         let requests = limiter.requests.read().await;
         assert!(requests.contains_key(&peer_id));
-        let peer_requests = requests.get(&peer_id).unwrap();
+        let peer_requests = requests.get(&peer_id).expect("valid security operation");
         assert_eq!(peer_requests.len(), 2);
     }
 
@@ -846,8 +846,8 @@ mod tests {
         assert_eq!(payload.aud, "mcp-server");
 
         // Check permissions in claims
-        let permissions_claim = payload.claims.get("permissions").unwrap();
-        let permission_strings: Vec<String> = serde_json::from_value(permissions_claim.clone()).unwrap();
+        let permissions_claim = payload.claims.get("permissions").expect("valid security operation");
+        let permission_strings: Vec<String> = serde_json::from_value(permissions_claim.clone()).expect("valid security operation");
         assert_eq!(permission_strings.len(), 2);
         assert!(permission_strings.contains(&"read:tools".to_string()));
         assert!(permission_strings.contains(&"execute:tools".to_string()));
@@ -930,7 +930,7 @@ mod tests {
         // Check that violation was recorded
         let stats = manager.get_peer_stats(&peer_id).await;
         assert!(stats.is_some());
-        let acl = stats.unwrap();
+        let acl = stats.expect("valid security operation");
         assert_eq!(acl.rate_violations, 1);
 
         Ok(())
@@ -984,26 +984,26 @@ mod tests {
         // Grant permission to create ACL entry
         manager.grant_permission(&peer_id, MCPPermission::ReadTools).await?;
 
-        let stats = manager.get_peer_stats(&peer_id).await.unwrap();
+        let stats = manager.get_peer_stats(&peer_id).await.expect("valid security operation");
         assert_eq!(stats.reputation, 0.5); // Default reputation
 
         // Increase reputation
         manager.update_reputation(&peer_id, 0.2).await?;
-        let stats = manager.get_peer_stats(&peer_id).await.unwrap();
+        let stats = manager.get_peer_stats(&peer_id).await.expect("valid security operation");
         assert_eq!(stats.reputation, 0.7);
 
         // Decrease reputation
         manager.update_reputation(&peer_id, -0.3).await?;
-        let stats = manager.get_peer_stats(&peer_id).await.unwrap();
+        let stats = manager.get_peer_stats(&peer_id).await.expect("valid security operation");
         assert!((stats.reputation - 0.4).abs() < 0.001); // Use epsilon for float comparison
 
         // Test bounds (should clamp to 0.0-1.0)
         manager.update_reputation(&peer_id, -1.0).await?;
-        let stats = manager.get_peer_stats(&peer_id).await.unwrap();
+        let stats = manager.get_peer_stats(&peer_id).await.expect("valid security operation");
         assert_eq!(stats.reputation, 0.0);
 
         manager.update_reputation(&peer_id, 2.0).await?;
-        let stats = manager.get_peer_stats(&peer_id).await.unwrap();
+        let stats = manager.get_peer_stats(&peer_id).await.expect("valid security operation");
         assert_eq!(stats.reputation, 1.0);
 
         Ok(())
@@ -1095,7 +1095,7 @@ mod tests {
         // Log 5 events
         for i in 0..5 {
             logger.log_event(
-                format!("event_{}", i),
+                format!("event_{}", i).into(),
                 peer_id.clone(),
                 HashMap::new(),
                 AuditSeverity::Info,
@@ -1119,7 +1119,7 @@ mod tests {
         // Log 5 events
         for i in 0..5 {
             logger.log_event(
-                format!("event_{}", i),
+                format!("event_{}", i).into(),
                 peer_id.clone(),
                 HashMap::new(),
                 AuditSeverity::Info,
@@ -1164,7 +1164,7 @@ mod tests {
     #[test]
     fn test_token_payload_structure() {
         let peer_id = create_test_peer();
-        let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("valid security operation").as_secs();
 
         let mut claims = HashMap::new();
         claims.insert("custom".to_string(), serde_json::json!("value"));

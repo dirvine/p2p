@@ -43,12 +43,14 @@ use rand::{RngCore, thread_rng};
 const MASTER_SEED_SIZE: usize = 32;
 
 /// Size of derived key material (32 bytes for Ed25519)
+#[allow(dead_code)]
 const DERIVED_KEY_SIZE: usize = 32;
 
 /// Maximum derivation depth to prevent stack overflow
 const MAX_DERIVATION_DEPTH: usize = 10;
 
 /// Size of derivation path index
+#[allow(dead_code)]
 const PATH_INDEX_SIZE: usize = 4;
 
 /// Hardened derivation marker (BIP32 style)
@@ -59,7 +61,7 @@ pub struct MasterSeed {
     /// Secure seed material
     seed: SecureMemory,
     /// Creation timestamp
-    created_at: u64,
+    _created_at: u64,
     /// Derivation counter for tracking usage
     derivation_counter: u64,
 }
@@ -93,7 +95,7 @@ impl Clone for DerivedKey {
     fn clone(&self) -> Self {
         // Create new Ed25519 key from bytes
         let signing_key = SigningKey::from_bytes(self.secret_key.as_bytes());
-        let verifying_key = VerifyingKey::from_bytes(self.public_key.as_bytes()).unwrap();
+        let verifying_key = VerifyingKey::from_bytes(self.public_key.as_bytes()).expect("valid public key bytes");
         
         Self {
             secret_key: signing_key,
@@ -126,7 +128,7 @@ pub struct HierarchicalKeyDerivation {
     /// Derivation cache
     cache: Arc<KeyDerivationCache>,
     /// Secure random number generator
-    rng: Arc<std::sync::Mutex<rand::rngs::ThreadRng>>,
+    _rng: Arc<std::sync::Mutex<rand::rngs::ThreadRng>>,
 }
 
 /// Batch key derivation request
@@ -194,7 +196,7 @@ impl MasterSeed {
         
         Ok(Self {
             seed,
-            created_at: current_timestamp(),
+            _created_at: current_timestamp(),
             derivation_counter: 0,
         })
     }
@@ -203,7 +205,7 @@ impl MasterSeed {
     pub fn from_entropy(entropy: &[u8]) -> Result<Self> {
         if entropy.len() < MASTER_SEED_SIZE {
             return Err(P2PError::Security(SecurityError::InvalidKey(
-                "Insufficient entropy for master seed".to_string()
+                "Insufficient entropy for master seed".to_string().into()
             )));
         }
         
@@ -211,7 +213,7 @@ impl MasterSeed {
         
         Ok(Self {
             seed,
-            created_at: current_timestamp(),
+            _created_at: current_timestamp(),
             derivation_counter: 0,
         })
     }
@@ -237,7 +239,7 @@ impl DerivationPath {
     pub fn new(components: Vec<u32>) -> Result<Self> {
         if components.len() > MAX_DERIVATION_DEPTH {
             return Err(P2PError::Security(SecurityError::InvalidKey(
-                format!("Derivation path too deep: {} > {}", components.len(), MAX_DERIVATION_DEPTH)
+                format!("Derivation path too deep: {} > {}", components.len(), MAX_DERIVATION_DEPTH).into()
             )));
         }
         
@@ -250,7 +252,7 @@ impl DerivationPath {
         
         if parts.is_empty() || parts[0] != "m" {
             return Err(P2PError::Security(SecurityError::InvalidKey(
-                "Invalid derivation path format".to_string()
+                "Invalid derivation path format".to_string().into()
             )));
         }
         
@@ -269,7 +271,7 @@ impl DerivationPath {
             
             let index: u32 = index_str.parse()
                 .map_err(|_| P2PError::Security(SecurityError::InvalidKey(
-                    format!("Invalid path component: {part}")
+                    format!("Invalid path component: {part}").into()
                 )))?;
             
             let final_index = if hardened {
@@ -343,7 +345,7 @@ impl KeyDerivationCache {
     
     /// Get cached key
     pub fn get(&self, path: &DerivationPath) -> Option<DerivedKey> {
-        let cache = self.cache.read().unwrap();
+        let cache = self.cache.read().expect("cache lock not poisoned");
         if let Some(key) = cache.get(path) {
             self.hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Some(key.clone())
@@ -355,7 +357,7 @@ impl KeyDerivationCache {
     
     /// Insert key into cache
     pub fn insert(&self, path: DerivationPath, key: DerivedKey) {
-        let mut cache = self.cache.write().unwrap();
+        let mut cache = self.cache.write().expect("cache lock not poisoned");
         
         // Evict oldest entries if cache is full
         if cache.len() >= self.max_size {
@@ -373,7 +375,7 @@ impl KeyDerivationCache {
     
     /// Clear the cache
     pub fn clear(&self) {
-        let mut cache = self.cache.write().unwrap();
+        let mut cache = self.cache.write().expect("cache lock not poisoned");
         cache.clear();
     }
     
@@ -381,7 +383,7 @@ impl KeyDerivationCache {
     pub fn stats(&self) -> (u64, u64, usize) {
         let hits = self.hits.load(std::sync::atomic::Ordering::Relaxed);
         let misses = self.misses.load(std::sync::atomic::Ordering::Relaxed);
-        let size = self.cache.read().unwrap().len();
+        let size = self.cache.read().expect("cache lock not poisoned").len();
         (hits, misses, size)
     }
 }
@@ -395,7 +397,7 @@ impl HierarchicalKeyDerivation {
         Self {
             master_seed,
             cache,
-            rng,
+            _rng: rng,
         }
     }
     
@@ -407,7 +409,7 @@ impl HierarchicalKeyDerivation {
         Self {
             master_seed,
             cache,
-            rng,
+            _rng: rng,
         }
     }
     
@@ -438,9 +440,9 @@ impl HierarchicalKeyDerivation {
         // Initial HKDF from master seed
         let hkdf = Hkdf::<Sha256>::new(None, &current_key);
         hkdf.expand(b"ed25519 seed", &mut current_key)
-            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("HKDF expansion failed".to_string())))?;
+            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("HKDF expansion failed".to_string().into())))?;
         hkdf.expand(b"chaincode", &mut current_chaincode)
-            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("HKDF expansion failed".to_string())))?;
+            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("HKDF expansion failed".to_string().into())))?;
         
         // Derive through each path component
         for &component in path.components() {
@@ -455,12 +457,12 @@ impl HierarchicalKeyDerivation {
         
         // Generate Ed25519 key pair
         let signing_key = SigningKey::from_bytes(&current_key[..32].try_into()
-            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Invalid Ed25519 secret key length".to_string())))?);
+            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Invalid Ed25519 secret key length".to_string().into())))?);
         let verifying_key = signing_key.verifying_key();
         
         // Generate X25519 key pair for key exchange
         let x25519_secret: [u8; 32] = current_key[..32].try_into()
-            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Invalid X25519 secret key".to_string())))?;
+            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Invalid X25519 secret key".to_string().into())))?;
         let x25519_public = x25519_dalek::PublicKey::from(x25519_secret).to_bytes();
         
         // Zeroize temporary key material
@@ -494,7 +496,7 @@ impl HierarchicalKeyDerivation {
         } else {
             // Non-hardened derivation
             let signing_key = SigningKey::from_bytes(&parent_key[..32].try_into()
-                .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Invalid parent key length".to_string())))?);
+                .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Invalid parent key length".to_string().into())))?);
             let verifying_key = signing_key.verifying_key();
             data.extend_from_slice(verifying_key.as_bytes());
         }
@@ -507,9 +509,9 @@ impl HierarchicalKeyDerivation {
         let mut child_chaincode = [0u8; 32];
         
         hkdf.expand(b"key", &mut child_key)
-            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Child key derivation failed".to_string())))?;
+            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Child key derivation failed".to_string().into())))?;
         hkdf.expand(b"chaincode", &mut child_chaincode)
-            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Child chaincode derivation failed".to_string())))?;
+            .map_err(|_| P2PError::Security(SecurityError::InvalidKey("Child chaincode derivation failed".to_string().into())))?;
         
         // Zeroize temporary data
         data.zeroize();
@@ -596,8 +598,8 @@ impl DerivedKey {
 fn current_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Zeroize trait for secure memory clearing

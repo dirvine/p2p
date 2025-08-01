@@ -36,7 +36,11 @@ tracing = "0.1"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # P2P and networking
-ant-quic = "0.4.4"
+quinn = "0.11"
+rustls = "0.23"
+
+# Logging
+log = "0.4"
 
 # Cryptography  
 ed25519-dalek = { version = "2.1", features = ["rand_core", "serde"] }

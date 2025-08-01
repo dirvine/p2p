@@ -493,7 +493,7 @@ impl ProjectsManager {
         let size_mb = content.len() / (1024 * 1024);
         if size_mb as u64 > project.settings.max_file_size_mb {
             return Err(ProjectsError::InvalidOperation(
-                format!("File too large: {}MB (max: {}MB)", size_mb, project.settings.max_file_size_mb)
+                format!("File too large: {}MB (max: {}MB).into()", size_mb, project.settings.max_file_size_mb)
             ));
         }
         
@@ -684,7 +684,7 @@ impl ProjectsManager {
         // Store new content
         let encrypted_content = self.encrypt_content(content, &document.current_version.encryption_key.ciphertext)?;
         let file_metadata = FileMetadata {
-            file_id: format!("{}_v{}", document_id.0, new_version.version_number),
+            file_id: format!("{}_v{}", document_id.0, new_version.version_number).into(),
             name: document.name.clone(),
             size: content.len() as u64,
             mime_type: "application/octet-stream".to_string(),
@@ -763,8 +763,8 @@ impl ProjectsManager {
     /// Check project permission
     fn check_project_permission(
         &self,
-        project: &Project,
-        permission: ProjectPermission,
+        _project: &Project,
+        _permission: ProjectPermission,
     ) -> Result<()> {
         // Simplified permission check
         // In practice, would check threshold groups and access groups
@@ -852,7 +852,7 @@ impl ProjectsManager {
         // Encrypt the data
         let mut ciphertext = content.to_vec();
         let tag = cipher.encrypt_in_place_detached(nonce, b"", &mut ciphertext)
-            .map_err(|e| ProjectsError::InvalidOperation(format!("Encryption failed: {e}")))?;
+            .map_err(|e| ProjectsError::InvalidOperation(format!("Encryption failed: {e}").into()))?;
         
         // Combine nonce + ciphertext + tag
         let mut result = Vec::with_capacity(12 + ciphertext.len() + 16);
@@ -893,7 +893,7 @@ impl ProjectsManager {
         
         // Decrypt the data
         cipher.decrypt_in_place_detached(nonce, b"", &mut plaintext, tag.into())
-            .map_err(|e| ProjectsError::InvalidOperation(format!("Decryption failed: {e}")))?;
+            .map_err(|e| ProjectsError::InvalidOperation(format!("Decryption failed: {e}").into()))?;
         
         Ok(plaintext)
     }

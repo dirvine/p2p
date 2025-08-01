@@ -1,0 +1,112 @@
+# Saorsa P2P Network Configuration
+# This is an example configuration file showing all available options
+
+[network]
+# Bootstrap nodes for initial network discovery
+# Can be multiaddr format or standard socket addresses
+bootstrap_nodes = [
+    "seed1.saorsa.network:9000",
+    "seed2.saorsa.network:9000",
+    "/ip4/185.199.108.153/tcp/9000",
+]
+
+# Local listen address (0.0.0.0 listens on all interfaces)
+listen_address = "0.0.0.0:9000"
+
+# Public address for external connections (auto-detected if not specified)
+# public_address = "203.0.113.1:9000"
+
+# Enable IPv6 support
+ipv6_enabled = true
+
+# Maximum concurrent connections
+max_connections = 10000
+
+# Connection timeout in seconds
+connection_timeout = 30
+
+# Keepalive interval in seconds
+keepalive_interval = 60
+
+[security]
+# Rate limit (requests per second per IP)
+rate_limit = 1000
+
+# Connection limit per IP address
+connection_limit = 100
+
+# Enable TLS/encryption for all connections
+encryption_enabled = true
+
+# Minimum TLS version ("1.2" or "1.3")
+min_tls_version = "1.3"
+
+# Security level for identity management ("Low", "Medium", "High")
+identity_security_level = "High"
+
+[storage]
+# Base path for data storage
+path = "./data"
+
+# Maximum storage size (examples: "100MB", "10GB", "1TB")
+max_size = "10GB"
+
+# Cache size in MB
+cache_size = 256
+
+# Enable compression for stored data
+compression_enabled = true
+
+[mcp]
+# Enable Model Context Protocol server
+enabled = true
+
+# MCP server port
+port = 9001
+
+# Maximum tool execution time in seconds
+max_execution_time = 300
+
+# Enable resource monitoring
+monitoring_enabled = true
+
+[dht]
+# Replication factor (K value) - number of nodes storing each record
+replication_factor = 8
+
+# Alpha value for parallel queries
+alpha = 3
+
+# Beta value for routing optimization
+beta = 1
+
+# Record TTL in seconds
+record_ttl = 3600
+
+# Enable adaptive routing based on network conditions
+adaptive_routing = true
+
+[transport]
+# Preferred transport protocol ("quic", "tcp", "webrtc")
+protocol = "quic"
+
+# Enable specific transports
+quic_enabled = true
+tcp_enabled = true
+webrtc_enabled = false
+
+# Transport buffer size in bytes
+buffer_size = 65536
+
+[identity]
+# Default key derivation path (BIP32/BIP44 format)
+derivation_path = "m/44'/0'/0'/0/0"
+
+# Key rotation interval in days (0 = disabled)
+rotation_interval = 90
+
+# Enable automatic identity backups
+backup_enabled = true
+
+# Backup interval in hours
+backup_interval = 24

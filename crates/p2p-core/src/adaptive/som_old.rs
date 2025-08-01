@@ -547,7 +547,7 @@ impl RoutingStrategy for SOMRoutingStrategy {
             }
         }
         
-        scored_nodes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        scored_nodes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         
         // Return top nodes as path
         Ok(scored_nodes.into_iter()
@@ -571,6 +571,13 @@ impl RoutingStrategy for SOMRoutingStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    
+    /// Create a test verifying key
+    fn create_test_verifying_key() -> ed25519_dalek::VerifyingKey {
+        // For tests, we can use a dummy key with all zeros
+        ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32])
+            .expect("Test key creation should not fail")
+    }
     
     #[test]
     fn test_som_creation() {
@@ -599,7 +606,7 @@ mod tests {
         
         let node = NodeDescriptor {
             id: node_id.clone(),
-            public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
+            public_key: create_test_verifying_key(),
             addresses: vec!["127.0.0.1:8080".to_string()],
             hyperbolic: None,
             som_position: None,
@@ -644,7 +651,7 @@ mod tests {
         
         let node = NodeDescriptor {
             id: node_id,
-            public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
+            public_key: create_test_verifying_key(),
             addresses: vec![],
             hyperbolic: None,
             som_position: None,
@@ -684,7 +691,7 @@ mod tests {
             
             let node = NodeDescriptor {
                 id: node_id,
-                public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
+                public_key: create_test_verifying_key(),
                 addresses: vec![],
                 hyperbolic: None,
                 som_position: None,
@@ -726,7 +733,7 @@ mod tests {
         for (id, storage) in [(local_id.clone(), 100), (target_id.clone(), 900)] {
             let node = NodeDescriptor {
                 id: id.clone(),
-                public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
+                public_key: create_test_verifying_key(),
                 addresses: vec![],
                 hyperbolic: None,
                 som_position: None,

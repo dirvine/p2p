@@ -54,7 +54,7 @@ impl BootstrapDiscovery {
         // IPv6 primary bootstrap (Digital Ocean IPv6)
         hardcoded_nodes.insert(
             "global.fast.eagle".to_string(),
-            NetworkAddress::from_ipv6("2604:a880:400:d1:0:2:40d7:9001".parse().unwrap(), 9000)
+            NetworkAddress::from_ipv6("2604:a880:400:d1:0:2:40d7:9001".parse().expect("valid discovery operation"), 9000)
         );
         
         // IPv4 fallback bootstrap
@@ -324,7 +324,7 @@ mod tests {
         let config = BootstrapConfig::default();
         let discovery = ConfigurableBootstrapDiscovery::new(config);
         
-        let addresses = discovery.discover().await.unwrap();
+        let addresses = discovery.discover().await.expect("valid discovery operation");
         assert!(!addresses.is_empty(), "Should discover bootstrap addresses");
     }
 

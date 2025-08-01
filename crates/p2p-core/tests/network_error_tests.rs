@@ -1,7 +1,7 @@
-// Network module error handling tests
+//! Network module error handling tests
 
-use p2p_core::error::{NetworkError, P2PError, Result};
-use p2p_core::network::{P2PNode, P2PNodeConfig};
+use saorsa_core::error::{NetworkError, P2PError, Result};
+use saorsa_core::network::{P2PNode, P2PNodeConfig};
 use std::net::SocketAddr;
 use std::time::Duration;
 

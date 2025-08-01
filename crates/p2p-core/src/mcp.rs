@@ -23,6 +23,8 @@
 //! - Security and authentication for remote calls
 //! - Service health monitoring and load balancing
 
+#![allow(missing_docs)]
+
 pub mod security;
 
 use crate::dht::{Key, DHT};
@@ -1077,17 +1079,17 @@ impl MCPServer {
         // Check for duplicate names
         let tools = self.tools.read().await;
         if tools.contains_key(&tool.definition.name) {
-            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest(format!("Tool already exists: {}", tool.definition.name))));
+            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest(format!("Tool already exists: {}", tool.definition.name).into())));
         }
         
         // Validate tool name
         if tool.definition.name.is_empty() || tool.definition.name.len() > 100 {
-            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Invalid tool name".to_string())));
+            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Invalid tool name".to_string().into())));
         }
         
         // Validate schema
         if !tool.definition.input_schema.is_object() {
-            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Tool input schema must be an object".to_string())));
+            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Tool input schema must be an object".to_string().into())));
         }
         
         Ok(())
@@ -1099,7 +1101,7 @@ impl MCPServer {
         let service_info = json!({
             "tool_name": tool_name,
             "node_id": self.get_node_id_string(),
-            "registered_at": SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}"))))?.as_secs(),
+            "registered_at": SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}").into())))?.as_secs(),
             "capabilities": self.get_server_capabilities().await
         });
         
@@ -1143,12 +1145,12 @@ impl MCPServer {
         
         // 1. Check rate limiting
         if !self.check_rate_limit(&context.caller_id).await? {
-            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Rate limit exceeded".to_string())));
+            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Rate limit exceeded".to_string().into())));
         }
         
         // 2. Check tool execution permission
         if !self.check_permission(&context.caller_id, &MCPPermission::ExecuteTools).await? {
-            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Permission denied: execute tools".to_string())));
+            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Permission denied: execute tools".to_string().into())));
         }
         
         // 3. Check tool-specific security policy
@@ -1158,12 +1160,12 @@ impl MCPServer {
         match tool_security_level {
             SecurityLevel::Admin => {
                 if !self.check_permission(&context.caller_id, &MCPPermission::Admin).await? {
-                    return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Permission denied: admin access required".to_string())));
+                    return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Permission denied: admin access required".to_string().into())));
                 }
             }
             SecurityLevel::Strong => {
                 if !is_trusted {
-                    return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Permission denied: trusted peer required".to_string())));
+                    return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Permission denied: trusted peer required".to_string().into())));
                 }
             }
             SecurityLevel::Basic => {
@@ -1172,7 +1174,7 @@ impl MCPServer {
                     if let Some(auth_info) = &context.auth_info {
                         self.verify_auth_token(&auth_info.token).await?;
                     } else {
-                        return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Authentication required".to_string())));
+                        return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Authentication required".to_string().into())));
                     }
                 }
             }
@@ -1185,7 +1187,7 @@ impl MCPServer {
         let mut details = HashMap::new();
         details.insert("action".to_string(), "tool_call".to_string());
         details.insert("tool_name".to_string(), tool_name.to_string());
-        details.insert("security_level".to_string(), format!("{tool_security_level:?}"));
+        details.insert("security_level".to_string(), format!("{tool_security_level:?}").into());
         
         self.audit_logger.log_event(
             "tool_execution".to_string(),
@@ -1201,18 +1203,18 @@ impl MCPServer {
         };
         
         if !tool_exists {
-            return Err(P2PError::Mcp(crate::error::McpError::ToolNotFound { tool: tool_name.to_string() }));
+            return Err(P2PError::Mcp(crate::error::McpError::ToolNotFound(tool_name.to_string().into())));
         }
         
         // Validate arguments and get requirements
         let requirements = {
             let tools = self.tools.read().await;
             let tool = tools.get(tool_name)
-                .ok_or_else(|| P2PError::Mcp(crate::error::McpError::ToolNotFound { tool: tool_name.to_string() }))?;
+                .ok_or_else(|| P2PError::Mcp(crate::error::McpError::ToolNotFound(tool_name.to_string().into())))?;
             
             // Validate arguments
             if let Err(e) = tool.handler.validate(&arguments) {
-                return Err(P2PError::Mcp(crate::error::McpError::ToolExecutionFailed { tool: tool_name.to_string(), reason: format!("Validation failed: {e}") }));
+                return Err(P2PError::Mcp(crate::error::McpError::ExecutionFailed(format!("{}: Validation failed: {e}", tool_name).into())));
             }
             
             // Get resource requirements
@@ -1230,17 +1232,15 @@ impl MCPServer {
         let result = timeout(execution_timeout, async move {
             let tools = tools_clone.read().await;
             let tool = tools.get(&tool_name_owned)
-                .ok_or_else(|| P2PError::Mcp(crate::error::McpError::ToolNotFound { tool: tool_name_owned.clone() }))?;
+                .ok_or_else(|| P2PError::Mcp(crate::error::McpError::ToolNotFound(tool_name_owned.clone().into())))?;
             tool.handler.execute(arguments).await
         }).await
-        .map_err(|_| P2PError::Mcp(crate::error::McpError::ToolExecutionFailed {
-            tool: tool_name.to_string(),
-            reason: "Tool execution timeout".to_string(),
-        }))?
-        .map_err(|e| P2PError::Mcp(crate::error::McpError::ToolExecutionFailed {
-            tool: tool_name.to_string(),
-            reason: format!("{e}"),
-        }))?;
+        .map_err(|_| P2PError::Mcp(crate::error::McpError::ExecutionFailed(
+            format!("{}: Tool execution timeout", tool_name).into()
+        )))?
+        .map_err(|e| P2PError::Mcp(crate::error::McpError::ExecutionFailed(
+            format!("{}: {e}", tool_name).into()
+        )))?;
         
         let execution_time = start_time.elapsed();
         
@@ -1270,14 +1270,14 @@ impl MCPServer {
         // Check memory limit
         if let Some(max_memory) = requirements.max_memory {
             if max_memory > self.config.tool_memory_limit {
-                return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Tool memory requirement exceeds limit".to_string())));
+                return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Tool memory requirement exceeds limit".to_string().into())));
             }
         }
         
         // Check execution time limit
         if let Some(max_execution_time) = requirements.max_execution_time {
             if max_execution_time > self.config.max_tool_execution_time {
-                return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Tool execution time requirement exceeds limit".to_string())));
+                return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Tool execution time requirement exceeds limit".to_string().into())));
             }
         }
         
@@ -1862,7 +1862,7 @@ impl MCPServer {
             target_peer: Some(peer_id.clone()),
             timestamp: SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}"))))?
+                .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}").into())))?
                 .as_secs(),
             payload: mcp_message,
             ttl: 5, // Max 5 hops
@@ -1870,10 +1870,10 @@ impl MCPServer {
         
         // Serialize the message
         let message_data = serde_json::to_vec(&p2p_message)
-            .map_err(P2PError::Serialization)?;
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
         
         if message_data.len() > MAX_MESSAGE_SIZE {
-            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Message too large".to_string())));
+            return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Message too large".to_string().into())));
         }
         
         // Create response channel
@@ -1903,7 +1903,7 @@ impl MCPServer {
                 "tool_name": tool_name
             }))
         } else {
-            Err(P2PError::Mcp(crate::error::McpError::ServerUnavailable("Network sender not configured".to_string())))
+            Err(P2PError::Mcp(crate::error::McpError::ServerUnavailable("Network sender not configured".to_string().into())))
         }
     }
     
@@ -1911,7 +1911,7 @@ impl MCPServer {
     pub async fn handle_p2p_message(&self, message_data: &[u8], source_peer: &PeerId) -> Result<Option<Vec<u8>>> {
         // Deserialize the P2P message
         let p2p_message: P2PMCPMessage = serde_json::from_slice(message_data)
-            .map_err(P2PError::Serialization)?;
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
         
         debug!("Received MCP message from {}: {:?}", source_peer, p2p_message.message_type);
         
@@ -2007,7 +2007,7 @@ impl MCPServer {
                     target_peer: Some(message.source_peer),
                     timestamp: SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}"))))?
+                        .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}").into())))?
                         .as_secs(),
                     payload: response_payload,
                     ttl: message.ttl.saturating_sub(1),
@@ -2015,7 +2015,7 @@ impl MCPServer {
                 
                 // Serialize response
                 let response_data = serde_json::to_vec(&response_message)
-                    .map_err(P2PError::Serialization)?;
+                    .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
                 
                 Ok(Some(response_data))
             }
@@ -2034,14 +2034,14 @@ impl MCPServer {
                     target_peer: Some(message.source_peer),
                     timestamp: SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}"))))?
+                        .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}").into())))?
                         .as_secs(),
                     payload: response_payload,
                     ttl: message.ttl.saturating_sub(1),
                 };
                 
                 let response_data = serde_json::to_vec(&response_message)
-                    .map_err(P2PError::Serialization)?;
+                    .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
                 
                 Ok(Some(response_data))
             }
@@ -2054,7 +2054,7 @@ impl MCPServer {
                     target_peer: Some(message.source_peer),
                     timestamp: SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}"))))?
+                        .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}").into())))?
                         .as_secs(),
                     payload: MCPMessage::Error {
                         code: -2,
@@ -2065,7 +2065,7 @@ impl MCPServer {
                 };
                 
                 let response_data = serde_json::to_vec(&error_response)
-                    .map_err(P2PError::Serialization)?;
+                    .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
                 
                 Ok(Some(response_data))
             }
@@ -2093,7 +2093,7 @@ impl MCPServer {
             
             Ok(token)
         } else {
-            Err(P2PError::Mcp(crate::error::McpError::ServerUnavailable("Authentication not enabled".to_string())))
+            Err(P2PError::Mcp(crate::error::McpError::ServerUnavailable("Authentication not enabled".to_string().into())))
         }
     }
     
@@ -2133,7 +2133,7 @@ impl MCPServer {
                 }
             }
         } else {
-            Err(P2PError::Mcp(crate::error::McpError::ServerUnavailable("Authentication not enabled".to_string())))
+            Err(P2PError::Mcp(crate::error::McpError::ServerUnavailable("Authentication not enabled".to_string().into())))
         }
     }
     
@@ -2191,7 +2191,7 @@ impl MCPServer {
             
             Ok(())
         } else {
-            Err(P2PError::Mcp(crate::error::McpError::ServerUnavailable("Security not enabled".to_string())))
+            Err(P2PError::Mcp(crate::error::McpError::ServerUnavailable("Security not enabled".to_string().into())))
         }
     }
     
@@ -2214,7 +2214,7 @@ impl MCPServer {
             
             Ok(())
         } else {
-            Err(P2PError::Mcp(crate::error::McpError::ServerUnavailable("Security not enabled".to_string())))
+            Err(P2PError::Mcp(crate::error::McpError::ServerUnavailable("Security not enabled".to_string().into())))
         }
     }
     
@@ -2236,7 +2236,7 @@ impl MCPServer {
             
             Ok(())
         } else {
-            Err(P2PError::Mcp(crate::error::McpError::ServerUnavailable("Security not enabled".to_string())))
+            Err(P2PError::Mcp(crate::error::McpError::ServerUnavailable("Security not enabled".to_string().into())))
         }
     }
     
@@ -2258,7 +2258,7 @@ impl MCPServer {
             let mut details = HashMap::new();
             details.insert("action".to_string(), "tool_policy_set".to_string());
             details.insert("tool_name".to_string(), tool_name);
-            details.insert("security_level".to_string(), format!("{level:?}"));
+            details.insert("security_level".to_string(), format!("{level:?}").into());
             
             self.audit_logger.log_event(
                 "security_policy".to_string(),
@@ -2269,7 +2269,7 @@ impl MCPServer {
             
             Ok(())
         } else {
-            Err(P2PError::Mcp(crate::error::McpError::ServerUnavailable("Security not enabled".to_string())))
+            Err(P2PError::Mcp(crate::error::McpError::ServerUnavailable("Security not enabled".to_string().into())))
         }
     }
     
@@ -2355,7 +2355,7 @@ impl MCPServer {
         let tool_names: Vec<String> = tools.keys().cloned().collect();
         
         let service = MCPService {
-            service_id: format!("mcp-{}", self.config.server_name),
+            service_id: format!("mcp-{}", self.config.server_name).into(),
             node_id: "local".to_string(), // TODO: Get actual peer ID from network layer
             tools: tool_names,
             capabilities: MCPCapabilities {
@@ -2412,14 +2412,13 @@ impl MCPServer {
         // Store individual service record
         let service_key = Key::new(format!("mcp:service:{}", service.service_id).as_bytes());
         let service_data = serde_json::to_vec(service)
-            .map_err(P2PError::Serialization)?;
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
         
         let dht_guard = dht.write().await;
         dht_guard.put(service_key.clone(), service_data).await
-            .map_err(|e| P2PError::Dht(crate::error::DhtError::StorageFailed {
-                key: service_key.to_string(),
-                reason: format!("Failed to store service: {e}"),
-            }))?;
+            .map_err(|e| P2PError::Dht(crate::error::DhtError::StoreFailed(
+                format!("{}: Failed to store service: {e}", service_key).into()
+            )))?;
         
         // Also add to services index
         let services_key = Key::new(b"mcp:services:index");
@@ -2434,13 +2433,12 @@ impl MCPServer {
             service_ids.push(service.service_id.clone());
             
             let index_data = serde_json::to_vec(&service_ids)
-                .map_err(P2PError::Serialization)?;
+                .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
             
             dht_guard.put(services_key.clone(), index_data).await
-                .map_err(|e| P2PError::Dht(crate::error::DhtError::StorageFailed {
-                    key: services_key.to_string(),
-                    reason: format!("Failed to update services index: {e}"),
-                }))?;
+                .map_err(|e| P2PError::Dht(crate::error::DhtError::StoreFailed(
+                    format!("{}: Failed to update services index: {e}", services_key).into()
+                )))?;
         }
         
         Ok(())
@@ -2460,7 +2458,7 @@ impl MCPServer {
             payload: MCPMessage::ListToolsResult {
                 tools: service.tools.iter().map(|tool_name| MCPTool {
                     name: tool_name.clone(),
-                    description: format!("Tool from {}", service.metadata.name),
+                    description: format!("Tool from {}", service.metadata.name).into(),
                     input_schema: json!({"type": "object"}),
                 }).collect(),
                 next_cursor: None,
@@ -2469,7 +2467,7 @@ impl MCPServer {
         };
         
         let _announcement_data = serde_json::to_vec(&announcement)
-            .map_err(P2PError::Serialization)?;
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
         
         // TODO: Broadcast to all connected peers
         // For now, this would require getting the list of connected peers from the network layer
@@ -2585,7 +2583,7 @@ impl MCPServer {
         if let MCPMessage::ListToolsResult { tools, .. } = message.payload {
             // Create a service record from the advertisement
             let service = MCPService {
-                service_id: format!("mcp-{}", message.source_peer),
+                service_id: format!("mcp-{}", message.source_peer).into(),
                 node_id: message.source_peer.clone(),
                 tools: tools.iter().map(|t| t.name.clone()).collect(),
                 capabilities: MCPCapabilities {
@@ -2599,7 +2597,7 @@ impl MCPServer {
                     logging: None,
                 },
                 metadata: MCPServiceMetadata {
-                    name: format!("Remote MCP Service - {}", message.source_peer),
+                    name: format!("Remote MCP Service - {}", message.source_peer).into(),
                     version: "unknown".to_string(),
                     description: Some("Remote P2P MCP Service".to_string()),
                     tags: vec!["p2p".to_string(), "remote".to_string()],
@@ -2659,7 +2657,7 @@ impl MCPServer {
                 target_peer: Some(message.source_peer),
                 timestamp: SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}"))))?
+                    .map_err(|e| P2PError::Identity(crate::error::IdentityError::SystemTime(format!("Time error: {e}").into())))?
                     .as_secs(),
                 payload: MCPMessage::ListToolsResult {
                     tools: local_services.into_iter()
@@ -2675,7 +2673,7 @@ impl MCPServer {
             };
             
             let response_data = serde_json::to_vec(&advertisement)
-                .map_err(P2PError::Serialization)?;
+                .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
             
             Ok(Some(response_data))
         } else {
@@ -2741,7 +2739,7 @@ impl ToolBuilder {
     /// Build the tool
     pub fn build(self) -> Result<Tool> {
         let handler = self.handler
-            .ok_or_else(|| P2PError::Mcp(crate::error::McpError::InvalidRequest("Tool handler is required".to_string())))?;
+            .ok_or_else(|| P2PError::Mcp(crate::error::McpError::InvalidRequest("Tool handler is required".to_string().into())))?;
         
         let definition = MCPTool {
             name: self.name,
@@ -2905,10 +2903,9 @@ mod tests {
                 tokio::time::sleep(execution_time).await;
 
                 if should_error {
-                    return Err(P2PError::Mcp(crate::error::McpError::ToolExecutionFailed {
-                        tool: name.clone(),
-                        reason: "Test error".to_string(),
-                    }).into());
+                    return Err(P2PError::Mcp(crate::error::McpError::ToolExecutionFailed(
+                        format!("{}: Test error", name).into()
+                    )).into());
                 }
 
                 // Echo back the arguments with a response marker
@@ -2922,7 +2919,7 @@ mod tests {
 
         fn validate(&self, arguments: &Value) -> Result<()> {
             if !arguments.is_object() {
-                return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Arguments must be an object".to_string())).into());
+                return Err(P2PError::Mcp(crate::error::McpError::InvalidRequest("Arguments must be an object".to_string().into())).into());
             }
             Ok(())
         }
@@ -2963,7 +2960,7 @@ mod tests {
         Tool {
             definition: MCPTool {
                 name: name.to_string(),
-                description: format!("Test tool: {}", name),
+                description: format!("Test tool: {}", name).into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -3503,7 +3500,7 @@ mod tests {
         // Test function tool handler creation and execution
         let handler = FunctionToolHandler::new(|args: Value| async move {
             let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("world");
-            Ok(json!({"greeting": format!("Hello, {}!", name)}))
+            Ok(json!({"greeting": format!("Hello, {}!", name).into()}))
         });
 
         let args = json!({"name": "Alice"});

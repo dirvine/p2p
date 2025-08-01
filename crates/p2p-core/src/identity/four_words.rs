@@ -98,9 +98,9 @@ impl FourWordAddress {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < 8 {
             return Err(P2PError::Identity(
-                IdentityError::InvalidFormat {
-                    reason: "Input must be at least 8 bytes for four-word address".to_string()
-                }
+                IdentityError::InvalidFormat(
+                    "Input must be at least 8 bytes for four-word address".to_string().into()
+                )
             ));
         }
         
@@ -145,17 +145,17 @@ impl FourWordAddress {
             .collect();
             
         if words.len() != 4 {
-            return Err(P2PError::Identity(IdentityError::InvalidFormat {
-                reason: format!("Four-word address must have exactly 4 words, got {}", words.len())
-            }));
+            return Err(P2PError::Identity(IdentityError::InvalidFormat(
+                format!("Four-word address must have exactly 4 words, got {}", words.len()).into()
+            )));
         }
         
         // Validate all words are in our dictionary
         for word in &words {
             if !WORD_TO_INDEX.contains_key(word.as_str()) {
-                return Err(P2PError::Identity(IdentityError::InvalidFormat {
-                    reason: format!("Invalid word '{}' not in dictionary", word)
-                }));
+                return Err(P2PError::Identity(IdentityError::InvalidFormat(
+                    format!("Invalid word '{}' not in dictionary", word).into()
+                )));
             }
         }
         
@@ -184,9 +184,9 @@ impl FourWordAddress {
         // Convert words back to their indices
         for word in &self.words {
             let index = WORD_TO_INDEX.get(word.as_str())
-                .ok_or_else(|| P2PError::Identity(IdentityError::InvalidFormat {
-                    reason: format!("Word '{}' not in dictionary", word)
-                }))?;
+                .ok_or_else(|| P2PError::Identity(IdentityError::InvalidFormat(
+                    format!("Word '{}' not in dictionary", word).into()
+                )))?;
             
             // Add 12 bits to buffer
             bit_buffer = (bit_buffer << 12) | (*index as u64);

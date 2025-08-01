@@ -21,8 +21,26 @@ pub mod node_identity;
 pub mod four_words;
 pub mod cli;
 pub mod encryption;
+pub mod secure_node_identity;
+
+#[cfg(test)]
+mod node_identity_extensions;
+#[cfg(test)]
+mod four_words_extensions;
+#[cfg(test)]
+mod cli_handler;
+#[cfg(test)]
+mod four_words_error_tests;
 
 pub use manager::*;
 pub use enhanced::*;
 pub use node_identity::{NodeIdentity, NodeId, ProofOfWork, IdentityData};
 pub use four_words::{FourWordAddress, WordEncoder};
+pub use secure_node_identity::SecureNodeIdentity;
+
+#[cfg(test)]
+pub use node_identity_extensions::*;
+#[cfg(test)]
+pub use four_words_extensions::*;
+#[cfg(test)]
+pub use cli_handler::{IdentityCommand, IdentityCliHandler, MessageInput, ExportFormat};

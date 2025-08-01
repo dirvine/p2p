@@ -33,8 +33,8 @@ serde-big-array.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+smallvec = { version = "1.13", features = ["serde"] }
 uuid.workspace = true
-ant-quic.workspace = true
 ed25519-dalek.workspace = true
 rand.workspace = true
 rand_core.workspace = true
@@ -51,6 +51,9 @@ parking_lot = "0.12"
 flate2 = "1.0"
 
 # Direct quinn networking - iroh removed for simplification
+quinn.workspace = true
+rustls.workspace = true
+log.workspace = true
 
 # Core-specific dependencies
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -61,11 +64,13 @@ jsonwebtoken = "9.2"
 
 # Identity system dependencies
 aes-gcm.workspace = true
+chacha20poly1305 = "0.10"
 blake3 = "1.5"
 once_cell = "1.19"
 hkdf.workspace = true
 argon2 = "0.5"
 hmac = "0.12"
+zeroize = { version = "1.7", features = ["derive"] }
 
 # Git content addressing dependencies
 bincode = "1.3"
@@ -73,6 +78,10 @@ lru = "0.12"
 
 # Monitoring dependencies
 prometheus = "0.13"
+
+# Configuration dependencies
+toml = "0.8"
+regex = "1.10"
 
 # Client dependencies
 tokio-stream = "0.1"
@@ -107,6 +116,7 @@ four-word-addresses = []
 quantum-resistant = []
 threshold = []
 cli = ["clap", "warp", "mime_guess", "include_dir"]
+metrics = []
 # Commercial license features
 commercial = []
 agpl-compliance = []
@@ -123,6 +133,33 @@ harness = false
 name = "production_benchmark"
 harness = false
 
+[[bench]]
+name = "multi_armed_bandit_bench"
+harness = false
+
+[[bench]]
+name = "q_learning_cache_bench"
+harness = false
+
+[[bench]]
+name = "eviction_bench"
+harness = false
+
+[[bench]]
+name = "eigentrust_bench"
+harness = false
+
+[[bench]]
+name = "gossipsub_bench"
+harness = false
+
+[[test]]
+name = "eigentrust_integration_test"
+path = "tests/eigentrust_integration_test.rs"
+
+[[test]]
+name = "gossipsub_integration_test"
+path = "tests/gossipsub_integration_test.rs"
 
 # Platform-specific dependencies for secure memory management
 [target.'cfg(unix)'.dependencies]

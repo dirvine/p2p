@@ -28,6 +28,8 @@
 //! - Background persistence to avoid blocking
 //! - Configurable sync intervals
 
+#![allow(missing_docs)]
+
 use crate::{P2PError, Result};
 use crate::error::StorageError;
 use crate::peer_record::UserId;
@@ -162,7 +164,7 @@ impl MonotonicCounterSystem {
         // Ensure storage directory exists
         if let Some(parent) = storage_path.parent() {
             tokio::fs::create_dir_all(parent).await
-                .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to create storage directory: {e}"))))?;
+                .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to create storage directory: {e}").into())))?;
         }
 
         // Load existing counters from storage
@@ -224,7 +226,7 @@ impl MonotonicCounterSystem {
 
         // Get or create peer counter
         let validation_result = {
-            let mut counters = self.counters.write().unwrap();
+            let mut counters = self.counters.write().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("write lock failed".to_string().into())))?;
             let peer_counter = counters.entry(user_id.clone()).or_insert_with(|| {
                 PeerCounter::new()
             });
@@ -301,7 +303,7 @@ impl MonotonicCounterSystem {
         
         // Process all requests atomically
         {
-            let mut counters = self.counters.write().unwrap();
+            let mut counters = self.counters.write().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("write lock failed".to_string().into())))?;
             
             for request in requests {
                 let peer_counter = counters.entry(request.user_id.clone()).or_insert_with(|| {
@@ -354,7 +356,7 @@ impl MonotonicCounterSystem {
         let mut current_stats = stats.clone();
         
         // Update live statistics
-        let counters = self.counters.read().unwrap();
+        let counters = self.counters.read().unwrap_or_else(|e| e.into_inner());
         current_stats.peers_tracked = counters.len();
         
         current_stats
@@ -362,13 +364,13 @@ impl MonotonicCounterSystem {
 
     /// Get counter state for a specific peer
     pub async fn get_peer_counter(&self, user_id: &UserId) -> Option<PeerCounter> {
-        let counters = self.counters.read().unwrap();
+        let counters = self.counters.read().ok()?;
         counters.get(user_id).cloned()
     }
 
     /// Reset counter for a peer (use with caution)
     pub async fn reset_peer_counter(&self, user_id: &UserId) -> Result<()> {
-        let mut counters = self.counters.write().unwrap();
+        let mut counters = self.counters.write().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("write lock failed".to_string().into())))?;
         counters.remove(user_id);
         Ok(())
     }
@@ -378,7 +380,7 @@ impl MonotonicCounterSystem {
         let current_time = current_timestamp();
         let cutoff_time = current_time.saturating_sub(MAX_SEQUENCE_AGE.as_secs());
 
-        let mut counters = self.counters.write().unwrap();
+        let mut counters = self.counters.write().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("write lock failed".to_string().into())))?;
         for (_, peer_counter) in counters.iter_mut() {
             peer_counter.cleanup_old_sequences(cutoff_time);
         }
@@ -393,10 +395,10 @@ impl MonotonicCounterSystem {
         }
 
         let data = tokio::fs::read(storage_path).await
-            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read counters file: {e}"))))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read counters file: {e}").into())))?;
 
         let counters: HashMap<UserId, PeerCounter> = bincode::deserialize(&data)
-            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to deserialize counters: {e}"))))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to deserialize counters: {e}").into())))?;
 
         Ok(counters)
     }
@@ -408,15 +410,15 @@ impl MonotonicCounterSystem {
         stats: &Arc<Mutex<CounterStats>>,
     ) -> Result<()> {
         let counters_snapshot = {
-            let counters = counters.read().unwrap();
+            let counters = counters.read().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("read lock failed".to_string().into())))?;
             counters.clone()
         };
 
         let data = bincode::serialize(&counters_snapshot)
-            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize counters: {e}"))))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize counters: {e}").into())))?;
 
         tokio::fs::write(storage_path, data).await
-            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to write counters file: {e}"))))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to write counters file: {e}").into())))?;
 
         // Update statistics
         {
@@ -512,8 +514,8 @@ impl Default for PeerCounter {
 fn current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

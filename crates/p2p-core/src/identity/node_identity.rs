@@ -49,22 +49,22 @@ impl NodeId {
         distance
     }
     
-    /// Create from public key bytes (for ant-quic integration)
+    /// Create from public key bytes
     pub fn from_public_key_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() != 32 {
-            return Err(P2PError::Identity(IdentityError::InvalidFormat {
-                reason: "Invalid public key length".to_string()
-            }));
+            return Err(P2PError::Identity(IdentityError::InvalidFormat(
+                "Invalid public key length".to_string().into()
+            )));
         }
         
         // Create a VerifyingKey from bytes and then derive NodeId
         let verifying_key = VerifyingKey::from_bytes(bytes.try_into()
-            .map_err(|_| IdentityError::InvalidFormat {
-                reason: "Invalid byte array length for public key".to_string()
-            })?)
-            .map_err(|e| IdentityError::InvalidFormat {
-                reason: format!("Invalid public key: {}", e)
-            })?;
+            .map_err(|_| IdentityError::InvalidFormat(
+                "Invalid byte array length for public key".to_string().into()
+            ))?)
+            .map_err(|e| IdentityError::InvalidFormat(
+                format!("Invalid public key: {}", e).into()
+            ))?;
         
         Ok(NodeId::from_public_key(&verifying_key))
     }
@@ -133,15 +133,15 @@ impl ProofOfWork {
             }
             
             nonce = nonce.checked_add(1)
-                .ok_or_else(|| P2PError::Identity(IdentityError::InvalidFormat {
-                    reason: "PoW nonce overflow".to_string()
-                }))?;
+                .ok_or_else(|| P2PError::Identity(IdentityError::InvalidFormat(
+                    "PoW nonce overflow".to_string().into()
+                )))?;
             
             // Timeout after 5 minutes
             if start.elapsed() > Duration::from_secs(300) {
-                return Err(P2PError::Identity(IdentityError::InvalidFormat {
-                    reason: "PoW timeout".to_string()
-                }));
+                return Err(P2PError::Identity(IdentityError::InvalidFormat(
+                    "PoW timeout".to_string().into()
+                )));
             }
         }
     }
@@ -245,9 +245,9 @@ impl NodeIdentity {
 #[derive(Serialize, Deserialize)]
 pub struct IdentityData {
     /// Private key bytes
-    private_key: Vec<u8>,
+    pub private_key: Vec<u8>,
     /// Proof of work
-    proof_of_work: ProofOfWork,
+    pub proof_of_work: ProofOfWork,
 }
 
 impl NodeIdentity {
@@ -263,18 +263,18 @@ impl NodeIdentity {
     pub fn import(data: &IdentityData) -> Result<Self> {
         let signing_key = SigningKey::from_bytes(
             data.private_key.as_slice().try_into()
-                .map_err(|_| P2PError::Identity(IdentityError::InvalidFormat {
-                    reason: "Invalid private key length".to_string()
-                }))?
+                .map_err(|_| P2PError::Identity(IdentityError::InvalidFormat(
+                    "Invalid private key length".to_string().into()
+                )))?
         );
         let verification_key = signing_key.verifying_key();
         let node_id = NodeId::from_public_key(&verification_key);
         
         // Verify proof of work
         if !data.proof_of_work.verify(&node_id, data.proof_of_work.difficulty) {
-            return Err(P2PError::Identity(IdentityError::VerificationFailed {
-                reason: "Invalid proof of work".to_string()
-            }));
+            return Err(P2PError::Identity(IdentityError::VerificationFailed(
+                "Invalid proof of work".to_string().into()
+            )));
         }
         
         // Generate four-word address from node ID

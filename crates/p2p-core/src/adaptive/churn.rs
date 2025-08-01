@@ -21,7 +21,6 @@
 //! - Topology rebalancing for network health
 //! - Graceful degradation under high churn
 
-use super::*;
 use crate::adaptive::{
     TrustProvider,
     learning::ChurnPredictor,
@@ -164,11 +163,12 @@ pub struct RecoveryManager {
     recovery_queue: Arc<RwLock<Vec<RecoveryTask>>>,
     
     /// Active recoveries
-    active_recoveries: Arc<RwLock<HashMap<ContentHash, RecoveryStatus>>>,
+    _active_recoveries: Arc<RwLock<HashMap<ContentHash, RecoveryStatus>>>,
 }
 
 /// Content tracking information
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ContentTracker {
     /// Content hash
     hash: ContentHash,
@@ -185,6 +185,7 @@ struct ContentTracker {
 
 /// Recovery task
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct RecoveryTask {
     /// Content to recover
     content_hash: ContentHash,
@@ -217,6 +218,7 @@ pub enum RecoveryPriority {
 
 /// Recovery status
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct RecoveryStatus {
     /// Start time
     started_at: Instant,
@@ -301,7 +303,7 @@ impl ChurnHandler {
             loop {
                 interval.tick().await;
                 
-                if let Err(e) = handler.monitor_cycle().await {
+                if let Err(_e) = handler.monitor_cycle().await {
                     // log::error!("Churn monitoring error: {}", e);
                 }
             }
@@ -390,8 +392,8 @@ impl ChurnHandler {
             seqno: 0, // Will be set by gossip subsystem
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
         };
         self.gossip.publish("node_departing", message).await?;
         
@@ -461,8 +463,8 @@ impl ChurnHandler {
             seqno: 0, // Will be set by gossip subsystem
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
         };
         self.gossip.publish("high_churn_alert", message).await?;
         
@@ -650,7 +652,7 @@ impl RecoveryManager {
         Self {
             content_tracker: Arc::new(RwLock::new(HashMap::new())),
             recovery_queue: Arc::new(RwLock::new(Vec::new())),
-            active_recoveries: Arc::new(RwLock::new(HashMap::new())),
+            _active_recoveries: Arc::new(RwLock::new(HashMap::new())),
         }
     }
     
@@ -709,6 +711,8 @@ impl RecoveryManager {
 mod tests {
     use super::*;
     use crate::adaptive::trust::MockTrustProvider;
+    use crate::adaptive::som::{SomConfig, GridSize};
+    use rand::RngCore;
     
     async fn create_test_churn_handler() -> ChurnHandler {
         let predictor = Arc::new(ChurnPredictor::new());
@@ -720,23 +724,49 @@ mod tests {
             Arc::new(AdaptiveRouter::new(
                 trust_provider.clone(),
                 Arc::new(crate::adaptive::hyperbolic::HyperbolicSpace::new()),
-                Arc::new(crate::adaptive::som::SelfOrganizingMap::new(10, 10, 4)),
+                Arc::new(crate::adaptive::som::SelfOrganizingMap::new(SomConfig {
+                    initial_learning_rate: 0.3,
+                    initial_radius: 5.0,
+                    iterations: 100,
+                    grid_size: GridSize::Fixed(10, 10),
+                })),
             )),
         ));
         let router = Arc::new(AdaptiveRouter::new(
             trust_provider.clone(),
             Arc::new(crate::adaptive::hyperbolic::HyperbolicSpace::new()),
-            Arc::new(crate::adaptive::som::SelfOrganizingMap::new(10, 10, 4)),
+            Arc::new(crate::adaptive::som::SelfOrganizingMap::new(SomConfig {
+                initial_learning_rate: 0.3,
+                initial_radius: 5.0,
+                iterations: 100,
+                grid_size: GridSize::Fixed(10, 10),
+            })),
         ));
-        let gossip = Arc::new(AdaptiveGossipSub::new(Default::default()));
+        // Create a test NodeId
+        use crate::peer_record::UserId;
+        let mut hash = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut hash);
+        let node_id = UserId::from_bytes(hash);
+        
+        let gossip = Arc::new(AdaptiveGossipSub::new(node_id.clone(), trust_provider.clone()));
+        
+        // Create default ChurnConfig
+        let config = ChurnConfig {
+            heartbeat_timeout: Duration::from_secs(30),
+            gossip_timeout: Duration::from_secs(300),
+            monitoring_interval: Duration::from_secs(5),
+            prediction_threshold: 0.7,
+            max_churn_rate: 0.2,
+        };
         
         ChurnHandler::new(
+            node_id,
             predictor,
             trust_provider,
             replication_manager,
             router,
             gossip,
-            Default::default(),
+            config,
         )
     }
     

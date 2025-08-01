@@ -30,8 +30,10 @@
 //! - Lazy verification for improved performance
 //! - Background key rotation and sync
 
+#![allow(missing_docs)]
+
 use crate::{P2PError, Result};
-use crate::error::{StorageError, SecurityError};
+use crate::error::{StorageError, SecurityError, IdentityError};
 use crate::secure_memory::SecureString;
 use crate::key_derivation::{HierarchicalKeyDerivation, DerivationPath, DerivedKey};
 use crate::encrypted_key_storage::{EncryptedKeyStorageManager, SecurityLevel};
@@ -46,7 +48,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::path::{Path, PathBuf};
 use tokio::sync::RwLock as AsyncRwLock;
 use rand::thread_rng;
+use bincode;
 use tracing;
+use chacha20poly1305::{
+    aead::{Aead, KeyInit, generic_array::GenericArray},
+    ChaCha20Poly1305
+};
+use argon2::{Argon2, Algorithm, Version, Params};
 
 /// Identity version for forward compatibility
 const IDENTITY_VERSION: u8 = 1;
@@ -310,7 +318,7 @@ impl IdentityKeyPair {
     /// Verify signature with Ed25519 public key
     pub fn verify(&self, data: &[u8], signature: &Signature) -> Result<()> {
         self.ed25519_public.verify(data, signature)
-            .map_err(|_| P2PError::Security(SecurityError::SignatureVerificationFailed))
+            .map_err(|_| P2PError::Security(SecurityError::SignatureVerificationFailed("Signature verification failed".to_string().into())))
     }
 }
 
@@ -331,9 +339,9 @@ impl Identity {
         
         if metadata_size > MAX_METADATA_SIZE {
             return Err(P2PError::Config(crate::error::ConfigError::InvalidValue {
-                field: "metadata_size".to_string(),
-                value: metadata_size.to_string(),
-                reason: format!("Metadata size exceeds maximum {MAX_METADATA_SIZE}"),
+                field: "metadata_size".to_string().into(),
+                
+                reason: format!("Metadata size exceeds maximum {MAX_METADATA_SIZE}").into(),
             }));
         }
         
@@ -370,26 +378,31 @@ impl Identity {
     }
     
     /// Create a DHT record for this identity
-    pub fn to_dht_record(&self, endpoints: Vec<PeerEndpoint>) -> PeerDHTRecord {
-        PeerDHTRecord {
+    pub fn to_dht_record(&self, endpoints: Vec<PeerEndpoint>) -> Result<PeerDHTRecord> {
+        let public_key = ed25519_dalek::VerifyingKey::from_bytes(self.id.as_bytes())
+            .map_err(|e| P2PError::Identity(IdentityError::InvalidFormat(
+                format!("invalid public key: {}", e).into()
+            )))?;
+            
+        Ok(PeerDHTRecord {
             version: IDENTITY_VERSION,
             user_id: self.id.clone(),
-            public_key: ed25519_dalek::VerifyingKey::from_bytes(self.id.as_bytes()).unwrap(),
+            public_key,
             sequence_number: self.updated_at,
             name: self.display_name.clone(),
             endpoints,
             timestamp: self.updated_at,
             ttl: (self.expires_at - current_timestamp()) as u32,
             signature: ed25519_dalek::Signature::from_bytes(&[0u8; 64]), // Will be set by signing
-        }
+        })
     }
     
     /// Apply an update to the identity
     pub fn apply_update(&mut self, update: &IdentityUpdate) -> Result<()> {
         if update.timestamp <= self.updated_at {
-            return Err(P2PError::Identity(crate::error::IdentityError::InvalidFormat {
-                reason: "Update timestamp is not newer".to_string(),
-            }));
+            return Err(P2PError::Identity(crate::error::IdentityError::InvalidFormat(
+                "Update timestamp is not newer".to_string().into()
+            )));
         }
         
         if let Some(name) = &update.display_name {
@@ -424,7 +437,7 @@ impl IdentityManager {
         
         // Create storage directory
         tokio::fs::create_dir_all(&storage_path).await
-            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to create identity storage: {e}"))))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to create identity storage: {e}").into())))?;
         
         // Initialize components
         let key_storage = Arc::new(EncryptedKeyStorageManager::new(
@@ -497,18 +510,18 @@ impl IdentityManager {
         
         // Cache identity and key pair
         {
-            let mut identities = self.identities.write().unwrap();
+            let mut identities = self.identities.write().map_err(|_| P2PError::Identity(IdentityError::SystemTime("write lock failed".to_string().into())))?;
             identities.insert(identity.id.clone(), identity.clone());
         }
         
         {
-            let mut key_pairs = self.key_pairs.write().unwrap();
+            let mut key_pairs = self.key_pairs.write().map_err(|_| P2PError::Identity(IdentityError::SystemTime("write lock failed".to_string().into())))?;
             key_pairs.insert(identity.id.clone(), key_pair);
         }
         
         // Update stats
         {
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = self.stats.write().map_err(|_| P2PError::Identity(IdentityError::SystemTime("write lock failed".to_string().into())))?;
             stats.identities_created += 1;
             stats.active_identities += 1;
         }
@@ -527,7 +540,7 @@ impl IdentityManager {
     ) -> Result<Identity> {
         // Check cache first
         {
-            let identities = self.identities.read().unwrap();
+            let identities = self.identities.read().map_err(|_| P2PError::Identity(IdentityError::SystemTime("read lock failed".to_string().into())))?;
             if let Some(identity) = identities.get(identity_id) {
                 return Ok(identity.clone());
             }
@@ -536,10 +549,10 @@ impl IdentityManager {
         // Load from storage
         let identity_path = self.storage_path.join(format!("{identity_id}.json"));
         let identity_data = tokio::fs::read(&identity_path).await
-            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read identity: {e}"))))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read identity: {e}").into())))?;
         
         let identity: Identity = serde_json::from_slice(&identity_data)
-            .map_err(P2PError::Serialization)?;
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
         
         // Load key pair
         let master_seed = self.key_storage.retrieve_master_seed(
@@ -558,12 +571,12 @@ impl IdentityManager {
         
         // Cache
         {
-            let mut identities = self.identities.write().unwrap();
+            let mut identities = self.identities.write().map_err(|_| P2PError::Identity(IdentityError::SystemTime("write lock failed".to_string().into())))?;
             identities.insert(identity.id.clone(), identity.clone());
         }
         
         {
-            let mut key_pairs = self.key_pairs.write().unwrap();
+            let mut key_pairs = self.key_pairs.write().map_err(|_| P2PError::Identity(IdentityError::SystemTime("write lock failed".to_string().into())))?;
             key_pairs.insert(identity.id.clone(), key_pair);
         }
         
@@ -578,7 +591,7 @@ impl IdentityManager {
         
         // Check state
         if identity.state != IdentityState::Active {
-            issues.push(format!("Identity is not active: {:?}", identity.state));
+            issues.push(format!("Identity is not active: {:?}", identity.state).into());
             trust_level = 0;
         }
         
@@ -592,7 +605,7 @@ impl IdentityManager {
         match Ed25519VerifyingKey::from_bytes(identity.id.as_bytes()) {
             Ok(_) => {},
             Err(e) => {
-                issues.push(format!("Invalid public key in ID: {e}"));
+                issues.push(format!("Invalid public key in ID: {e}").into());
                 trust_level = 0;
             }
         }
@@ -615,7 +628,7 @@ impl IdentityManager {
         
         // Update stats
         {
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = self.stats.write().map_err(|_| P2PError::Identity(IdentityError::SystemTime("write lock failed".to_string().into())))?;
             stats.verifications_performed += 1;
             let elapsed = start_time.elapsed().as_micros() as u64;
             stats.avg_verification_time_us = 
@@ -640,9 +653,9 @@ impl IdentityManager {
         let mut identity = self.load_identity(identity_id, password).await?;
         
         if identity.state != IdentityState::Active {
-            return Err(P2PError::Identity(crate::error::IdentityError::InvalidFormat {
-                reason: "Cannot rotate keys for inactive identity".to_string(),
-            }));
+            return Err(P2PError::Identity(crate::error::IdentityError::InvalidFormat(
+                "Cannot rotate keys for inactive identity".to_string().into()
+            )));
         }
         
         // Update state
@@ -676,18 +689,18 @@ impl IdentityManager {
         
         // Update caches
         {
-            let mut identities = self.identities.write().unwrap();
+            let mut identities = self.identities.write().map_err(|_| P2PError::Identity(IdentityError::SystemTime("write lock failed".to_string().into())))?;
             identities.insert(identity.id.clone(), identity);
         }
         
         {
-            let mut key_pairs = self.key_pairs.write().unwrap();
+            let mut key_pairs = self.key_pairs.write().map_err(|_| P2PError::Identity(IdentityError::SystemTime("write lock failed".to_string().into())))?;
             key_pairs.insert(identity_id.clone(), new_key_pair);
         }
         
         // Update stats
         {
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = self.stats.write().map_err(|_| P2PError::Identity(IdentityError::SystemTime("write lock failed".to_string().into())))?;
             stats.key_rotations += 1;
         }
         
@@ -717,7 +730,7 @@ impl IdentityManager {
         
         // Sign certificate
         let cert_data = bincode::serialize(&cert)
-            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize certificate: {e}"))))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize certificate: {e}").into())))?;
         let signature = key_pair.sign(&cert_data)?;
         
         let mut signed_cert = cert;
@@ -733,12 +746,12 @@ impl IdentityManager {
         
         // Remove from active caches
         {
-            let mut identities = self.identities.write().unwrap();
+            let mut identities = self.identities.write().map_err(|_| P2PError::Identity(IdentityError::SystemTime("write lock failed".to_string().into())))?;
             identities.remove(identity_id);
         }
         
         {
-            let mut key_pairs = self.key_pairs.write().unwrap();
+            let mut key_pairs = self.key_pairs.write().map_err(|_| P2PError::Identity(IdentityError::SystemTime("write lock failed".to_string().into())))?;
             key_pairs.remove(identity_id);
         }
         
@@ -752,7 +765,7 @@ impl IdentityManager {
         
         // Update stats
         {
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = self.stats.write().map_err(|_| P2PError::Identity(IdentityError::SystemTime("write lock failed".to_string().into())))?;
             stats.identities_revoked += 1;
             stats.active_identities = stats.active_identities.saturating_sub(1);
         }
@@ -762,7 +775,43 @@ impl IdentityManager {
     
     /// Get statistics
     pub fn get_stats(&self) -> IdentityStats {
-        self.stats.read().unwrap().clone()
+        self.stats.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+    
+    /// Derive encryption key from password using Argon2id
+    fn derive_encryption_key(&self, password: &SecureString, salt: &[u8]) -> Result<[u8; 32]> {
+        let argon2 = Argon2::new(
+            Algorithm::Argon2id,
+            Version::V0x13,
+            Params::new(64 * 1024, 3, 4, Some(32))
+                .map_err(|e| P2PError::Security(SecurityError::KeyGenerationFailed(format!("Invalid Argon2 params: {e}").into())))?
+        );
+        
+        let mut key = [0u8; 32];
+        // Convert SecureString to UTF-8 bytes for hashing
+        let password_str = password.as_str()?;
+        argon2.hash_password_into(password_str.as_bytes(), salt, &mut key)
+            .map_err(|e| P2PError::Security(SecurityError::KeyGenerationFailed(format!("Argon2 failed: {e}").into())))?;
+        
+        Ok(key)
+    }
+    
+    /// Encrypt data using ChaCha20Poly1305
+    fn encrypt_data(&self, data: &[u8], key: &[u8; 32], nonce: &[u8; 12]) -> Result<Vec<u8>> {
+        let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(key));
+        let nonce = GenericArray::from_slice(nonce);
+        
+        cipher.encrypt(nonce, data)
+            .map_err(|e| P2PError::Security(SecurityError::EncryptionFailed(format!("ChaCha20Poly1305 encryption failed: {e}").into())))
+    }
+    
+    /// Decrypt data using ChaCha20Poly1305
+    fn decrypt_data(&self, encrypted: &[u8], key: &[u8; 32], nonce: &[u8; 12]) -> Result<Vec<u8>> {
+        let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(key));
+        let nonce = GenericArray::from_slice(nonce);
+        
+        cipher.decrypt(nonce, encrypted)
+            .map_err(|e| P2PError::Security(SecurityError::DecryptionFailed(format!("ChaCha20Poly1305 decryption failed: {e}").into())))
     }
     
     /// Create a sync package for multi-device sync
@@ -777,7 +826,7 @@ impl IdentityManager {
         
         // Serialize identity
         let identity_data = serde_json::to_vec(&identity)
-            .map_err(P2PError::Serialization)?;
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
         
         // Get key material
         let master_seed = self.key_storage.retrieve_master_seed(
@@ -787,18 +836,38 @@ impl IdentityManager {
         
         let key_data = master_seed.seed_material().to_vec();
         
-        // Encrypt with device password (simplified - in production use proper encryption)
-        let encrypted_identity = identity_data; // TODO: Encrypt
-        let encrypted_keys = key_data; // TODO: Encrypt
+        // Generate salt and nonce for encryption
+        let mut salt = [0u8; 32];
+        let mut nonce = [0u8; 12];
+        rand::RngCore::fill_bytes(&mut thread_rng(), &mut salt);
+        rand::RngCore::fill_bytes(&mut thread_rng(), &mut nonce);
+        
+        // Derive encryption key from device password
+        let encryption_key = self.derive_encryption_key(device_password, &salt)?;
+        
+        // Encrypt identity and key data
+        let encrypted_identity = self.encrypt_data(&identity_data, &encryption_key, &nonce)?;
+        let encrypted_keys = self.encrypt_data(&key_data, &encryption_key, &nonce)?;
         
         // Create device fingerprint
         let mut device_fingerprint = [0u8; 32];
         rand::RngCore::fill_bytes(&mut thread_rng(), &mut device_fingerprint);
         
+        // Combine salt and nonce with encrypted data for storage
+        let mut final_encrypted_identity = Vec::with_capacity(salt.len() + nonce.len() + encrypted_identity.len());
+        final_encrypted_identity.extend_from_slice(&salt);
+        final_encrypted_identity.extend_from_slice(&nonce);
+        final_encrypted_identity.extend_from_slice(&encrypted_identity);
+        
+        let mut final_encrypted_keys = Vec::with_capacity(salt.len() + nonce.len() + encrypted_keys.len());
+        final_encrypted_keys.extend_from_slice(&salt);
+        final_encrypted_keys.extend_from_slice(&nonce);
+        final_encrypted_keys.extend_from_slice(&encrypted_keys);
+        
         // Create package
         let package = IdentitySyncPackage {
-            encrypted_identity,
-            encrypted_keys,
+            encrypted_identity: final_encrypted_identity,
+            encrypted_keys: final_encrypted_keys,
             timestamp: current_timestamp(),
             device_fingerprint,
             signature: Vec::new(),
@@ -807,7 +876,7 @@ impl IdentityManager {
         // Sign package
         let key_pair = self.get_key_pair(identity_id)?;
         let package_data = bincode::serialize(&package)
-            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize package: {e}"))))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize package: {e}").into())))?;
         let signature = key_pair.sign(&package_data)?;
         
         let mut signed_package = package;
@@ -823,16 +892,31 @@ impl IdentityManager {
         device_password: &SecureString,
         storage_password: &SecureString,
     ) -> Result<Identity> {
-        // TODO: Decrypt package with device password
-        let identity_data = &package.encrypted_identity;
-        let key_data = &package.encrypted_keys;
+        // Extract salt and nonce from encrypted data
+        if package.encrypted_identity.len() < 44 || package.encrypted_keys.len() < 44 {
+            return Err(P2PError::Security(SecurityError::DecryptionFailed(
+                "Invalid encrypted data length".to_string().into()
+            )));
+        }
+        
+        let salt = &package.encrypted_identity[..32];
+        let nonce = &package.encrypted_identity[32..44];
+        let encrypted_identity_data = &package.encrypted_identity[44..];
+        let encrypted_key_data = &package.encrypted_keys[44..];
+        
+        // Derive decryption key from device password
+        let decryption_key = self.derive_encryption_key(device_password, salt)?;
+        
+        // Decrypt identity and key data
+        let identity_data = self.decrypt_data(encrypted_identity_data, &decryption_key, nonce.try_into().map_err(|_| P2PError::Security(SecurityError::DecryptionFailed("Invalid nonce length".to_string().into())))?)?;
+        let key_data = self.decrypt_data(encrypted_key_data, &decryption_key, nonce.try_into().map_err(|_| P2PError::Security(SecurityError::DecryptionFailed("Invalid nonce length".to_string().into())))?)?;
         
         // Deserialize identity
-        let identity: Identity = serde_json::from_slice(identity_data)
-            .map_err(P2PError::Serialization)?;
+        let identity: Identity = serde_json::from_slice(&identity_data)
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
         
         // Store key material
-        let master_seed = crate::key_derivation::MasterSeed::from_entropy(key_data)?;
+        let master_seed = crate::key_derivation::MasterSeed::from_entropy(&key_data)?;
         
         self.key_storage.store_master_seed(
             &identity.id.to_string(),
@@ -857,22 +941,22 @@ impl IdentityManager {
     
     /// Get key pair from cache
     fn get_key_pair(&self, identity_id: &UserId) -> Result<IdentityKeyPair> {
-        let key_pairs = self.key_pairs.read().unwrap();
+        let key_pairs = self.key_pairs.read().map_err(|_| P2PError::Identity(IdentityError::SystemTime("read lock failed".to_string().into())))?;
         key_pairs.get(identity_id)
             .cloned()
-            .ok_or_else(|| P2PError::Storage(crate::error::StorageError::FileNotFound {
-                path: "key_pair_cache".to_string(),
-            }))
+            .ok_or_else(|| P2PError::Storage(crate::error::StorageError::FileNotFound(
+                "key_pair_cache".to_string().into()
+            )))
     }
     
     /// Save identity to disk
     async fn save_identity(&self, identity: &Identity) -> Result<()> {
         let identity_path = self.storage_path.join(format!("{}.json", identity.id));
         let identity_data = serde_json::to_vec_pretty(identity)
-            .map_err(P2PError::Serialization)?;
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
         
         tokio::fs::write(&identity_path, identity_data).await
-            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to save identity: {e}"))))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to save identity: {e}").into())))?;
         
         Ok(())
     }
@@ -887,7 +971,7 @@ impl IdentityManager {
                 
                 // Check if identity needs rotation
                 let needs_rotation = {
-                    let key_pairs = manager.key_pairs.read().unwrap();
+                    let key_pairs = manager.key_pairs.read().map_err(|_| P2PError::Identity(IdentityError::SystemTime("read lock failed".to_string().into())))?;
                     key_pairs.get(&id_clone)
                         .map(|kp| kp.needs_rotation())
                         .unwrap_or(false)
@@ -928,8 +1012,8 @@ impl Clone for IdentityManager {
 fn current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -1084,5 +1168,8 @@ mod tests {
         assert_eq!(imported.display_name, identity.display_name);
     }
 }
+
+// Include migration module
+pub mod migration;
 
 // Implement Default for IdentityCreationParams

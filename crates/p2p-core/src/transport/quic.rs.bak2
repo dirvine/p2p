@@ -1,0 +1,298 @@
+// Copyright 2024 Saorsa Labs Limited
+//
+// This software is dual-licensed under:
+// - GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
+// - Commercial License
+//
+// For AGPL-3.0 license, see LICENSE-AGPL-3.0
+// For commercial licensing, contact: saorsalabs@gmail.com
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under these licenses is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
+//! QUIC Transport Implementation using Quinn
+//!
+//! This module provides QUIC-based transport using the quinn library.
+//! QUIC provides better performance, 0-RTT connections, and built-in encryption.
+
+use super::{Transport, Connection, TransportType, TransportOptions, ConnectionInfo, ConnectionQuality};
+use crate::NetworkAddress;
+use crate::error::{P2PError as P2PError, P2pResult as Result, TransportError};
+use crate::identity::NodeIdentity;
+use async_trait::async_trait;
+use quinn::{Endpoint, ServerConfig, ClientConfig, VarInt};
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
+use tracing::{debug, info};
+use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+
+/// QUIC transport implementation using Quinn
+pub struct QuicTransport {
+    /// Local identity for authentication
+    identity: Option<Arc<NodeIdentity>>,
+    /// Quinn endpoint
+    endpoint: Arc<Mutex<Option<Endpoint>>>,
+    /// Server configuration
+    server_config: Option<ServerConfig>,
+    /// Client configuration  
+    client_config: ClientConfig,
+    /// Bootstrap nodes
+    bootstrap_nodes: Vec<SocketAddr>,
+    /// Whether 0-RTT is enabled
+    enable_0rtt: bool,
+    /// Listen address
+    listen_addr: Option<NetworkAddress>,
+}
+
+/// QUIC connection implementation
+pub struct QuicConnection {
+    /// Remote peer ID
+    peer_id: String,
+    /// Quinn connection
+    connection: quinn::Connection,
+    /// Local address
+    local_addr: NetworkAddress,
+    /// Remote address
+    remote_addr: NetworkAddress,
+    /// Connection establishment time
+    established_at: Instant,
+}
+
+impl QuicTransport {
+    /// Create a new QUIC transport
+    pub fn new(options: TransportOptions) -> Result<Self> {
+        // Generate self-signed certificate for now
+        let (cert, key) = generate_self_signed_cert()?;
+        
+        // Configure server - always create server config
+        let server_config = {
+            let mut config = ServerConfig::with_single_cert(vec![cert.clone()], key.into())
+                .map_err(|e| P2PError::Transport(TransportError::SetupFailed(format!("Failed to create server config: {e}").into())))?;
+            
+            let transport_config = Arc::get_mut(&mut config.transport).unwrap();
+            transport_config.max_concurrent_uni_streams(VarInt::from_u32(0));
+            transport_config.max_idle_timeout(Some(VarInt::from_u32(60_000).into()));
+            
+            config
+        };
+        
+        // Configure client
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(cert.clone())
+            .map_err(|e| P2PError::Transport(TransportError::SetupFailed(format!("Failed to add root cert: {e}").into())))?;
+        
+        let client_config = ClientConfig::with_root_certificates(Arc::new(roots))
+            .map_err(|e| P2PError::Transport(TransportError::SetupFailed(format!("Failed to create client config: {e}").into())))?;
+        
+        Ok(Self {
+            identity: None,
+            endpoint: Arc::new(Mutex::new(None)),
+            server_config: Some(server_config),
+            client_config,
+            bootstrap_nodes: Vec::new(), // Default to empty for now
+            enable_0rtt: options.enable_0rtt,
+            listen_addr: None,
+        })
+    }
+}
+
+#[async_trait]
+impl Transport for QuicTransport {
+    async fn listen(&self, addr: NetworkAddress) -> Result<NetworkAddress> {
+        let socket_addr = addr.socket_addr();
+        
+        let endpoint = match &self.server_config {
+            Some(config) => Endpoint::server(config.clone(), socket_addr),
+            None => Endpoint::client(socket_addr),
+        }.map_err(|e| P2PError::Transport(TransportError::BindError(format!("Failed to bind to {socket_addr}: {e}").into())))?;
+        
+        let actual_addr = endpoint.local_addr()
+            .map_err(|e| P2PError::Transport(TransportError::BindError(format!("Failed to get local address: {e}").into())))?;
+        
+        info!("QUIC transport listening on {}", actual_addr);
+        *self.endpoint.lock().await = Some(endpoint);
+        
+        let listen_addr = NetworkAddress::new(actual_addr);
+        Ok(listen_addr)
+    }
+    
+    async fn accept(&self) -> Result<Box<dyn Connection>> {
+        let endpoint = self.endpoint.lock().await
+            .as_ref()
+            .ok_or_else(|| P2PError::Transport(TransportError::NotListening))?
+            .clone();
+            
+        let connecting = endpoint.accept().await
+            .ok_or_else(|| P2PError::Transport(TransportError::NotListening))?;
+            
+        let connection = connecting.await
+            .map_err(|e| P2PError::Transport(TransportError::AcceptFailed(e.to_string().into())))?;
+            
+        let local_addr = connection.local_ip()
+            .ok_or_else(|| P2PError::Transport(TransportError::AcceptFailed("No local address".to_string().into())))?;
+            
+        let local_addr = NetworkAddress::new(SocketAddr::new(local_addr, 0));
+        let remote_addr = NetworkAddress::new(connection.remote_address());
+        
+        info!("Accepted connection from {}", remote_addr);
+        
+        Ok(Box::new(QuicConnection {
+            peer_id: remote_addr.to_string(),
+            connection,
+            local_addr,
+            remote_addr,
+            established_at: Instant::now(),
+        }))
+    }
+    
+    async fn connect(&self, addr: NetworkAddress) -> Result<Box<dyn Connection>> {
+        let endpoint = self.endpoint.lock().await
+            .as_ref()
+            .ok_or_else(|| P2PError::Transport(TransportError::NotInitialized))?
+            .clone();
+            
+        let socket_addr = addr.socket_addr();
+        debug!("Connecting to {}", socket_addr);
+        
+        let connecting = endpoint.connect(socket_addr, "localhost")
+            .map_err(|e| P2PError::Transport(TransportError::ConnectionFailed { 
+                addr: socket_addr, 
+                reason: e.to_string() 
+            }))?;
+            
+        let connection = connecting.await
+            .map_err(|e| P2PError::Transport(TransportError::ConnectionFailed { 
+                addr: socket_addr, 
+                reason: e.to_string() 
+            }))?;
+            
+        let local_addr = connection.local_ip()
+            .ok_or_else(|| P2PError::Transport(TransportError::ConnectionFailed {
+                addr: socket_addr,
+                reason: "No local address".to_string(),
+            }))?;
+            
+        let local_addr = NetworkAddress::new(SocketAddr::new(local_addr, 0));
+        let remote_addr = NetworkAddress::new(connection.remote_address());
+        
+        info!("Connected to {} via QUIC", socket_addr);
+        
+        Ok(Box::new(QuicConnection {
+            peer_id: socket_addr.to_string(),
+            connection,
+            local_addr,
+            remote_addr,
+            established_at: Instant::now(),
+        }))
+    }
+    
+    async fn connect_with_options(&self, addr: NetworkAddress, _options: TransportOptions) -> Result<Box<dyn Connection>> {
+        // For now, just delegate to connect
+        self.connect(addr).await
+    }
+    
+    fn supports_ipv6(&self) -> bool {
+        // Deprecated - we focus on IPv4
+        false
+    }
+    
+    fn transport_type(&self) -> TransportType {
+        TransportType::QUIC
+    }
+    
+    fn supports_address(&self, addr: &NetworkAddress) -> bool {
+        // QUIC supports any valid socket address
+        addr.socket_addr().port() > 0
+    }
+}
+
+#[async_trait]
+impl Connection for QuicConnection {
+    async fn send(&mut self, data: &[u8]) -> Result<()> {
+        let mut stream = self.connection.open_uni().await
+            .map_err(|e| P2PError::Transport(TransportError::StreamError(e.to_string().into())))?;
+            
+        stream.write_all(data).await
+            .map_err(|e| P2PError::Transport(TransportError::StreamError(e.to_string().into())))?;
+            
+        stream.finish()
+            .map_err(|e| P2PError::Transport(TransportError::StreamError(e.to_string().into())))?;
+            
+        Ok(())
+    }
+    
+    async fn receive(&mut self) -> Result<Vec<u8>> {
+        let mut stream = self.connection.accept_uni().await
+            .map_err(|e| P2PError::Transport(TransportError::StreamError(e.to_string().into())))?;
+            
+        let mut buf = Vec::new();
+        // Read all data from the stream
+        loop {
+            match stream.read_chunk(usize::MAX, true).await {
+                Ok(Some(chunk)) => buf.extend_from_slice(&chunk.bytes),
+                Ok(None) => break, // End of stream
+                Err(e) => return Err(P2PError::Transport(TransportError::StreamError(e.to_string().into()))),
+            }
+        }
+            
+        Ok(buf)
+    }
+    
+    async fn info(&self) -> ConnectionInfo {
+        ConnectionInfo {
+            transport_type: TransportType::QUIC,
+            local_addr: self.local_addr.clone(),
+            remote_addr: self.remote_addr.clone(),
+            is_encrypted: true,
+            cipher_suite: "TLS_AES_256_GCM_SHA384".to_string(),
+            used_0rtt: false,
+            established_at: self.established_at,
+            last_activity: Instant::now(),
+        }
+    }
+    
+    async fn close(&mut self) -> Result<()> {
+        self.connection.close(VarInt::from_u32(0), b"close");
+        Ok(())
+    }
+    
+    async fn is_alive(&self) -> bool {
+        // Check if connection is still open by attempting to open a bidirectional stream
+        // If the connection is closed, this will fail immediately
+        tokio::select! {
+            result = self.connection.open_bi() => result.is_ok(),
+            _ = tokio::time::sleep(Duration::from_millis(1)) => true,
+        }
+    }
+    
+    fn local_addr(&self) -> NetworkAddress {
+        self.local_addr.clone()
+    }
+    
+    fn remote_addr(&self) -> NetworkAddress {
+        self.remote_addr.clone()
+    }
+    
+    async fn measure_quality(&self) -> Result<ConnectionQuality> {
+        // TODO: Implement actual quality metrics
+        Ok(ConnectionQuality {
+            latency: Duration::from_millis(10),
+            throughput_mbps: 100.0,
+            packet_loss: 0.0,
+            jitter: Duration::from_millis(1),
+            connect_time: self.established_at.elapsed(),
+        })
+    }
+}
+
+/// Generate a self-signed certificate for testing
+fn generate_self_signed_cert() -> Result<(CertificateDer<'static>, PrivatePkcs8KeyDer<'static>)> {
+    // For now, use a dummy certificate
+    // In production, this should use proper certificate generation
+    let cert = CertificateDer::from(vec![]);
+    let key = PrivatePkcs8KeyDer::from(vec![]);
+    Ok((cert, key))
+}

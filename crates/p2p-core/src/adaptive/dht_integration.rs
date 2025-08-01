@@ -30,7 +30,7 @@ use std::str::FromStr;
 /// Adaptive DHT that integrates S/Kademlia with trust scoring
 pub struct AdaptiveDHT {
     /// Underlying S/Kademlia implementation
-    skademlia: Arc<RwLock<SKademlia>>,
+    _skademlia: Arc<RwLock<SKademlia>>,
     
     /// Base DHT for standard operations
     base_dht: Arc<RwLock<DHT>>,
@@ -42,7 +42,7 @@ pub struct AdaptiveDHT {
     router: Arc<AdaptiveRouter>,
     
     /// Local node identity
-    identity: Arc<NodeIdentity>,
+    _identity: Arc<NodeIdentity>,
     
     /// Performance metrics
     metrics: Arc<RwLock<DHTMetrics>>,
@@ -78,15 +78,15 @@ impl AdaptiveDHT {
         let local_key = Self::node_id_to_key(identity.node_id());
         let base_dht = Arc::new(RwLock::new(DHT::new(local_key, config.clone())));
         // Create reputation manager for S/Kademlia
-        let reputation_manager = crate::security::ReputationManager::new(0.99, 0.1);
+        let _reputation_manager = crate::security::ReputationManager::new(0.99, 0.1);
         let skademlia = Arc::new(RwLock::new(SKademlia::new(skademlia_config)));
         
         Ok(Self {
-            skademlia,
+            _skademlia: skademlia,
             base_dht,
             trust_provider,
             router,
-            identity,
+            _identity: identity,
             metrics: Arc::new(RwLock::new(DHTMetrics::default())),
         })
     }
@@ -107,7 +107,7 @@ impl AdaptiveDHT {
         // Store in base DHT using put method
         let dht = self.base_dht.read().await;
         dht.put(dht_key, value.clone()).await
-            .map_err(|e| AdaptiveNetworkError::Other(e.to_string()))?;
+            .map_err(|e| AdaptiveNetworkError::Other(e.to_string().into()))?;
         
         metrics.stores_successful += 1;
         
@@ -129,7 +129,7 @@ impl AdaptiveDHT {
         
         // Use adaptive router to select routing strategy
         let target_id = NodeId::from_bytes(hash.0);
-        let path = self.router.route(&target_id, ContentType::DataRetrieval).await?;
+        let _path = self.router.route(&target_id, ContentType::DataRetrieval).await?;
         
         // Create DHT key from hash
         let dht_key = DHTKey::new(&hash.0);
@@ -142,7 +142,7 @@ impl AdaptiveDHT {
                 Ok(record.value)
             }
             None => {
-                Err(AdaptiveNetworkError::Other("Record not found".to_string()))
+                Err(AdaptiveNetworkError::Other("Record not found".to_string().into()))
             }
         }
     }
@@ -183,7 +183,7 @@ impl AdaptiveDHT {
         
         // Sort by trust descending
         let mut sorted_nodes = sorted_nodes;
-        sorted_nodes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        sorted_nodes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         
         // Take top nodes and convert to NodeDescriptors
         Ok(sorted_nodes.into_iter()
@@ -202,7 +202,11 @@ impl AdaptiveDHT {
                 
                 NodeDescriptor {
                     id: node_id,
-                    public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(), // TODO: Get real key
+                    // TODO: Get real key from node - for now use a dummy placeholder key
+                    public_key: ed25519_dalek::VerifyingKey::from_bytes(&[
+                        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+                        17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32
+                    ]).unwrap_or_else(|_| ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap()),
                     addresses: node.addresses.iter().map(|a| a.to_string()).collect(),
                     hyperbolic: None,
                     som_position: None,
@@ -220,7 +224,7 @@ impl AdaptiveDHT {
     pub async fn update_routing(&self, node: NodeDescriptor) -> Result<()> {
         // Convert NodeId to PeerId (using the hash as peer ID string)
         let peer_id = PeerId::from_str(&node.id.to_string())
-            .map_err(|e| AdaptiveNetworkError::Other(format!("Invalid peer ID: {e}")))?;
+            .map_err(|e| AdaptiveNetworkError::Other(format!("Invalid peer ID: {e}").into()))?;
         
         // Parse addresses to Multiaddr
         let addresses: Vec<Multiaddr> = node.addresses.iter()
@@ -228,12 +232,12 @@ impl AdaptiveDHT {
             .collect();
         
         if addresses.is_empty() {
-            return Err(AdaptiveNetworkError::Other("No valid addresses".to_string()));
+            return Err(AdaptiveNetworkError::Other("No valid addresses".to_string().into()));
         }
         
         let dht = self.base_dht.read().await;
         dht.add_node(DHTNode::new(peer_id, addresses, &Self::node_id_to_key(&node.id))).await
-            .map_err(|e| AdaptiveNetworkError::Other(e.to_string()))
+            .map_err(|e| AdaptiveNetworkError::Other(e.to_string().into()))
     }
     
     /// Get current DHT metrics
@@ -293,6 +297,7 @@ mod tests {
             fn get_global_trust(&self) -> HashMap<NodeId, f64> {
                 HashMap::new()
             }
+            fn remove_node(&self, _node: &NodeId) {}
         }
         
         let config = DHTConfig::default();

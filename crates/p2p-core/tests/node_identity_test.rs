@@ -1,6 +1,6 @@
-// Test for new node identity implementation
+//! Test for new node identity implementation
 
-use saorsa_core::identity::{NodeIdentity, NodeId, ProofOfWork};
+use saorsa_core::identity::{NodeIdentity, NodeId};
 
 #[test]
 fn test_node_identity_generation() {

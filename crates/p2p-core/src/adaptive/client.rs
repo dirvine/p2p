@@ -20,7 +20,6 @@
 //! - Pub/sub messaging
 //! - Network statistics and monitoring
 
-use super::*;
 use crate::adaptive::{
     AdaptiveRouter, AdaptiveGossipSub, ContentStore, StorageConfig,
     RetrievalManager, ReplicationManager, ChurnHandler, MonitoringSystem, ContentHash, NodeId,
@@ -505,8 +504,8 @@ impl AdaptiveP2PClient for Client {
             content_type: crate::adaptive::ContentType::DataRetrieval,
             created_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
             chunk_count: None,
             replication_factor: 8,
         };
@@ -516,7 +515,7 @@ impl AdaptiveP2PClient for Client {
         
         // Trigger replication
         self.components.replication.replicate_content(&hash, &data, metadata).await
-            .map_err(|e| ClientError::Storage(format!("Replication failed: {e}")))?;
+            .map_err(|e| ClientError::Storage(format!("Replication failed: {e}").into()))?;
         
         Ok(hash)
     }
@@ -593,8 +592,8 @@ impl AdaptiveP2PClient for Client {
             seqno: 0, // TODO: Track sequence numbers
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
         };
         
         self.components.gossip.publish(topic, gossip_msg).await

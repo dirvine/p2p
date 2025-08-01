@@ -491,7 +491,7 @@ pub struct GroupConfig {
 
 /// Convert PeerId to ParticipantId (simplified for example)
 impl From<PeerId> for ParticipantId {
-    fn from(peer_id: PeerId) -> Self {
+    fn from(_peer_id: PeerId) -> Self {
         // In practice, this would maintain a proper mapping
         ParticipantId(0)
     }

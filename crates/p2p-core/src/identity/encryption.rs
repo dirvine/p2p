@@ -62,7 +62,7 @@ pub fn encrypt_with_device_password(
     // Encrypt data with AES-256-GCM
     let cipher = Aes256Gcm::new(&key);
     let ciphertext = cipher.encrypt(nonce, data)
-        .map_err(|e| P2PError::Security(SecurityError::EncryptionFailed(format!("AES-GCM encryption failed: {}", e))))?;
+        .map_err(|e| P2PError::Security(SecurityError::EncryptionFailed(format!("AES-GCM encryption failed: {}", e).into())))?;
     
     Ok(EncryptedData {
         ciphertext,
@@ -84,7 +84,7 @@ pub fn decrypt_with_device_password(
     let nonce = Nonce::from_slice(&encrypted.nonce);
     
     let plaintext = cipher.decrypt(nonce, encrypted.ciphertext.as_ref())
-        .map_err(|e| P2PError::Security(SecurityError::DecryptionFailed(format!("AES-GCM decryption failed: {}", e))))?;
+        .map_err(|e| P2PError::Security(SecurityError::DecryptionFailed(format!("AES-GCM decryption failed: {}", e).into())))?;
     
     Ok(plaintext)
 }
@@ -103,23 +103,23 @@ fn derive_key_from_password(
             DEVICE_ARGON2_TIME,
             DEVICE_ARGON2_PARALLELISM,
             Some(AES_KEY_SIZE),
-        ).map_err(|e| P2PError::Security(SecurityError::InvalidKey(format!("Invalid Argon2 params: {}", e))))?,
+        ).map_err(|e| P2PError::Security(SecurityError::InvalidKey(format!("Invalid Argon2 params: {}", e).into())))?,
     );
     
     // Create salt string
     let salt_string = SaltString::encode_b64(salt)
-        .map_err(|e| P2PError::Security(SecurityError::InvalidKey(format!("Failed to encode salt: {}", e))))?;
+        .map_err(|e| P2PError::Security(SecurityError::InvalidKey(format!("Failed to encode salt: {}", e).into())))?;
     
     // Derive key
     let hash = argon2.hash_password(password.as_bytes(), &salt_string)
-        .map_err(|e| P2PError::Security(SecurityError::KeyGenerationFailed(format!("Argon2id key derivation failed: {}", e))))?;
+        .map_err(|e| P2PError::Security(SecurityError::KeyGenerationFailed(format!("Argon2id key derivation failed: {}", e).into())))?;
     
     let hash_output = hash.hash
-        .ok_or_else(|| P2PError::Security(SecurityError::KeyGenerationFailed("No hash output from Argon2".to_string())))?;
+        .ok_or_else(|| P2PError::Security(SecurityError::KeyGenerationFailed("No hash output from Argon2".to_string().into())))?;
     
     let key_bytes = hash_output.as_bytes();
     if key_bytes.len() < AES_KEY_SIZE {
-        return Err(P2PError::Security(SecurityError::KeyGenerationFailed("Insufficient key material from Argon2".to_string())));
+        return Err(P2PError::Security(SecurityError::KeyGenerationFailed("Insufficient key material from Argon2".to_string().into())));
     }
     
     Ok(Key::<Aes256Gcm>::from_slice(&key_bytes[..AES_KEY_SIZE]).clone())
@@ -144,14 +144,14 @@ pub fn encrypt_with_shared_secret(
     let hkdf = Hkdf::<Sha256>::new(Some(&salt), shared_secret);
     let mut key_bytes = [0u8; AES_KEY_SIZE];
     hkdf.expand(info, &mut key_bytes)
-        .map_err(|e| P2PError::Security(SecurityError::KeyGenerationFailed(format!("HKDF expansion failed: {}", e))))?;
+        .map_err(|e| P2PError::Security(SecurityError::KeyGenerationFailed(format!("HKDF expansion failed: {}", e).into())))?;
     
     let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
     
     // Encrypt data
     let cipher = Aes256Gcm::new(key);
     let ciphertext = cipher.encrypt(nonce, data)
-        .map_err(|e| P2PError::Security(SecurityError::EncryptionFailed(format!("AES-GCM encryption failed: {}", e))))?;
+        .map_err(|e| P2PError::Security(SecurityError::EncryptionFailed(format!("AES-GCM encryption failed: {}", e).into())))?;
     
     Ok(EncryptedData {
         ciphertext,
@@ -170,7 +170,7 @@ pub fn decrypt_with_shared_secret(
     let hkdf = Hkdf::<Sha256>::new(Some(&encrypted.salt), shared_secret);
     let mut key_bytes = [0u8; AES_KEY_SIZE];
     hkdf.expand(info, &mut key_bytes)
-        .map_err(|e| P2PError::Security(SecurityError::KeyGenerationFailed(format!("HKDF expansion failed: {}", e))))?;
+        .map_err(|e| P2PError::Security(SecurityError::KeyGenerationFailed(format!("HKDF expansion failed: {}", e).into())))?;
     
     let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
     
@@ -179,7 +179,7 @@ pub fn decrypt_with_shared_secret(
     let nonce = Nonce::from_slice(&encrypted.nonce);
     
     let plaintext = cipher.decrypt(nonce, encrypted.ciphertext.as_ref())
-        .map_err(|e| P2PError::Security(SecurityError::DecryptionFailed(format!("AES-GCM decryption failed: {}", e))))?;
+        .map_err(|e| P2PError::Security(SecurityError::DecryptionFailed(format!("AES-GCM decryption failed: {}", e).into())))?;
     
     Ok(plaintext)
 }

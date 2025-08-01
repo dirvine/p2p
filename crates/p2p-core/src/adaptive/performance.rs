@@ -20,6 +20,8 @@
 //! - Caching strategies
 //! - Concurrent operation tuning
 
+#![allow(missing_docs)]
+
 use super::*;
 use bytes::{Bytes, BytesMut};
 use parking_lot::RwLock as PLRwLock;
@@ -280,7 +282,7 @@ impl<K: Eq + std::hash::Hash + Clone, V: Clone> PerformanceCache<K, V> {
         
         // Evict old entries if at capacity
         if entries.len() >= self.config.max_entries {
-            let now = Instant::now();
+            let _now = Instant::now();
             entries.retain(|_, entry| {
                 entry.inserted_at.elapsed() < self.config.ttl
             });
@@ -305,7 +307,7 @@ impl<K: Eq + std::hash::Hash + Clone, V: Clone> PerformanceCache<K, V> {
     /// Clear expired entries
     pub fn evict_expired(&self) {
         let mut entries = self.entries.write();
-        let now = Instant::now();
+        let _now = Instant::now();
         entries.retain(|_, entry| {
             entry.inserted_at.elapsed() < self.config.ttl
         });
@@ -332,7 +334,7 @@ impl<T: Send + 'static> BatchProcessor<T> {
     /// Add item to batch
     pub async fn add(&self, item: T) -> Result<()> {
         self.tx.send(item).await
-            .map_err(|_| AdaptiveNetworkError::Other("Batch processor closed".to_string()))?;
+            .map_err(|_| AdaptiveNetworkError::Other("Batch processor closed".to_string().into()))?;
         Ok(())
     }
     
@@ -393,7 +395,7 @@ impl ConcurrencyLimiter {
         Fut: std::future::Future<Output = Result<T>>,
     {
         let _permit = self.semaphore.acquire().await
-            .map_err(|_| AdaptiveNetworkError::Other("Semaphore closed".to_string()))?;
+            .map_err(|_| AdaptiveNetworkError::Other("Semaphore closed".to_string().into()))?;
         f().await
     }
     
@@ -517,7 +519,7 @@ mod tests {
         processor.process_batch(|batch| async move {
             assert_eq!(batch.len(), 3);
             assert_eq!(batch, vec![1, 2, 3]);
-            Ok(())
+            Ok::<_, AdaptiveNetworkError>(())
         }).await.unwrap();
     }
     
@@ -534,7 +536,7 @@ mod tests {
                 limiter.execute(|| async {
                     let mut count = counter.lock().await;
                     *count += 1;
-                    Ok::<_, anyhow::Error>(())
+                    Ok::<_, AdaptiveNetworkError>(())
                 }).await
             })
         }).collect();

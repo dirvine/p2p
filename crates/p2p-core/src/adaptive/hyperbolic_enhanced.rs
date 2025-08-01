@@ -309,7 +309,7 @@ impl EnhancedHyperbolicSpace {
                     r: coord.r(), 
                     theta: coord.theta() 
                 },
-                label: format!("Node {:?}", node_id),
+                label: format!("Node {:?}", node_id).into(),
                 degree: 0, // Unknown for neighbors
                 trust_score: 0.5, // Default
             });
@@ -324,7 +324,7 @@ impl EnhancedHyperbolicSpace {
     pub async fn export_visualization_json(&self) -> Result<String> {
         let viz_data = self.visualization_data.read().await;
         serde_json::to_string_pretty(&*viz_data)
-            .map_err(|e| AdaptiveNetworkError::Other(format!("Failed to serialize visualization: {}", e)))
+            .map_err(|e| AdaptiveNetworkError::Other(format!("Failed to serialize visualization: {}", e).into()))
     }
     
     /// Export visualization as SVG
@@ -498,7 +498,7 @@ impl EnhancedHyperbolicRoutingStrategy {
                     }
                     
                     return Err(AdaptiveNetworkError::Routing(
-                        format!("No closer neighbor found after {} hops", hop)
+                        format!("No closer neighbor found after {} hops", hop).into()
                     ));
                 }
             }

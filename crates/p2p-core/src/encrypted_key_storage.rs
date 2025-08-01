@@ -31,8 +31,10 @@
 //! - Configurable Argon2id parameters for different security levels
 //! - Efficient storage format with minimal overhead
 
+#![allow(missing_docs)]
+
 use crate::{P2PError, Result};
-use crate::error::StorageError;
+use crate::error::{StorageError, SecurityError};
 use crate::secure_memory::{SecureMemory, SecureString};
 use crate::key_derivation::MasterSeed;
 use aes_gcm::{
@@ -180,11 +182,11 @@ pub struct EncryptedKeyStorageManager {
     /// Password hash cache for performance
     password_cache: Arc<Mutex<Option<SecureMemory>>>,
     /// Background key derivation tasks
-    background_tasks: Arc<AsyncRwLock<HashMap<String, tokio::task::JoinHandle<Result<()>>>>>,
+    _background_tasks: Arc<AsyncRwLock<HashMap<String, tokio::task::JoinHandle<Result<()>>>>>,
     /// Performance statistics
     stats: Arc<Mutex<StorageStats>>,
     /// Security settings
-    security_level: SecurityLevel,
+    _security_level: SecurityLevel,
 }
 
 /// Performance statistics for key storage
@@ -288,17 +290,19 @@ impl SecurityLevel {
 
 impl Argon2Config {
     /// Create Argon2 instance with this configuration
-    pub fn create_argon2(&self) -> Argon2<'static> {
-        Argon2::new(
+    pub fn create_argon2(&self) -> Result<Argon2<'static>> {
+        let params = Params::new(
+            self.memory_cost,
+            self.time_cost,
+            self.parallelism,
+            Some(self.hash_length as usize),
+        ).map_err(|e| P2PError::Security(SecurityError::KeyGenerationFailed(format!("Argon2 error: {}", e).into())))?;
+        
+        Ok(Argon2::new(
             Algorithm::Argon2id,
             Version::V0x13,
-            Params::new(
-                self.memory_cost,
-                self.time_cost,
-                self.parallelism,
-                Some(self.hash_length as usize),
-            ).unwrap(),
-        )
+            params,
+        ))
     }
     
     /// Convert to serializable format
@@ -342,9 +346,9 @@ impl EncryptedKeyStorageManager {
             argon2_config,
             key_cache: Arc::new(RwLock::new(HashMap::new())),
             password_cache: Arc::new(Mutex::new(None)),
-            background_tasks: Arc::new(AsyncRwLock::new(HashMap::new())),
+            _background_tasks: Arc::new(AsyncRwLock::new(HashMap::new())),
             stats: Arc::new(Mutex::new(StorageStats::default())),
-            security_level,
+            _security_level: security_level,
         })
     }
     
@@ -356,7 +360,7 @@ impl EncryptedKeyStorageManager {
             return Err(P2PError::Security(crate::error::SecurityError::DecryptionFailed(format!(
                 "Password validation failed: {}",
                 validation.errors.join(", ")
-            ))));
+            ).into())));
         }
         
         // Generate salt and nonce
@@ -379,7 +383,7 @@ impl EncryptedKeyStorageManager {
         
         // Update statistics
         {
-            let mut stats = self.stats.lock().unwrap();
+            let mut stats = self.stats.lock().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("mutex lock failed".to_string().into())))?;
             stats.storage_operations += 1;
         }
         
@@ -425,7 +429,7 @@ impl EncryptedKeyStorageManager {
         
         // Update cache
         {
-            let mut cache = self.key_cache.write().unwrap();
+            let mut cache = self.key_cache.write().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("write lock failed".to_string().into())))?;
             cache.insert(
                 seed_id.to_string(),
                 SecureMemory::from_slice(master_seed.seed_material())?,
@@ -434,7 +438,7 @@ impl EncryptedKeyStorageManager {
         
         // Update statistics
         {
-            let mut stats = self.stats.lock().unwrap();
+            let mut stats = self.stats.lock().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("mutex lock failed".to_string().into())))?;
             stats.storage_operations += 1;
             stats.avg_derivation_time_ms = 
                 (stats.avg_derivation_time_ms + start_time.elapsed().as_millis() as u64) / 2;
@@ -453,9 +457,9 @@ impl EncryptedKeyStorageManager {
         
         // Check cache first
         {
-            let cache = self.key_cache.read().unwrap();
+            let cache = self.key_cache.read().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("read lock failed".to_string().into())))?;
             if let Some(cached_seed) = cache.get(seed_id) {
-                let mut stats = self.stats.lock().unwrap();
+                let mut stats = self.stats.lock().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("mutex lock failed".to_string().into())))?;
                 stats.cache_hits += 1;
                 return MasterSeed::from_entropy(cached_seed.as_slice());
             }
@@ -465,15 +469,15 @@ impl EncryptedKeyStorageManager {
         let key_data = self.load_and_decrypt(password).await?;
         
         let seed_bytes = key_data.master_seeds.get(seed_id)
-            .ok_or_else(|| P2PError::Storage(crate::error::StorageError::FileNotFound {
-                path: format!("seed:{seed_id}"),
-            }))?;
+            .ok_or_else(|| P2PError::Storage(crate::error::StorageError::FileNotFound(
+                format!("seed:{}", seed_id).into()
+            )))?;
         
         let master_seed = MasterSeed::from_entropy(seed_bytes)?;
         
         // Update cache
         {
-            let mut cache = self.key_cache.write().unwrap();
+            let mut cache = self.key_cache.write().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("write lock failed".to_string().into())))?;
             cache.insert(
                 seed_id.to_string(),
                 SecureMemory::from_slice(seed_bytes)?,
@@ -482,7 +486,7 @@ impl EncryptedKeyStorageManager {
         
         // Update statistics
         {
-            let mut stats = self.stats.lock().unwrap();
+            let mut stats = self.stats.lock().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("mutex lock failed".to_string().into())))?;
             stats.cache_misses += 1;
             stats.avg_derivation_time_ms = 
                 (stats.avg_derivation_time_ms + start_time.elapsed().as_millis() as u64) / 2;
@@ -503,7 +507,7 @@ impl EncryptedKeyStorageManager {
             return Err(P2PError::Security(crate::error::SecurityError::DecryptionFailed(format!(
                 "New password validation failed: {}",
                 validation.errors.join(", ")
-            ))));
+            ).into())));
         }
         
         // Load data with old password
@@ -520,13 +524,13 @@ impl EncryptedKeyStorageManager {
         
         // Clear password cache
         {
-            let mut cache = self.password_cache.lock().unwrap();
+            let mut cache = self.password_cache.lock().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("mutex lock failed".to_string().into())))?;
             *cache = None;
         }
         
         // Update statistics
         {
-            let mut stats = self.stats.lock().unwrap();
+            let mut stats = self.stats.lock().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("mutex lock failed".to_string().into())))?;
             stats.storage_operations += 1;
         }
         
@@ -536,7 +540,7 @@ impl EncryptedKeyStorageManager {
     /// Validate password strength
     pub fn validate_password(&self, password: &SecureString) -> Result<PasswordValidation> {
         let password_str = password.as_str()
-            .map_err(|e| P2PError::Security(crate::error::SecurityError::DecryptionFailed(format!("Invalid password encoding: {e}"))))?;
+            .map_err(|e| P2PError::Security(crate::error::SecurityError::DecryptionFailed(format!("Invalid password encoding: {e}").into())))?;
         
         let mut errors = Vec::new();
         let mut suggestions = Vec::new();
@@ -626,20 +630,23 @@ impl EncryptedKeyStorageManager {
     }
     
     /// Get storage statistics
-    pub fn get_stats(&self) -> StorageStats {
-        self.stats.lock().unwrap().clone()
+    pub fn get_stats(&self) -> Result<StorageStats> {
+        let stats = self.stats.lock().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("mutex lock failed".to_string().into())))?;
+        Ok(stats.clone())
     }
     
     /// Clear key cache
-    pub fn clear_cache(&self) {
-        let mut cache = self.key_cache.write().unwrap();
+    pub fn clear_cache(&self) -> Result<()> {
+        let mut cache = self.key_cache.write().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("write lock failed".to_string().into())))?;
         cache.clear();
         
-        let mut password_cache = self.password_cache.lock().unwrap();
+        let mut password_cache = self.password_cache.lock().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("mutex lock failed".to_string().into())))?;
         *password_cache = None;
         
-        let mut stats = self.stats.lock().unwrap();
+        let mut stats = self.stats.lock().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("mutex lock failed".to_string().into())))?;
         stats.cache_size_bytes = 0;
+        
+        Ok(())
     }
     
     /// Derive key from password using Argon2id
@@ -648,35 +655,35 @@ impl EncryptedKeyStorageManager {
         
         // Check password cache
         {
-            let cache = self.password_cache.lock().unwrap();
+            let cache = self.password_cache.lock().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("mutex lock failed".to_string().into())))?;
             if let Some(ref cached_key) = *cache {
                 return SecureMemory::from_slice(cached_key.as_slice());
             }
         }
         
         let password_str = password.as_str()
-            .map_err(|e| P2PError::Security(crate::error::SecurityError::DecryptionFailed(format!("Invalid password encoding: {e}"))))?;
+            .map_err(|e| P2PError::Security(crate::error::SecurityError::DecryptionFailed(format!("Invalid password encoding: {e}").into())))?;
         
-        let argon2 = self.argon2_config.create_argon2();
+        let argon2 = self.argon2_config.create_argon2()?;
         let salt_string = SaltString::encode_b64(salt)
-            .map_err(|e| P2PError::Security(crate::error::SecurityError::DecryptionFailed(format!("Failed to encode salt: {e}"))))?;
+            .map_err(|e| P2PError::Security(crate::error::SecurityError::DecryptionFailed(format!("Failed to encode salt: {e}").into())))?;
         
         let hash = argon2.hash_password(password_str.as_bytes(), &salt_string)
-            .map_err(|e| P2PError::Security(crate::error::SecurityError::DecryptionFailed(format!("Argon2id key derivation failed: {e}"))))?;
+            .map_err(|e| P2PError::Security(crate::error::SecurityError::DecryptionFailed(format!("Argon2id key derivation failed: {e}").into())))?;
         
-        let hash_output = hash.hash.unwrap();
+        let hash_output = hash.hash.ok_or_else(|| P2PError::Security(crate::error::SecurityError::KeyGenerationFailed("Argon2id hash output missing".to_string().into())))?;
         let key_bytes = hash_output.as_bytes();
         let derived_key = SecureMemory::from_slice(&key_bytes[..AES_KEY_SIZE])?;
         
         // Cache the derived key
         {
-            let mut cache = self.password_cache.lock().unwrap();
+            let mut cache = self.password_cache.lock().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("mutex lock failed".to_string().into())))?;
             *cache = Some(SecureMemory::from_slice(derived_key.as_slice())?);
         }
         
         // Update statistics
         {
-            let mut stats = self.stats.lock().unwrap();
+            let mut stats = self.stats.lock().map_err(|_| P2PError::Storage(StorageError::LockPoisoned("mutex lock failed".to_string().into())))?;
             stats.total_derivations += 1;
             stats.avg_derivation_time_ms = 
                 (stats.avg_derivation_time_ms + start_time.elapsed().as_millis() as u64) / 2;
@@ -698,14 +705,14 @@ impl EncryptedKeyStorageManager {
         
         // Serialize key data
         let serialized_data = bincode::serialize(key_data)
-            .map_err(|e| P2PError::Storage(StorageError::Database(e.to_string())))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(e.to_string().into())))?;
         
         // Encrypt data
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(derived_key.as_slice()));
         let nonce_obj = Nonce::from_slice(nonce);
         
         let encrypted_data = cipher.encrypt(nonce_obj, serialized_data.as_ref())
-            .map_err(|e| P2PError::Security(crate::error::SecurityError::DecryptionFailed(format!("AES-GCM encryption failed: {e}"))))?;
+            .map_err(|e| P2PError::Security(crate::error::SecurityError::DecryptionFailed(format!("AES-GCM encryption failed: {e}").into())))?;
         
         // Create storage header
         let header = StorageHeader {
@@ -727,7 +734,7 @@ impl EncryptedKeyStorageManager {
         // Write to file atomically
         let temp_path = self.storage_path.with_extension("tmp");
         let serialized_storage = bincode::serialize(&storage)
-            .map_err(|e| P2PError::Storage(StorageError::Database(e.to_string())))?;
+            .map_err(|e| P2PError::Storage(StorageError::Database(e.to_string().into())))?;
         
         {
             let mut file = OpenOptions::new()
@@ -763,18 +770,15 @@ impl EncryptedKeyStorageManager {
         
         // Deserialize storage
         let storage: EncryptedKeyStorage = bincode::deserialize(&data)
-            .map_err(|e| P2PError::Storage(crate::error::StorageError::CorruptionDetected {
-                reason: format!("Deserialization failed: {e}"),
-            }))?;
+            .map_err(|e| P2PError::Storage(crate::error::StorageError::CorruptionDetected(
+                format!("Deserialization failed: {}", e).into()
+            )))?;
         
         // Verify version
         if storage.header.version != STORAGE_FORMAT_VERSION {
-            return Err(P2PError::Storage(crate::error::StorageError::CorruptionDetected {
-                reason: format!(
-                    "Unsupported storage format version: {}",
-                    storage.header.version
-                ),
-            }));
+            return Err(P2PError::Storage(crate::error::StorageError::CorruptionDetected(
+                format!("Unsupported storage format version: {}", storage.header.version).into()
+            )));
         }
         
         // Derive decryption key
@@ -785,13 +789,13 @@ impl EncryptedKeyStorageManager {
         let nonce_obj = Nonce::from_slice(&storage.header.nonce);
         
         let decrypted_data = cipher.decrypt(nonce_obj, storage.encrypted_data.as_ref())
-            .map_err(|e| P2PError::Security(crate::error::SecurityError::DecryptionFailed(format!("AES-GCM decryption failed: {e}"))))?;
+            .map_err(|e| P2PError::Security(crate::error::SecurityError::DecryptionFailed(format!("AES-GCM decryption failed: {e}").into())))?;
         
         // Deserialize key data
         let key_data: KeyStorageData = bincode::deserialize(&decrypted_data)
-            .map_err(|e| P2PError::Storage(crate::error::StorageError::CorruptionDetected {
-                reason: format!("Deserialization failed: {e}"),
-            }))?;
+            .map_err(|e| P2PError::Storage(crate::error::StorageError::CorruptionDetected(
+                format!("Deserialization failed: {}", e).into()
+            )))?;
         
         Ok(key_data)
     }
@@ -806,9 +810,9 @@ impl EncryptedKeyStorageManager {
             .map_err(|e| P2PError::Io(e))?;
         
         let storage: EncryptedKeyStorage = bincode::deserialize(&data)
-            .map_err(|e| P2PError::Storage(crate::error::StorageError::CorruptionDetected {
-                reason: format!("Deserialization failed: {e}"),
-            }))?;
+            .map_err(|e| P2PError::Storage(crate::error::StorageError::CorruptionDetected(
+                format!("Deserialization failed: {}", e).into()
+            )))?;
         
         Ok(storage.header.salt)
     }
@@ -825,8 +829,8 @@ impl EncryptedKeyStorageManager {
 fn current_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -930,7 +934,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         
         for level in [SecurityLevel::Fast, SecurityLevel::Standard, SecurityLevel::High] {
-            let storage_path = temp_dir.path().join(format!("test_storage_{:?}.enc", level));
+            let storage_path = temp_dir.path().join(format!("test_storage_{:?}.enc", level).into());
             
             let manager = EncryptedKeyStorageManager::new(&storage_path, level).unwrap();
             let password = SecureString::from_str("test_password_123!").unwrap();
@@ -977,7 +981,7 @@ mod tests {
         // Cache hit should be faster
         assert!(second_access_time < first_access_time);
         
-        let stats = manager.get_stats();
+        let stats = manager.get_stats().unwrap();
         assert!(stats.cache_hits > 0);
     }
 }

@@ -72,6 +72,7 @@ pub struct Cli {
 }
 
 #[derive(Subcommand)]
+#[derive(Debug)]
 pub enum Commands {
     /// Run the complete test suite
     Run {

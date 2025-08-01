@@ -64,16 +64,17 @@ pub struct CeremonyId([u8; 32]);
 
 /// Active DKG ceremony
 struct Ceremony {
-    id: CeremonyId,
-    threshold: u16,
+    _id: CeremonyId,
+    _threshold: u16,
     participants: Vec<ParticipantId>,
     commitments: HashMap<ParticipantId, Vec<u8>>,
-    shares: HashMap<ParticipantId, Vec<u8>>,
+    _shares: HashMap<ParticipantId, Vec<u8>>,
     state: CeremonyState,
 }
 
 /// Ceremony state
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 enum CeremonyState {
     CollectingCommitments,
     DistributingShares,
@@ -105,11 +106,11 @@ impl DkgCoordinator {
         let ceremony_id = CeremonyId(rand::random());
         
         let ceremony = Ceremony {
-            id: ceremony_id.clone(),
-            threshold,
+            _id: ceremony_id.clone(),
+            _threshold: threshold,
             participants,
             commitments: HashMap::new(),
-            shares: HashMap::new(),
+            _shares: HashMap::new(),
             state: CeremonyState::CollectingCommitments,
         };
         

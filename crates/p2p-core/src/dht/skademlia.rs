@@ -19,7 +19,8 @@
 
 use crate::dht::{Key, DHTNode};
 use crate::security::ReputationManager;
-use crate::{PeerId, Result, P2PError};
+use crate::PeerId;
+use crate::error::{P2PError as P2PError, P2pResult as Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant, SystemTime};
@@ -257,10 +258,10 @@ impl DisjointPathLookup {
     /// Add initial nodes to paths ensuring disjointness
     pub fn initialize_paths(&mut self, initial_nodes: Vec<DHTNode>) -> Result<()> {
         if initial_nodes.len() < self.path_count {
-            return Err(P2PError::Dht(crate::error::DhtError::InsufficientReplicas {
-                available: initial_nodes.len(),
-                required: self.path_count,
-            }));
+            return Err(P2PError::Dht(crate::error::DhtError::InsufficientReplicas(
+                format!("Available: {}, Required: {}", initial_nodes.len(), self.path_count).into()
+                
+            )));
         }
 
         // Distribute nodes across paths to minimize overlap
@@ -599,10 +600,9 @@ impl SKademlia {
         if let Some(lookup) = self.active_lookups.get(&target) {
             Ok(lookup.get_results())
         } else {
-            Err(P2PError::Dht(crate::error::DhtError::LookupFailed {
-                key: target.to_string(),
-                reason: "Lookup disappeared".to_string(),
-            }))
+            Err(P2PError::Dht(crate::error::DhtError::KeyNotFound(
+                format!("{}: Lookup disappeared", target).into()
+            )))
         }
     }
 
@@ -672,7 +672,7 @@ impl SKademlia {
     pub fn verify_distance_proof(&self, proof: &DistanceProof) -> Result<bool> {
         // Verify proof timestamps
         let elapsed = proof.challenge.timestamp.elapsed()
-            .map_err(|e| P2PError::Dht(crate::error::DhtError::RoutingError(format!("Invalid timestamp: {e}"))))?;
+            .map_err(|e| P2PError::Dht(crate::error::DhtError::RoutingError(format!("Invalid timestamp: {e}").into())))?;
         
         if elapsed > Duration::from_secs(300) {
             return Ok(false); // Proof too old
@@ -753,13 +753,13 @@ impl SKademlia {
     /// Calculate consensus distance from multiple measurements
     fn calculate_consensus_distance(&self, measurements: &[DistanceMeasurement]) -> Result<Key> {
         if measurements.is_empty() {
-            return Err(P2PError::Dht(crate::error::DhtError::RoutingError("No measurements provided".to_string())));
+            return Err(P2PError::Dht(crate::error::DhtError::RoutingError("No measurements provided".to_string().into())));
         }
         
         // For simplicity, use the distance from the most confident measurement
         let best_measurement = measurements.iter()
             .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap();
+            .ok_or_else(|| P2PError::Dht(crate::error::DhtError::RoutingError("No valid measurement found".to_string().into())))?;
         
         Ok(best_measurement.distance.clone())
     }
@@ -815,7 +815,7 @@ impl SKademlia {
         // TODO: Select actual witness nodes from routing table
         // For now, create placeholder witnesses
         for i in 0..witness_count {
-            witness_nodes.push(format!("witness_{i}"));
+            witness_nodes.push(format!("witness_{i}").into());
         }
         
         // Create enhanced challenge with proper configuration
@@ -1251,7 +1251,7 @@ mod tests {
         
         // Add more routes than the limit (max 5)
         for i in 0..7 {
-            let route = vec![create_test_dht_node(&format!("peer{}", i), [i as u8; 32])];
+            let route = vec![create_test_dht_node(&format!("peer{}", i).into(), [i as u8; 32])];
             security_bucket.add_backup_route(route);
         }
         

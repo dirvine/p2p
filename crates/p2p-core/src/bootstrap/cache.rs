@@ -99,7 +99,7 @@ pub struct BootstrapCache {
     instance_cache_file: PathBuf,
     lock_file: PathBuf,
     metadata_file: PathBuf,
-    quality_calculator: QualityCalculator,
+    _quality_calculator: QualityCalculator,
     stats: Arc<RwLock<CacheStats>>,
 }
 
@@ -130,7 +130,7 @@ impl BootstrapCache {
     pub async fn new(cache_dir: PathBuf, config: CacheConfig) -> Result<Self> {
         // Ensure cache directory exists
         std::fs::create_dir_all(&cache_dir)
-            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to create cache directory: {e}"))))?;
+            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to create cache directory: {e}").into())))?;
         
         let instance_id = generate_instance_id();
         
@@ -140,8 +140,14 @@ impl BootstrapCache {
         let metadata_file = cache_dir.join("metadata.json");
         
         // Ensure instance cache directory exists
-        std::fs::create_dir_all(instance_cache_file.parent().unwrap())
-            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to create instance cache directory: {e}"))))?;
+        if let Some(parent) = instance_cache_file.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to create instance cache directory: {e}").into())))?;
+        } else {
+            return Err(P2PError::Bootstrap(BootstrapError::CacheError(
+                "Cache file has no parent directory".to_string().into()
+            )));
+        }
         
         let mut cache = Self {
             config: config.clone(),
@@ -151,7 +157,7 @@ impl BootstrapCache {
             instance_cache_file,
             lock_file,
             metadata_file,
-            quality_calculator: QualityCalculator::new(),
+            _quality_calculator: QualityCalculator::new(),
             stats: Arc::new(RwLock::new(CacheStats::default())),
         };
         
@@ -403,7 +409,7 @@ impl BootstrapCache {
         for contact in contacts.values() {
             if let Some(ref quic) = contact.quic_contact {
                 for conn_type in &quic.successful_connection_types {
-                    *connection_type_counts.entry(format!("{conn_type:?}")).or_insert(0) += 1;
+                    *connection_type_counts.entry(format!("{conn_type:?}").into()).or_insert(0) += 1;
                 }
             }
         }
@@ -466,14 +472,14 @@ impl BootstrapCache {
         // Write to temporary file first for atomic operation
         let temp_file = self.cache_file.with_extension("tmp");
         let json_data = serde_json::to_string_pretty(&cache_data)
-            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to serialize cache: {e}"))))?;
+            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to serialize cache: {e}").into())))?;
         
         std::fs::write(&temp_file, json_data)
-            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to write cache file: {e}"))))?;
+            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to write cache file: {e}").into())))?;
         
         // Atomic rename
         std::fs::rename(temp_file, &self.cache_file)
-            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to rename cache file: {e}"))))?;
+            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to rename cache file: {e}").into())))?;
         
         debug!("Saved {} contacts to cache", contacts.len());
         
@@ -492,10 +498,10 @@ impl BootstrapCache {
         };
         
         let json_data = serde_json::to_string(&cache_data)
-            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to serialize instance cache: {e}"))))?;
+            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to serialize instance cache: {e}").into())))?;
         
         std::fs::write(&self.instance_cache_file, json_data)
-            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to write instance cache: {e}"))))?;
+            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to write instance cache: {e}").into())))?;
         
         Ok(())
     }
@@ -508,10 +514,10 @@ impl BootstrapCache {
     /// Load cache data from file
     async fn load_cache_data(&self) -> Result<CacheData> {
         let json_data = std::fs::read_to_string(&self.cache_file)
-            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to read cache file: {e}"))))?;
+            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to read cache file: {e}").into())))?;
         
         let cache_data: CacheData = serde_json::from_str(&json_data)
-            .map_err(|e| P2PError::Bootstrap(BootstrapError::InvalidData(format!("Failed to parse cache file: {e}"))))?;
+            .map_err(|e| P2PError::Bootstrap(BootstrapError::InvalidData(format!("Failed to parse cache file: {e}").into())))?;
         
         Ok(cache_data)
     }
@@ -654,7 +660,7 @@ impl FileLock {
             .create(true)
             .write(true)
             .open(lock_file)
-            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to create lock file: {e}"))))?;
+            .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to create lock file: {e}").into())))?;
         
         // In a production system, you'd use proper file locking here
         // For now, we'll rely on atomic file operations
@@ -665,7 +671,7 @@ impl FileLock {
 
 /// Generate unique instance ID
 fn generate_instance_id() -> String {
-    format!("{}_{}", std::process::id(), SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis())
+    format!("{}_{}", std::process::id(), SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0))
 }
 
 #[cfg(test)]
@@ -750,7 +756,7 @@ mod tests {
         // Add contacts exceeding the limit
         for i in 0..10 {
             let contact = ContactEntry::new(
-                PeerId::from(format!("test-peer-{}", i)),
+                PeerId::from(format!("test-peer-{}", i).into()),
                 vec![format!("127.0.0.1:{}", 9000 + i).parse().unwrap()]
             );
             cache.add_contact(contact).await.unwrap();

@@ -1,0 +1,28 @@
+# Clippy configuration for P2P Foundation project
+# This file configures clippy lints to enforce code quality standards
+
+# Deny unwrap() in production code to prevent panics
+disallowed-methods = [
+    # Prevent direct unwrap() calls
+    { path = "core::option::Option::unwrap", reason = "Use proper error handling with ? or ok_or_else()" },
+    { path = "core::result::Result::unwrap", reason = "Use proper error handling with ? or map_err()" },
+    { path = "core::result::Result::expect", reason = "Use proper error handling with ? or map_err()" },
+    
+    # Prevent panic-inducing methods
+    { path = "std::panic::panic_any", reason = "Production code must not panic" },
+    { path = "core::panicking::panic", reason = "Production code must not panic" },
+    { path = "std::process::abort", reason = "Use graceful shutdown instead" },
+    
+    # Prevent index operations that can panic
+    { path = "core::slice::<impl [T]>::get_unchecked", reason = "Use safe indexing with get()" },
+    { path = "core::slice::<impl [T]>::get_unchecked_mut", reason = "Use safe indexing with get_mut()" },
+]
+
+# Allow unwraps in tests
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+
+# Threshold configurations
+cognitive-complexity-threshold = 30
+excessive-nesting-threshold = 5
+too-many-arguments-threshold = 7

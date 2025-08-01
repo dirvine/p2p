@@ -24,7 +24,6 @@ use crate::adaptive::{
     TrustProvider,
     learning::ChurnPredictor,
     routing::{AdaptiveRouter},
-    RoutingStrategy,
     storage::{ReplicationConfig, ContentMetadata},
 };
 use anyhow::Result;
@@ -156,7 +155,7 @@ impl ReplicationManager {
     /// Select nodes for replication based on composite scoring
     pub async fn select_replication_nodes(
         &self,
-        content_hash: &ContentHash,
+        _content_hash: &ContentHash,
         count: usize,
         exclude: &HashSet<NodeId>,
     ) -> Result<Vec<NodeId>> {
@@ -166,7 +165,7 @@ impl ReplicationManager {
         // Get nodes from each routing strategy
         let strategies = self.router.get_all_strategies();
         for (strategy_name, strategy) in strategies {
-            let nodes = strategy.find_closest_nodes(content_hash, count * 2).await?;
+            let nodes = strategy.find_closest_nodes(_content_hash, count * 2).await?;
             for node in nodes {
                 if !exclude.contains(&node) {
                     candidates.entry(node).or_insert(Vec::new()).push(strategy_name.clone());
@@ -177,7 +176,7 @@ impl ReplicationManager {
         // Score nodes based on composite criteria
         let mut scored_nodes: Vec<(NodeId, f64)> = Vec::new();
         for (node, strategies_found) in candidates {
-            let score = self.calculate_node_score(&node, content_hash, &strategies_found).await;
+            let score = self.calculate_node_score(&node, _content_hash, &strategies_found).await;
             scored_nodes.push((node, score));
         }
         
@@ -195,7 +194,7 @@ impl ReplicationManager {
     async fn calculate_node_score(
         &self,
         node: &NodeId,
-        content_hash: &ContentHash,
+        _content_hash: &ContentHash,
         strategies_found: &[String],
     ) -> f64 {
         // Base score from specification:
@@ -235,17 +234,17 @@ impl ReplicationManager {
     /// Replicate content to maintain target replication factor
     pub async fn replicate_content(
         &self,
-        content_hash: &ContentHash,
+        _content_hash: &ContentHash,
         content: &[u8],
         metadata: ContentMetadata,
     ) -> Result<ReplicaInfo> {
         // Calculate target replication factor
-        let target_factor = self.calculate_replication_factor(content_hash).await;
+        let target_factor = self.calculate_replication_factor(_content_hash).await;
         
         // Get current replicas
         let mut replica_map = self.replica_map.write().await;
         let current_replicas = replica_map
-            .get(content_hash)
+            .get(_content_hash)
             .map(|info| info.storing_nodes.clone())
             .unwrap_or_default();
         
@@ -255,7 +254,7 @@ impl ReplicationManager {
         if current_count < target_factor {
             let needed = (target_factor - current_count) as usize;
             let new_nodes = self.select_replication_nodes(
-                content_hash,
+                _content_hash,
                 needed,
                 &current_replicas,
             ).await?;
@@ -266,7 +265,7 @@ impl ReplicationManager {
             
             for node in new_nodes {
                 // Simulate replication (would actually send content to node)
-                if self.send_replica_to_node(&node, content_hash, content).await {
+                if self.send_replica_to_node(&node, _content_hash, content).await {
                     successful_nodes.insert(node);
                     stats.successful_replications += 1;
                 } else {
@@ -285,11 +284,11 @@ impl ReplicationManager {
                 metadata,
             };
             
-            replica_map.insert(content_hash.clone(), replica_info.clone());
+            replica_map.insert(_content_hash.clone(), replica_info.clone());
             Ok(replica_info)
         } else {
             // Already have enough replicas
-            let replica_info = replica_map.get(content_hash).cloned().unwrap_or(ReplicaInfo {
+            let replica_info = replica_map.get(_content_hash).cloned().unwrap_or(ReplicaInfo {
                 storing_nodes: current_replicas,
                 replication_factor: current_count,
                 target_factor,
@@ -391,8 +390,8 @@ impl ReplicationManager {
     async fn send_replica_to_node(
         &self,
         node: &NodeId,
-        content_hash: &ContentHash,
-        content: &[u8],
+        _content_hash: &ContentHash,
+        _content: &[u8],
     ) -> bool {
         // In real implementation, this would:
         // 1. Establish connection to node
@@ -442,7 +441,7 @@ impl ReplicationManager {
     }
     
     /// Increase global replication factor during high churn
-    pub async fn increase_global_replication(&self, multiplier: f64) {
+    pub async fn increase_global_replication(&self, _multiplier: f64) {
         // This would increase the replication factor for all content
         // For now, just log the action
         // log::info!("Increasing global replication by {:.2}x due to high churn", multiplier);

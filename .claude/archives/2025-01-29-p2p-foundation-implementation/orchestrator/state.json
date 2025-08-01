@@ -1,0 +1,23 @@
+{
+  "active": false,
+  "paused": false,
+  "current_task": null,
+  "completed_tasks": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+  "start_time": "2025-07-28T14:30:00Z",
+  "end_time": "2025-07-29T16:45:00Z",
+  "mode": "autonomous",
+  "auto_progression": true,
+  "quality_thresholds": {
+    "test_coverage": 80,
+    "property_coverage": 80,
+    "max_iterations": 10
+  },
+  "escalation_preferences": {
+    "missing_credentials": "prompt",
+    "spec_conflicts": "prompt",
+    "better_approach": "prompt_if_major"
+  },
+  "final_status": "completed",
+  "total_tasks": 12,
+  "success_rate": 100
+}

@@ -1,0 +1,659 @@
+// Copyright 2024 Saorsa Labs Limited
+//
+// This software is dual-licensed under:
+// - GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
+// - Commercial License
+//
+// For AGPL-3.0 license, see LICENSE-AGPL-3.0
+// For commercial licensing, contact: saorsalabs@gmail.com
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under these licenses is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
+//! # Monotonic Counter System for Replay Attack Prevention
+//!
+//! This module provides a secure monotonic counter system that prevents replay attacks
+//! by ensuring sequence numbers always increase and cannot be reused.
+//!
+//! ## Security Features
+//! - Atomic operations to prevent race conditions
+//! - Persistent storage with crash recovery
+//! - Sequence validation with gap detection
+//! - Memory-efficient tracking for multiple peers
+//!
+//! ## Performance Features
+//! - Batch updates for multiple counters
+//! - Efficient in-memory caching
+//! - Background persistence to avoid blocking
+//! - Configurable sync intervals
+
+use crate::{P2PError, Result};
+use crate::error::StorageError;
+use crate::peer_record::UserId;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tokio::sync::Mutex;
+use tokio::time::interval;
+
+/// Maximum number of sequence numbers to remember per peer
+const MAX_SEQUENCE_HISTORY: usize = 1000;
+
+/// Default sync interval for persisting counters to disk
+const DEFAULT_SYNC_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Maximum age for sequence numbers before they're considered stale
+const MAX_SEQUENCE_AGE: Duration = Duration::from_secs(3600); // 1 hour
+
+/// Monotonic counter system for preventing replay attacks
+pub struct MonotonicCounterSystem {
+    /// In-memory counter cache
+    counters: Arc<RwLock<HashMap<UserId, PeerCounter>>>,
+    /// Persistent storage path
+    storage_path: PathBuf,
+    /// Sync interval for persistence
+    sync_interval: Duration,
+    /// Background sync task handle
+    sync_task: Option<tokio::task::JoinHandle<()>>,
+    /// System statistics
+    stats: Arc<Mutex<CounterStats>>,
+}
+
+/// Per-peer counter state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerCounter {
+    /// Current sequence number
+    pub current_sequence: u64,
+    /// Last valid sequence number received
+    pub last_valid_sequence: u64,
+    /// History of recent sequence numbers to detect replays
+    pub sequence_history: Vec<SequenceEntry>,
+    /// Timestamp of last update
+    pub last_updated: u64,
+    /// Number of replay attempts detected
+    pub replay_attempts: u64,
+    /// Sequence number gaps detected
+    pub sequence_gaps: u64,
+}
+
+/// Sequence number entry with metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SequenceEntry {
+    /// Sequence number
+    pub sequence: u64,
+    /// Timestamp when received
+    pub timestamp: u64,
+    /// Hash of the message for deduplication
+    pub message_hash: [u8; 32],
+}
+
+/// Statistics for monitoring counter system performance
+#[derive(Debug, Clone, Default)]
+pub struct CounterStats {
+    /// Total sequence numbers processed
+    pub total_processed: u64,
+    /// Total replay attempts detected
+    pub total_replays: u64,
+    /// Total sequence gaps detected
+    pub total_gaps: u64,
+    /// Number of peers tracked
+    pub peers_tracked: usize,
+    /// Number of persistence operations
+    pub persistence_ops: u64,
+    /// Average validation time in microseconds
+    pub avg_validation_time_us: u64,
+    /// Number of cache hits
+    pub cache_hits: u64,
+    /// Number of cache misses
+    pub cache_misses: u64,
+}
+
+/// Result of sequence validation
+#[derive(Debug, Clone, PartialEq)]
+pub enum SequenceValidationResult {
+    /// Sequence is valid and accepted
+    Valid,
+    /// Sequence is a replay (already seen)
+    Replay,
+    /// Sequence is too old
+    TooOld,
+    /// Sequence has a gap (missing intermediate sequences)
+    Gap { expected: u64, received: u64 },
+    /// Sequence is from the future (clock skew)
+    FromFuture,
+}
+
+/// Batch update request for multiple counters
+pub struct BatchUpdateRequest {
+    /// User ID
+    pub user_id: UserId,
+    /// Sequence number
+    pub sequence: u64,
+    /// Message hash for deduplication
+    pub message_hash: [u8; 32],
+    /// Timestamp
+    pub timestamp: u64,
+}
+
+/// Result of batch update
+pub struct BatchUpdateResult {
+    /// User ID
+    pub user_id: UserId,
+    /// Validation result
+    pub result: SequenceValidationResult,
+    /// Whether the update was applied
+    pub applied: bool,
+}
+
+impl MonotonicCounterSystem {
+    /// Create a new monotonic counter system
+    pub async fn new(storage_path: PathBuf) -> Result<Self> {
+        Self::new_with_sync_interval(storage_path, DEFAULT_SYNC_INTERVAL).await
+    }
+
+    /// Create a new monotonic counter system with custom sync interval
+    pub async fn new_with_sync_interval(
+        storage_path: PathBuf,
+        sync_interval: Duration,
+    ) -> Result<Self> {
+        // Ensure storage directory exists
+        if let Some(parent) = storage_path.parent() {
+            tokio::fs::create_dir_all(parent).await
+                .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to create storage directory: {e}"))))?;
+        }
+
+        // Load existing counters from storage
+        let counters = Self::load_counters(&storage_path).await?;
+
+        let system = Self {
+            counters: Arc::new(RwLock::new(counters)),
+            storage_path,
+            sync_interval,
+            sync_task: None,
+            stats: Arc::new(Mutex::new(CounterStats::default())),
+        };
+
+        Ok(system)
+    }
+
+    /// Start the background sync task
+    pub async fn start_sync_task(&mut self) -> Result<()> {
+        if self.sync_task.is_some() {
+            return Ok(()); // Already started
+        }
+
+        let counters = self.counters.clone();
+        let storage_path = self.storage_path.clone();
+        let sync_interval = self.sync_interval;
+        let stats = self.stats.clone();
+
+        let task = tokio::spawn(async move {
+            let mut interval = interval(sync_interval);
+            loop {
+                interval.tick().await;
+                
+                if let Err(e) = Self::sync_counters(&counters, &storage_path, &stats).await {
+                    tracing::warn!("Failed to sync counters to storage: {}", e);
+                }
+            }
+        });
+
+        self.sync_task = Some(task);
+        Ok(())
+    }
+
+    /// Stop the background sync task
+    pub async fn stop_sync_task(&mut self) {
+        if let Some(task) = self.sync_task.take() {
+            task.abort();
+        }
+    }
+
+    /// Validate and update sequence number for a peer
+    pub async fn validate_sequence(
+        &self,
+        user_id: &UserId,
+        sequence: u64,
+        message_hash: [u8; 32],
+    ) -> Result<SequenceValidationResult> {
+        let start_time = Instant::now();
+        let timestamp = current_timestamp();
+
+        // Get or create peer counter
+        let validation_result = {
+            let mut counters = self.counters.write().unwrap();
+            let peer_counter = counters.entry(user_id.clone()).or_insert_with(|| {
+                PeerCounter::new()
+            });
+
+            // Validate the sequence number
+            let result = self.validate_sequence_internal(
+                peer_counter,
+                sequence,
+                message_hash,
+                timestamp,
+            );
+
+            // Update statistics
+            if let SequenceValidationResult::Valid = result {
+                // Apply the update
+                peer_counter.apply_sequence_update(sequence, message_hash, timestamp);
+            }
+
+            result
+        };
+
+        // Update performance statistics
+        self.update_validation_stats(start_time, &validation_result).await;
+
+        Ok(validation_result)
+    }
+
+    /// Validate sequence number without updating state
+    fn validate_sequence_internal(
+        &self,
+        peer_counter: &PeerCounter,
+        sequence: u64,
+        message_hash: [u8; 32],
+        timestamp: u64,
+    ) -> SequenceValidationResult {
+        // Check if timestamp is too far in the future (clock skew protection)
+        let current_time = current_timestamp();
+        if timestamp > current_time + 60 {
+            return SequenceValidationResult::FromFuture;
+        }
+
+        // Check if sequence is too old
+        if timestamp < current_time.saturating_sub(MAX_SEQUENCE_AGE.as_secs()) {
+            return SequenceValidationResult::TooOld;
+        }
+
+        // Check for replay attack (already seen this sequence)
+        if peer_counter.has_seen_sequence(sequence, message_hash) {
+            return SequenceValidationResult::Replay;
+        }
+
+        // Check for sequence gaps
+        if sequence > peer_counter.last_valid_sequence + 1 {
+            return SequenceValidationResult::Gap {
+                expected: peer_counter.last_valid_sequence + 1,
+                received: sequence,
+            };
+        }
+
+        // Check if sequence is older than last valid (out of order)
+        if sequence <= peer_counter.last_valid_sequence {
+            return SequenceValidationResult::Replay;
+        }
+
+        SequenceValidationResult::Valid
+    }
+
+    /// Process batch updates for multiple peers
+    pub async fn batch_update(
+        &self,
+        requests: Vec<BatchUpdateRequest>,
+    ) -> Result<Vec<BatchUpdateResult>> {
+        let mut results = Vec::with_capacity(requests.len());
+        
+        // Process all requests atomically
+        {
+            let mut counters = self.counters.write().unwrap();
+            
+            for request in requests {
+                let peer_counter = counters.entry(request.user_id.clone()).or_insert_with(|| {
+                    PeerCounter::new()
+                });
+
+                let validation_result = self.validate_sequence_internal(
+                    peer_counter,
+                    request.sequence,
+                    request.message_hash,
+                    request.timestamp,
+                );
+
+                let applied = matches!(validation_result, SequenceValidationResult::Valid);
+                
+                if applied {
+                    peer_counter.apply_sequence_update(
+                        request.sequence,
+                        request.message_hash,
+                        request.timestamp,
+                    );
+                }
+
+                results.push(BatchUpdateResult {
+                    user_id: request.user_id,
+                    result: validation_result,
+                    applied,
+                });
+            }
+        }
+
+        // Update batch statistics
+        {
+            let mut stats = self.stats.lock().await;
+            stats.total_processed += results.len() as u64;
+            stats.total_replays += results.iter()
+                .filter(|r| matches!(r.result, SequenceValidationResult::Replay))
+                .count() as u64;
+            stats.total_gaps += results.iter()
+                .filter(|r| matches!(r.result, SequenceValidationResult::Gap { .. }))
+                .count() as u64;
+        }
+
+        Ok(results)
+    }
+
+    /// Get current statistics
+    pub async fn get_stats(&self) -> CounterStats {
+        let stats = self.stats.lock().await;
+        let mut current_stats = stats.clone();
+        
+        // Update live statistics
+        let counters = self.counters.read().unwrap();
+        current_stats.peers_tracked = counters.len();
+        
+        current_stats
+    }
+
+    /// Get counter state for a specific peer
+    pub async fn get_peer_counter(&self, user_id: &UserId) -> Option<PeerCounter> {
+        let counters = self.counters.read().unwrap();
+        counters.get(user_id).cloned()
+    }
+
+    /// Reset counter for a peer (use with caution)
+    pub async fn reset_peer_counter(&self, user_id: &UserId) -> Result<()> {
+        let mut counters = self.counters.write().unwrap();
+        counters.remove(user_id);
+        Ok(())
+    }
+
+    /// Cleanup old sequence entries
+    pub async fn cleanup_old_sequences(&self) -> Result<()> {
+        let current_time = current_timestamp();
+        let cutoff_time = current_time.saturating_sub(MAX_SEQUENCE_AGE.as_secs());
+
+        let mut counters = self.counters.write().unwrap();
+        for (_, peer_counter) in counters.iter_mut() {
+            peer_counter.cleanup_old_sequences(cutoff_time);
+        }
+
+        Ok(())
+    }
+
+    /// Load counters from persistent storage
+    async fn load_counters(storage_path: &PathBuf) -> Result<HashMap<UserId, PeerCounter>> {
+        if !storage_path.exists() {
+            return Ok(HashMap::new());
+        }
+
+        let data = tokio::fs::read(storage_path).await
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read counters file: {e}"))))?;
+
+        let counters: HashMap<UserId, PeerCounter> = bincode::deserialize(&data)
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to deserialize counters: {e}"))))?;
+
+        Ok(counters)
+    }
+
+    /// Sync counters to persistent storage
+    async fn sync_counters(
+        counters: &Arc<RwLock<HashMap<UserId, PeerCounter>>>,
+        storage_path: &PathBuf,
+        stats: &Arc<Mutex<CounterStats>>,
+    ) -> Result<()> {
+        let counters_snapshot = {
+            let counters = counters.read().unwrap();
+            counters.clone()
+        };
+
+        let data = bincode::serialize(&counters_snapshot)
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to serialize counters: {e}"))))?;
+
+        tokio::fs::write(storage_path, data).await
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to write counters file: {e}"))))?;
+
+        // Update statistics
+        {
+            let mut stats = stats.lock().await;
+            stats.persistence_ops += 1;
+        }
+
+        Ok(())
+    }
+
+    /// Update validation statistics
+    async fn update_validation_stats(
+        &self,
+        start_time: Instant,
+        result: &SequenceValidationResult,
+    ) {
+        let elapsed = start_time.elapsed().as_micros() as u64;
+        let mut stats = self.stats.lock().await;
+
+        // Update running average
+        let total_ops = stats.total_processed + 1;
+        stats.avg_validation_time_us = 
+            (stats.avg_validation_time_us * stats.total_processed + elapsed) / total_ops;
+
+        stats.total_processed = total_ops;
+
+        match result {
+            SequenceValidationResult::Replay => stats.total_replays += 1,
+            SequenceValidationResult::Gap { .. } => stats.total_gaps += 1,
+            _ => {}
+        }
+    }
+}
+
+impl PeerCounter {
+    /// Create a new peer counter
+    pub fn new() -> Self {
+        Self {
+            current_sequence: 0,
+            last_valid_sequence: 0,
+            sequence_history: Vec::new(),
+            last_updated: current_timestamp(),
+            replay_attempts: 0,
+            sequence_gaps: 0,
+        }
+    }
+
+    /// Check if we've seen this sequence number before
+    pub fn has_seen_sequence(&self, sequence: u64, message_hash: [u8; 32]) -> bool {
+        self.sequence_history.iter().any(|entry| {
+            entry.sequence == sequence && entry.message_hash == message_hash
+        })
+    }
+
+    /// Apply a sequence update
+    pub fn apply_sequence_update(&mut self, sequence: u64, message_hash: [u8; 32], timestamp: u64) {
+        // Update current sequence
+        self.current_sequence = sequence;
+        self.last_valid_sequence = sequence;
+        self.last_updated = timestamp;
+
+        // Add to history
+        self.sequence_history.push(SequenceEntry {
+            sequence,
+            timestamp,
+            message_hash,
+        });
+
+        // Maintain history size limit
+        if self.sequence_history.len() > MAX_SEQUENCE_HISTORY {
+            self.sequence_history.remove(0);
+        }
+    }
+
+    /// Cleanup old sequences from history
+    pub fn cleanup_old_sequences(&mut self, cutoff_time: u64) {
+        self.sequence_history.retain(|entry| entry.timestamp >= cutoff_time);
+    }
+
+    /// Get the next expected sequence number
+    pub fn next_expected_sequence(&self) -> u64 {
+        self.last_valid_sequence + 1
+    }
+}
+
+impl Default for PeerCounter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Get current Unix timestamp
+fn current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+    use tokio::test;
+
+    #[test]
+    async fn test_sequence_validation() {
+        let temp_dir = tempdir().unwrap();
+        let storage_path = temp_dir.path().join("counters.bin");
+        let system = MonotonicCounterSystem::new(storage_path).await.unwrap();
+
+        let user_id = UserId::from_bytes([1; 32]);
+        let message_hash = *blake3::hash(b"test message").as_bytes();
+
+        // First sequence should be valid
+        let result = system.validate_sequence(&user_id, 1, message_hash).await.unwrap();
+        assert_eq!(result, SequenceValidationResult::Valid);
+
+        // Replay should be detected
+        let result = system.validate_sequence(&user_id, 1, message_hash).await.unwrap();
+        assert_eq!(result, SequenceValidationResult::Replay);
+
+        // Next sequence should be valid
+        let result = system.validate_sequence(&user_id, 2, message_hash).await.unwrap();
+        assert_eq!(result, SequenceValidationResult::Valid);
+
+        // Gap should be detected
+        let result = system.validate_sequence(&user_id, 5, message_hash).await.unwrap();
+        assert_eq!(result, SequenceValidationResult::Gap { expected: 3, received: 5 });
+    }
+
+    #[test]
+    async fn test_batch_updates() {
+        let temp_dir = tempdir().unwrap();
+        let storage_path = temp_dir.path().join("counters.bin");
+        let system = MonotonicCounterSystem::new(storage_path).await.unwrap();
+
+        let user_id1 = UserId::from_bytes([1; 32]);
+        let user_id2 = UserId::from_bytes([2; 32]);
+        let message_hash = *blake3::hash(b"test message").as_bytes();
+
+        let requests = vec![
+            BatchUpdateRequest {
+                user_id: user_id1.clone(),
+                sequence: 1,
+                message_hash,
+                timestamp: current_timestamp(),
+            },
+            BatchUpdateRequest {
+                user_id: user_id2.clone(),
+                sequence: 1,
+                message_hash,
+                timestamp: current_timestamp(),
+            },
+        ];
+
+        let results = system.batch_update(requests).await.unwrap();
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|r| r.applied));
+        assert!(results.iter().all(|r| matches!(r.result, SequenceValidationResult::Valid)));
+    }
+
+    #[test]
+    async fn test_persistence() {
+        let temp_dir = tempdir().unwrap();
+        let storage_path = temp_dir.path().join("counters.bin");
+        
+        // Create system and add some counters
+        {
+            let system = MonotonicCounterSystem::new(storage_path.clone()).await.unwrap();
+            let user_id = UserId::from_bytes([1; 32]);
+            let message_hash = *blake3::hash(b"test message").as_bytes();
+
+            system.validate_sequence(&user_id, 1, message_hash).await.unwrap();
+            system.validate_sequence(&user_id, 2, message_hash).await.unwrap();
+
+            // Force sync
+            MonotonicCounterSystem::sync_counters(
+                &system.counters,
+                &storage_path,
+                &system.stats,
+            ).await.unwrap();
+        }
+
+        // Create new system and verify counters are loaded
+        {
+            let system = MonotonicCounterSystem::new(storage_path).await.unwrap();
+            let user_id = UserId::from_bytes([1; 32]);
+            let counter = system.get_peer_counter(&user_id).await.unwrap();
+            
+            assert_eq!(counter.last_valid_sequence, 2);
+            assert_eq!(counter.sequence_history.len(), 2);
+        }
+    }
+
+    #[test]
+    async fn test_old_sequence_cleanup() {
+        let temp_dir = tempdir().unwrap();
+        let storage_path = temp_dir.path().join("counters.bin");
+        let system = MonotonicCounterSystem::new(storage_path).await.unwrap();
+
+        let user_id = UserId::from_bytes([1; 32]);
+        let message_hash = *blake3::hash(b"test message").as_bytes();
+
+        // Add some sequences
+        for i in 1..=10 {
+            system.validate_sequence(&user_id, i, message_hash).await.unwrap();
+        }
+
+        // Verify we have sequences
+        let counter = system.get_peer_counter(&user_id).await.unwrap();
+        assert_eq!(counter.sequence_history.len(), 10);
+
+        // Cleanup shouldn't remove anything (sequences are recent)
+        system.cleanup_old_sequences().await.unwrap();
+        let counter = system.get_peer_counter(&user_id).await.unwrap();
+        assert_eq!(counter.sequence_history.len(), 10);
+    }
+
+    #[test]
+    async fn test_statistics() {
+        let temp_dir = tempdir().unwrap();
+        let storage_path = temp_dir.path().join("counters.bin");
+        let system = MonotonicCounterSystem::new(storage_path).await.unwrap();
+
+        let user_id = UserId::from_bytes([1; 32]);
+        let message_hash = *blake3::hash(b"test message").as_bytes();
+
+        // Process some sequences
+        system.validate_sequence(&user_id, 1, message_hash).await.unwrap();
+        system.validate_sequence(&user_id, 1, message_hash).await.unwrap(); // Replay
+        system.validate_sequence(&user_id, 5, message_hash).await.unwrap(); // Gap
+
+        let stats = system.get_stats().await;
+        assert_eq!(stats.total_processed, 3);
+        assert_eq!(stats.total_replays, 1);
+        assert_eq!(stats.total_gaps, 1);
+        assert_eq!(stats.peers_tracked, 1);
+    }
+}

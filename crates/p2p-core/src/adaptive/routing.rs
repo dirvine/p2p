@@ -58,7 +58,7 @@ impl RoutingStats {
 /// Adaptive router that combines multiple routing strategies
 pub struct AdaptiveRouter {
     /// Local node ID
-    local_id: NodeId,
+    _local_id: NodeId,
     
     /// Routing strategies
     strategies: Arc<RwLock<HashMap<StrategyChoice, Box<dyn RoutingStrategy>>>>,
@@ -90,7 +90,7 @@ impl AdaptiveRouter {
         _trust_provider: Arc<dyn TrustProvider>,
     ) -> Self {
         Self {
-            local_id: node_id,
+            _local_id: node_id,
             strategies: Arc::new(RwLock::new(HashMap::new())),
             bandit: Arc::new(RwLock::new(ThompsonSampling::new())),
             metrics: Arc::new(RwLock::new(HashMap::new())),
@@ -117,7 +117,7 @@ impl AdaptiveRouter {
         // Record strategy selection
         {
             let mut metrics = self.metrics.write().await;
-            let key = format!("route_attempts_{strategy_choice:?}");
+            let key = format!("route_attempts_{strategy_choice:?}").into();
             let count = metrics.get(&key).copied().unwrap_or(0.0) + 1.0;
             metrics.insert(key, count);
         }
@@ -144,7 +144,7 @@ impl AdaptiveRouter {
             if let Some(kademlia) = strategies.get(&StrategyChoice::Kademlia) {
                 kademlia.find_path(target).await
             } else {
-                Err(AdaptiveNetworkError::Routing("No routing strategies available".to_string()))
+                Err(AdaptiveNetworkError::Routing("No routing strategies available".to_string().into()))
             }
         };
         
@@ -158,10 +158,10 @@ impl AdaptiveRouter {
         // Update metrics
         if success {
             let mut metrics = self.metrics.write().await;
-            let success_key = format!("route_success_{strategy_choice:?}");
+            let success_key = format!("route_success_{strategy_choice:?}").into();
             let count = metrics.get(&success_key).copied().unwrap_or(0.0) + 1.0;
             metrics.insert(success_key, count);
-            metrics.insert(format!("route_latency_{strategy_choice:?}"), latency);
+            metrics.insert(format!("route_latency_{strategy_choice:?}").into(), latency);
         }
         
         result
@@ -179,27 +179,27 @@ impl AdaptiveRouter {
     }
     
     /// Mark a node as unreliable
-    pub async fn mark_node_unreliable(&self, node_id: &NodeId) {
+    pub async fn mark_node_unreliable(&self, _node_id: &NodeId) {
         // Update routing metrics to reflect unreliability
         let strategies = self.strategies.read().await;
-        for (_choice, strategy) in strategies.iter() {
+        for (_choice, _strategy) in strategies.iter() {
             // Would update metrics in real implementation
         }
     }
     
     /// Remove a node from all routing tables
-    pub async fn remove_node(&self, node_id: &NodeId) {
+    pub async fn remove_node(&self, _node_id: &NodeId) {
         // In a real implementation, would remove from K-buckets, etc.
         // log::info!("Removing node {:?} from routing tables", node_id);
     }
     
     /// Remove node's hyperbolic coordinates
-    pub async fn remove_hyperbolic_coordinate(&self, node_id: &NodeId) {
+    pub async fn remove_hyperbolic_coordinate(&self, _node_id: &NodeId) {
         // log::info!("Removing hyperbolic coordinates for {:?}", node_id);
     }
     
     /// Remove node from SOM
-    pub async fn remove_from_som(&self, node_id: &NodeId) {
+    pub async fn remove_from_som(&self, _node_id: &NodeId) {
         // log::info!("Removing {:?} from SOM", node_id);
     }
     
@@ -226,7 +226,7 @@ impl AdaptiveRouter {
     /// Update routing statistics
     pub async fn update_statistics(&self, node_id: &NodeId, success: bool, latency_ms: u64) {
         let mut metrics = self.metrics.write().await;
-        let key = format!("node_{node_id:?}_success_rate");
+        let key = format!("node_{node_id:?}_success_rate").into();
         let current = metrics.get(&key).copied().unwrap_or(0.0);
         let new_value = if success { current * 0.9 + 0.1 } else { current * 0.9 };
         metrics.insert(key, new_value);
@@ -254,16 +254,16 @@ impl AdaptiveRouter {
 
 /// Kademlia routing implementation
 pub struct KademliaRouting {
-    node_id: NodeId,
+    _node_id: NodeId,
     // Placeholder for routing table - would use actual implementation
-    routing_table: Arc<RwLock<HashMap<NodeId, Vec<NodeId>>>>,
+    _routing_table: Arc<RwLock<HashMap<NodeId, Vec<NodeId>>>>,
 }
 
 impl KademliaRouting {
     pub fn new(node_id: NodeId) -> Self {
         Self {
-            node_id: node_id.clone(),
-            routing_table: Arc::new(RwLock::new(HashMap::new())),
+            _node_id: node_id.clone(),
+            _routing_table: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -297,7 +297,7 @@ impl RoutingStrategy for KademliaRouting {
 
 /// Hyperbolic routing implementation
 pub struct HyperbolicRouting {
-    coordinates: Arc<RwLock<HashMap<NodeId, HyperbolicCoordinate>>>,
+    _coordinates: Arc<RwLock<HashMap<NodeId, HyperbolicCoordinate>>>,
 }
 
 impl Default for HyperbolicRouting {
@@ -309,7 +309,7 @@ impl Default for HyperbolicRouting {
 impl HyperbolicRouting {
     pub fn new() -> Self {
         Self {
-            coordinates: Arc::new(RwLock::new(HashMap::new())),
+            _coordinates: Arc::new(RwLock::new(HashMap::new())),
         }
     }
     
@@ -371,7 +371,7 @@ impl RoutingStrategy for TrustRouting {
 
 /// SOM-based routing implementation
 pub struct SOMRouting {
-    som_positions: Arc<RwLock<HashMap<NodeId, [f64; 4]>>>,
+    _som_positions: Arc<RwLock<HashMap<NodeId, [f64; 4]>>>,
 }
 
 impl Default for SOMRouting {
@@ -383,7 +383,7 @@ impl Default for SOMRouting {
 impl SOMRouting {
     pub fn new() -> Self {
         Self {
-            som_positions: Arc::new(RwLock::new(HashMap::new())),
+            _som_positions: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -446,6 +446,7 @@ mod tests {
             fn get_global_trust(&self) -> std::collections::HashMap<NodeId, f64> {
                 std::collections::HashMap::new()
             }
+            fn remove_node(&self, _node: &NodeId) {}
         }
         
         let mut hash = [0u8; 32];
@@ -529,5 +530,9 @@ impl RoutingStrategy for MockRoutingStrategy {
     
     fn route_score(&self, _neighbor: &NodeId, _target: &NodeId) -> f64 {
         0.5
+    }
+    
+    fn update_metrics(&mut self, _path: &[NodeId], _success: bool) {
+        // Mock implementation - do nothing
     }
 }

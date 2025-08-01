@@ -22,6 +22,8 @@
 //! - Adaptive GossipSub for scalable message propagation
 //! - Machine learning systems for routing optimization, caching, and churn prediction
 
+#![allow(missing_docs)]
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +36,10 @@ pub mod som;
 pub mod trust;
 pub mod gossip;
 pub mod learning;
+pub mod beta_distribution;
+pub mod multi_armed_bandit;
+pub mod q_learning_cache;
+pub mod eviction;
 pub mod storage;
 pub mod replication;
 pub mod retrieval;
@@ -42,6 +48,9 @@ pub mod monitoring;
 pub mod client;
 pub mod security;
 pub mod performance;
+pub mod churn_prediction;
+pub mod coordinator;
+pub mod coordinator_extensions;
 
 // Re-export commonly used types
 pub use identity::{NodeIdentity, SignedMessage, ProofOfWork, StoredIdentity};
@@ -53,6 +62,9 @@ pub use som::{SelfOrganizingMap, SOMRoutingStrategy, FeatureExtractor};
 pub use trust::{EigenTrustEngine, TrustBasedRoutingStrategy, NodeStatistics, NodeStatisticsUpdate, MockTrustProvider};
 pub use gossip::AdaptiveGossipSub;
 pub use learning::{ThompsonSampling, QLearnCacheManager, ChurnPredictor};
+pub use multi_armed_bandit::{MultiArmedBandit, MABConfig, RouteId, RouteDecision, MABRoutingStrategy};
+pub use q_learning_cache::{QLearnCacheManager as QLearningCacheManager, QLearningConfig, StateVector, CacheAction, CacheStatistics, AccessInfo};
+pub use eviction::{EvictionStrategy, EvictionStrategyType, LRUStrategy, LFUStrategy, FIFOStrategy, AdaptiveStrategy, CacheState};
 pub use storage::{ContentStore, StorageConfig, ChunkManager, ReplicationConfig};
 pub use replication::{ReplicationManager, ReplicationStrategy, ReplicaInfo};
 pub use retrieval::{RetrievalManager, RetrievalStrategy};
@@ -61,6 +73,7 @@ pub use monitoring::{MonitoringSystem, MonitoringConfig, NetworkHealth, Dashboar
 pub use client::{Client, ClientConfig, ClientProfile, AdaptiveP2PClient, NetworkStats as ClientNetworkStats};
 pub use security::{SecurityManager, SecurityConfig, RateLimiter, BlacklistManager, EclipseDetector, SecurityAuditor};
 pub use performance::{PerformanceConfig, OptimizedSerializer, ConnectionPool, PerformanceCache, BatchProcessor, ConcurrencyLimiter};
+pub use coordinator::{NetworkCoordinator, NetworkConfig};
 
 /// Result type for adaptive network operations
 pub type Result<T> = std::result::Result<T, AdaptiveNetworkError>;
@@ -77,6 +90,9 @@ pub enum AdaptiveNetworkError {
     #[error("Learning system error: {0}")]
     Learning(String),
     
+    #[error("Gossip error: {0}")]
+    Gossip(String),
+    
     #[error("Network error: {0}")]
     Network(#[from] std::io::Error),
     
@@ -88,8 +104,22 @@ pub enum AdaptiveNetworkError {
 }
 
 /// Content hash type used throughout the network
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ContentHash(pub [u8; 32]);
+
+impl ContentHash {
+    /// Create from bytes
+    pub fn from(data: &[u8]) -> Self {
+        let mut hash = [0u8; 32];
+        if data.len() >= 32 {
+            hash.copy_from_slice(&data[..32]);
+        } else {
+            let hashed = blake3::hash(data);
+            hash.copy_from_slice(hashed.as_bytes());
+        }
+        Self(hash)
+    }
+}
 
 
 /// Network message type
@@ -245,6 +275,7 @@ pub enum ContentType {
     DataRetrieval,
     ComputeRequest,
     RealtimeMessage,
+    DiscoveryProbe,
 }
 
 /// Current network conditions
@@ -280,6 +311,9 @@ pub struct LearningMetrics {
     pub avg_latency_ms: f64,
     pub strategy_performance: std::collections::HashMap<StrategyChoice, f64>,
 }
+
+#[cfg(test)]
+mod timestamp_tests;
 
 #[cfg(test)]
 mod tests {

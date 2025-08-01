@@ -113,10 +113,10 @@ pub enum SignatureScheme {
 
 impl SignatureScheme {
     /// Verify a signature against a message
-    pub fn verify(&self, message: &[u8], public_key: &PublicKeySet) -> Result<()> {
+    pub fn verify(&self, _message: &[u8], public_key: &PublicKeySet) -> Result<()> {
         match self {
-            SignatureScheme::Classical(sig) => {
-                if let Some(key) = &public_key.ed25519 {
+            SignatureScheme::Classical(_sig) => {
+                if let Some(_key) = &public_key.ed25519 {
                     // Verify classical signature
                     Ok(())
                 } else {
@@ -125,8 +125,8 @@ impl SignatureScheme {
                     ))
                 }
             }
-            SignatureScheme::PostQuantum(sig) => {
-                if let Some(key) = &public_key.ml_dsa {
+            SignatureScheme::PostQuantum(_sig) => {
+                if let Some(_key) = &public_key.ml_dsa {
                     // Verify ML-DSA signature
                     Ok(())
                 } else {
@@ -135,7 +135,7 @@ impl SignatureScheme {
                     ))
                 }
             }
-            SignatureScheme::Dual { classical, post_quantum } => {
+            SignatureScheme::Dual { classical: _, post_quantum: _ } => {
                 // Verify both signatures
                 if public_key.ed25519.is_some() && public_key.ml_dsa.is_some() {
                     Ok(())
@@ -191,9 +191,9 @@ pub async fn generate_keypair(capabilities: &CryptoCapabilities) -> Result<KeyPa
     if capabilities.supports_hybrid {
         let (pub_key, priv_key) = generate_ed25519_keypair()?;
         public.ed25519 = Some(Ed25519PublicKey(pub_key.try_into().map_err(|_| 
-            QuantumCryptoError::InvalidKeyError("Invalid Ed25519 public key length".to_string()))?));
+            QuantumCryptoError::InvalidKeyError("Invalid Ed25519 public key length".to_string().into()))?));
         private.ed25519 = Some(Ed25519PrivateKey(priv_key.try_into().map_err(|_| 
-            QuantumCryptoError::InvalidKeyError("Invalid Ed25519 private key length".to_string()))?));
+            QuantumCryptoError::InvalidKeyError("Invalid Ed25519 private key length".to_string().into()))?));
     }
     
     Ok(KeyPair { public, private })

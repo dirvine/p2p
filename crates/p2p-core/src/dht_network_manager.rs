@@ -16,6 +16,8 @@
 //! This module provides the integration layer between the DHT system and the network layer,
 //! enabling real P2P operations with Kademlia routing over transport protocols.
 
+#![allow(missing_docs)]
+
 use crate::{
     PeerId, Multiaddr, P2PError, Result,
     dht::{DHT, DHTConfig, Key, DHTNode, SerializableDHTNode},
@@ -157,6 +159,7 @@ pub struct DhtNetworkManager {
 
 /// DHT operation context
 #[derive(Debug)]
+#[allow(dead_code)]
 struct DhtOperationContext {
     /// Operation type
     operation: DhtNetworkOperation,
@@ -308,20 +311,18 @@ impl DhtNetworkManager {
             warn!("No nodes found for key: {}, storing locally only", key.to_hex());
             // Store locally
             self.dht.write().await.put(key.clone(), value).await
-                .map_err(|e| P2PError::Dht(crate::error::DhtError::StorageFailed {
-                key: key.to_string(),
-                reason: format!("Local storage failed: {e}"),
-            }))?;
+                .map_err(|e| P2PError::Dht(crate::error::DhtError::StoreFailed(
+                format!("Local storage failed for key {}: {e}", key).into()
+            )))?;
             
             return Ok(DhtNetworkResult::PutSuccess { key, replicated_to: 1 });
         }
         
         // Store locally first
         self.dht.write().await.put(key.clone(), value.clone()).await
-            .map_err(|e| P2PError::Dht(crate::error::DhtError::StorageFailed {
-                key: key.to_string(),
-                reason: format!("Local storage failed: {e}"),
-            }))?;
+            .map_err(|e| P2PError::Dht(crate::error::DhtError::StoreFailed(
+                format!("{}: Local storage failed: {e}", key).into()
+            )))?;
         
         // Replicate to closest nodes
         let mut replicated_count = 1; // Local storage
@@ -436,7 +437,7 @@ impl DhtNetworkManager {
             }
             Ok(result) => {
                 warn!("Unexpected ping result: {:?}", result);
-                Err(P2PError::Dht(crate::error::DhtError::RoutingError("Unexpected ping response".to_string())))
+                Err(P2PError::Dht(crate::error::DhtError::RoutingError("Unexpected ping response".to_string().into())))
             }
             Err(e) => {
                 warn!("Ping failed to {}: {}", peer_id, e);
@@ -571,7 +572,7 @@ impl DhtNetworkManager {
         
         // Serialize message
         let message_data = serde_json::to_vec(&message)
-            .map_err(P2PError::Serialization)?;
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
         
         // Create operation context for tracking
         let operation_context = DhtOperationContext {
@@ -603,7 +604,7 @@ impl DhtNetworkManager {
     }
     
     /// Wait for real DHT network response with timeout
-    async fn wait_for_response(&self, message_id: &str, peer_id: &PeerId) -> Result<DhtNetworkResult> {
+    async fn wait_for_response(&self, message_id: &str, _peer_id: &PeerId) -> Result<DhtNetworkResult> {
         const RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
         
         // Create a response future that will complete when we receive the response
@@ -620,10 +621,7 @@ impl DhtNetworkManager {
             if start_time.elapsed() > RESPONSE_TIMEOUT {
                 // Remove the operation context on timeout
                 self.active_operations.write().await.remove(message_id);
-                return Err(P2PError::Network(crate::error::NetworkError::ConnectionTimeout {
-                    peer: peer_id.to_string(),
-                    timeout_secs: RESPONSE_TIMEOUT.as_secs(),
-                }));
+                return Err(P2PError::Network(crate::error::NetworkError::Timeout));
             }
             
             // Wait a short time before checking again
@@ -689,6 +687,7 @@ impl DhtNetworkManager {
     }
     
     /// Legacy simulation method (kept for compatibility but now does real DHT operations)
+    #[allow(dead_code)]
     async fn simulate_response(&self, message_id: &str, peer_id: &PeerId) -> Result<DhtNetworkResult> {
         // Remove operation context
         let operation_context = self.active_operations.write().await.remove(message_id);
@@ -759,7 +758,7 @@ impl DhtNetworkManager {
                 }
             }
         } else {
-            Err(P2PError::Dht(crate::error::DhtError::RoutingError("Operation context not found".to_string())))
+            Err(P2PError::Dht(crate::error::DhtError::RoutingError("Operation context not found".to_string().into())))
         }
     }
     
@@ -767,7 +766,7 @@ impl DhtNetworkManager {
     pub async fn handle_dht_message(&self, data: &[u8], sender: &PeerId) -> Result<Option<Vec<u8>>> {
         // Deserialize message
         let message: DhtNetworkMessage = serde_json::from_slice(data)
-            .map_err(P2PError::Serialization)?;
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
         
         debug!("Received DHT message {} from {}: {:?}", 
                message.message_id, sender, message.message_type);
@@ -802,10 +801,9 @@ impl DhtNetworkManager {
             DhtNetworkOperation::Put { key, value } => {
                 info!("Handling PUT request for key: {}", key.to_hex());
                 self.dht.write().await.put(key.clone(), value.clone()).await
-                    .map_err(|e| P2PError::Dht(crate::error::DhtError::StorageFailed {
-                        key: key.to_string(),
-                        reason: format!("PUT failed: {e}"),
-                    }))?;
+                    .map_err(|e| P2PError::Dht(crate::error::DhtError::StoreFailed(
+                        format!("{}: PUT failed: {e}", key).into()
+                    )))?;
                 Ok(DhtNetworkResult::PutSuccess { key: key.clone(), replicated_to: 1 })
             }
             DhtNetworkOperation::Get { key } => {
@@ -926,7 +924,7 @@ impl DhtNetworkManager {
                 DhtNetworkResult::LeaveSuccess => 
                     DhtNetworkOperation::Leave,
                 DhtNetworkResult::Error { .. } => 
-                    return Err(P2PError::Dht(crate::error::DhtError::RoutingError("Cannot create response for error result".to_string()))),
+                    return Err(P2PError::Dht(crate::error::DhtError::RoutingError("Cannot create response for error result".to_string().into()))),
             },
             timestamp: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)

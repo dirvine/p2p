@@ -17,14 +17,16 @@
 //! Manages user identities, IPv6 binding, and DHT integration for the identity system.
 
 use crate::{P2PError, Result, dht::Key, security::IPv6NodeID, error::IdentityError};
-use ant_quic::crypto::raw_public_keys::key_utils::{generate_ed25519_keypair, derive_peer_id_from_public_key};
 use ed25519_dalek::{VerifyingKey as Ed25519PublicKey, SigningKey, Signer};
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
+use sha2::{Sha256, Digest};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::RwLock;
 use tracing::info;
+use base64::Engine;
 
 // Core identity types
 
@@ -100,15 +102,15 @@ impl IPv6BindingProof {
     pub fn new(
         ipv6_id: IPv6NodeID,
         user_keypair: &SigningKey,
-        ipv6_keypair: &SigningKey,
+        _ipv6_keypair: &SigningKey,
     ) -> Result<Self> {
-        let ipv6_address = format!("{ipv6_id:?}"); // Placeholder conversion
+        let ipv6_address = format!("{ipv6_id:?}").into(); // Placeholder conversion
         let timestamp = SystemTime::now();
         
         // Create signature data (simplified)
         let signature_data = format!("{}:{}", ipv6_address, 
             timestamp.duration_since(SystemTime::UNIX_EPOCH)
-                .map_err(|e| P2PError::Identity(IdentityError::SystemTime(format!("System time error: {}", e))))?
+                .map_err(|e| P2PError::Identity(IdentityError::SystemTime(format!("System time error: {}", e).into())))?
                 .as_secs());
         let signature = user_keypair.sign(signature_data.as_bytes()).to_bytes().to_vec();
         
@@ -233,30 +235,22 @@ impl UserIdentity {
     /// # Errors
     /// Returns error if cryptographic key generation fails
     pub fn new(display_name: String, three_word_address: String) -> Result<(Self, SigningKey)> {
-        // Using ant-quic's key generation now
+        // Generate new keypair using ed25519-dalek directly
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let public_key = signing_key.verifying_key();
         
-        // Generate new keypair using ant-quic
-        let (ant_secret_key, ant_public_key) = generate_ed25519_keypair();
-        
-        // Convert ant-quic keys to ed25519-dalek v1 format
-        // ant-quic uses ed25519-dalek v2 SigningKey, we need v1 Keypair
-        let secret_bytes = ant_secret_key.to_bytes();
-        let public_bytes = ant_public_key.to_bytes();
-        let mut keypair_bytes = [0u8; 64];
-        keypair_bytes[..32].copy_from_slice(&secret_bytes);
-        keypair_bytes[32..].copy_from_slice(&public_bytes);
-        let keypair = SigningKey::from_bytes(&secret_bytes);
-        
-        // Derive user ID from public key using ant-quic's method
-        let peer_id = derive_peer_id_from_public_key(&ant_public_key);
-        let user_id = peer_id.to_string();
+        // Derive user ID from public key using SHA-256
+        let mut hasher = Sha256::new();
+        hasher.update(public_key.as_bytes());
+        let hash = hasher.finalize();
+        let user_id = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&hash[..20]);
         
         // Create display name hint
         let display_name_hint = Self::create_display_name_hint(&display_name);
         
         let identity = Self {
             user_id,
-            public_key: keypair.verifying_key().as_bytes().to_vec(),
+            public_key: public_key.as_bytes().to_vec(),
             display_name_hint,
             three_word_address,
             created_at: SystemTime::now(),
@@ -264,7 +258,7 @@ impl UserIdentity {
             verification_level: VerificationLevel::SelfSigned,
         };
         
-        Ok((identity, keypair))
+        Ok((identity, signing_key))
     }
     
     /// Derive deterministic user ID from public key
@@ -364,7 +358,7 @@ impl EncryptedUserProfile {
     ) -> Result<Self> {
         // Serialize the profile data
         let profile_data = serde_json::to_vec(profile)
-            .map_err(P2PError::Serialization)?;
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
         
         // Generate encryption key from keypair deterministically
         use sha2::{Sha256, Digest};
@@ -415,13 +409,13 @@ impl EncryptedUserProfile {
         
         // Parse the public key
         let public_key_bytes: [u8; 32] = self.public_key.as_slice().try_into()
-            .map_err(|_| P2PError::Identity(IdentityError::InvalidFormat { reason: "Invalid public key length".to_string() }))?;
+            .map_err(|_| P2PError::Identity(IdentityError::InvalidFormat("Invalid public key length".to_string().into())))?;
         let public_key = VerifyingKey::from_bytes(&public_key_bytes)
-            .map_err(|e| P2PError::Identity(IdentityError::InvalidFormat { reason: format!("Invalid public key: {e}") }))?;
+            .map_err(|e| P2PError::Identity(IdentityError::InvalidFormat(format!("Invalid public key: {e}").into())))?;
         
         // Parse the signature
         let signature_bytes: [u8; 64] = self.signature.as_slice().try_into()
-            .map_err(|_| P2PError::Identity(IdentityError::InvalidFormat { reason: "Invalid signature length".to_string() }))?;
+            .map_err(|_| P2PError::Identity(IdentityError::InvalidFormat("Invalid signature length".to_string().into())))?;
         let signature = Signature::from_bytes(&signature_bytes);
         
         // Verify signature against encrypted data
@@ -437,7 +431,7 @@ impl EncryptedUserProfile {
         use rand::RngCore;
         
         if key.len() != 32 {
-            return Err(P2PError::Identity(IdentityError::InvalidFormat { reason: "Invalid encryption key length - must be 32 bytes".to_string() }));
+            return Err(P2PError::Identity(IdentityError::InvalidFormat("Invalid encryption key length - must be 32 bytes".to_string().into())));
         }
         
         let cipher_key = aes_gcm::Key::<Aes256Gcm>::from_slice(key);
@@ -451,7 +445,7 @@ impl EncryptedUserProfile {
         // Encrypt the data
         let mut ciphertext = data.to_vec();
         let tag = cipher.encrypt_in_place_detached(nonce, b"", &mut ciphertext)
-            .map_err(|e| P2PError::Identity(IdentityError::InvalidFormat { reason: format!("Profile encryption failed: {e}") }))?;
+            .map_err(|e| P2PError::Identity(IdentityError::InvalidFormat(format!("Profile encryption failed: {e}").into())))?;
         
         // Combine nonce + ciphertext + tag
         let mut result = Vec::with_capacity(12 + ciphertext.len() + 16);
@@ -467,11 +461,11 @@ impl EncryptedUserProfile {
         use aes_gcm::{Aes256Gcm, Nonce, AeadInPlace, KeyInit};
         
         if key.len() != 32 {
-            return Err(P2PError::Identity(IdentityError::InvalidFormat { reason: "Invalid decryption key length - must be 32 bytes".to_string() }));
+            return Err(P2PError::Identity(IdentityError::InvalidFormat("Invalid decryption key length - must be 32 bytes".to_string().into())));
         }
         
         if encrypted.len() < 28 {
-            return Err(P2PError::Identity(IdentityError::InvalidFormat { reason: "Invalid encrypted profile data - too short".to_string() }));
+            return Err(P2PError::Identity(IdentityError::InvalidFormat("Invalid encrypted profile data - too short".to_string().into())));
         }
         
         let cipher_key = aes_gcm::Key::<Aes256Gcm>::from_slice(key);
@@ -485,7 +479,7 @@ impl EncryptedUserProfile {
         
         // Decrypt the data
         cipher.decrypt_in_place_detached(nonce, b"", &mut plaintext, tag.into())
-            .map_err(|e| P2PError::Identity(IdentityError::InvalidFormat { reason: format!("Profile decryption failed: {e}") }))?;
+            .map_err(|e| P2PError::Identity(IdentityError::InvalidFormat(format!("Profile decryption failed: {e}").into())))?;
         
         Ok(plaintext)
     }
@@ -509,7 +503,7 @@ impl EncryptedUserProfile {
         
         // Deserialize the profile
         let profile: UserProfile = serde_json::from_slice(&decrypted_data)
-            .map_err(P2PError::Serialization)?;
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
         
         Ok(profile)
     }
@@ -564,10 +558,10 @@ impl EncryptedUserProfile {
     pub fn grant_access(
         &mut self, 
         user_id: &str, 
-        public_key_bytes: &[u8],
+        _public_key_bytes: &[u8],
         permissions: ProfilePermissions,
-        profile_key: &[u8; 32],
-        keypair: &SigningKey,
+        _profile_key: &[u8; 32],
+        _keypair: &SigningKey,
     ) -> Result<()> {
         // TODO: Implement proper access granting with encryption
         // For now, just log the operation
@@ -975,13 +969,13 @@ impl ChallengeProof {
         
         // Parse the public key
         let public_key_bytes: [u8; 32] = self.public_key.as_slice().try_into()
-            .map_err(|_| P2PError::Identity(IdentityError::VerificationFailed { reason: "Invalid public key length in proof".to_string() }))?;
+            .map_err(|_| P2PError::Identity(IdentityError::VerificationFailed("Invalid public key length in proof".to_string().into() )))?;
         let public_key = VerifyingKey::from_bytes(&public_key_bytes)
-            .map_err(|e| P2PError::Identity(IdentityError::VerificationFailed { reason: format!("Invalid public key in proof: {e}") }))?;
+            .map_err(|e| P2PError::Identity(IdentityError::VerificationFailed(format!("Invalid public key in proof: {}", e).into())))?;
         
         // Parse the signature
         let signature_bytes: [u8; 64] = self.signature.as_slice().try_into()
-            .map_err(|_| P2PError::Identity(IdentityError::VerificationFailed { reason: "Invalid signature length in proof".to_string() }))?;
+            .map_err(|_| P2PError::Identity(IdentityError::VerificationFailed("Invalid signature length in proof".to_string().into() )))?;
         let signature = Signature::from_bytes(&signature_bytes);
         
         // Create the signed data: challenge_id + proof_data
@@ -999,7 +993,7 @@ impl ChallengeProof {
 /// Identity manager for handling user identities and network integration
 pub struct IdentityManager {
     /// Configuration for the identity manager
-    config: IdentityManagerConfig,
+    _config: IdentityManagerConfig,
     /// Stored identities
     identities: Arc<RwLock<HashMap<String, UserIdentity>>>,
 }
@@ -1026,7 +1020,7 @@ impl IdentityManager {
     /// Create a new identity manager
     pub fn new(config: IdentityManagerConfig) -> Self {
         Self { 
-            config,
+            _config: config,
             identities: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -1058,9 +1052,7 @@ impl IdentityManager {
             let serialized = serde_json::to_vec(identity)?;
             Ok(serialized)
         } else {
-            Err(P2PError::Identity(crate::error::IdentityError::NotFound {
-                id: "current".to_string(),
-            }))
+            Err(P2PError::Identity(crate::error::IdentityError::NotFound("current".to_string().into())))
         }
     }
     

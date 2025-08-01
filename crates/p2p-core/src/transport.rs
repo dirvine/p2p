@@ -18,6 +18,9 @@
 
 pub mod quic;
 
+#[cfg(test)]
+mod quic_error_tests;
+
 use crate::{PeerId, P2PError, Result, NetworkAddress};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -233,7 +236,7 @@ impl TransportManager {
     pub async fn connect(&self, addr: NetworkAddress) -> Result<PeerId> {
         let transport_type = self.select_transport(&addr).await?;
         let transport = self.transports.get(&transport_type)
-            .ok_or_else(|| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Transport {transport_type:?} not available"))))?;
+            .ok_or_else(|| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Transport {transport_type:?} not available").into())))?;
         
         debug!("Connecting to {} using {:?}", addr, transport_type);
         
@@ -250,7 +253,7 @@ impl TransportManager {
     /// Connect with specific transport
     pub async fn connect_with_transport(&self, addr: NetworkAddress, transport_type: TransportType) -> Result<PeerId> {
         let transport = self.transports.get(&transport_type)
-            .ok_or_else(|| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Transport {transport_type:?} not available"))))?;
+            .ok_or_else(|| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Transport {transport_type:?} not available").into())))?;
         
         let connection = transport.connect_with_options(addr.clone(), self.options.clone()).await?;
         let peer_id = format!("peer_from_{}_{}", addr.ip(), addr.port());
@@ -263,10 +266,9 @@ impl TransportManager {
     pub async fn send_message(&self, peer_id: &PeerId, data: Vec<u8>) -> Result<()> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::ConnectionFailed {
-                peer: peer_id.to_string(),
-                reason: "No active connection".to_string(),
-            }))?;
+            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::PeerNotFound(
+                peer_id.to_string().into()
+            )))?;
         
         let mut pool_guard = pool.lock().await;
         let connection = pool_guard.get_connection()?;
@@ -282,10 +284,9 @@ impl TransportManager {
     pub async fn get_connection_info(&self, peer_id: &PeerId) -> Result<ConnectionInfo> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::ConnectionFailed {
-                peer: peer_id.to_string(),
-                reason: "No active connection".to_string(),
-            }))?;
+            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::PeerNotFound(
+                peer_id.to_string().into()
+            )))?;
         
         let mut pool_guard = pool.lock().await;
         let connection = pool_guard.get_connection()?;
@@ -298,10 +299,9 @@ impl TransportManager {
     pub async fn get_connection_pool_info(&self, peer_id: &PeerId) -> Result<ConnectionPoolInfo> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::ConnectionFailed {
-                peer: peer_id.to_string(),
-                reason: "No active connection".to_string(),
-            }))?;
+            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::PeerNotFound(
+                peer_id.to_string().into()
+            )))?;
         
         let pool_guard = pool.lock().await;
         Ok(ConnectionPoolInfo {
@@ -316,10 +316,9 @@ impl TransportManager {
     pub async fn get_connection_pool_stats(&self, peer_id: &PeerId) -> Result<ConnectionPoolStats> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::ConnectionFailed {
-                peer: peer_id.to_string(),
-                reason: "No active connection".to_string(),
-            }))?;
+            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::PeerNotFound(
+                peer_id.to_string().into()
+            )))?;
         
         let pool_guard = pool.lock().await;
         Ok(pool_guard.stats.clone())
@@ -329,10 +328,9 @@ impl TransportManager {
     pub async fn measure_connection_quality(&self, peer_id: &PeerId) -> Result<ConnectionQuality> {
         let connections = self.connections.read().await;
         let pool = connections.get(peer_id)
-            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::ConnectionFailed {
-                peer: peer_id.to_string(),
-                reason: "No active connection".to_string(),
-            }))?;
+            .ok_or_else(|| P2PError::Network(crate::error::NetworkError::PeerNotFound(
+                peer_id.to_string().into()
+            )))?;
         
         let mut pool_guard = pool.lock().await;
         let connection = pool_guard.get_connection()?;
@@ -359,7 +357,7 @@ impl TransportManager {
                     Ok(TransportType::QUIC)
                 } else {
                     Err(P2PError::Transport(crate::error::TransportError::SetupFailed(
-                        "QUIC transport not available".to_string()
+                        "QUIC transport not available".into()
                     )))
                 }
             }
@@ -367,6 +365,7 @@ impl TransportManager {
     }
     
     /// Auto-select transport (always QUIC in this implementation)
+    #[allow(dead_code)]
     async fn auto_select_transport(&self, addr: &NetworkAddress) -> Result<TransportType> {
         // Always use QUIC as it's the only transport protocol
         if self.transports.contains_key(&TransportType::QUIC) {
@@ -378,7 +377,7 @@ impl TransportManager {
             }
         }
         
-        Err(P2PError::Transport(crate::error::TransportError::SetupFailed("QUIC transport not available or address not supported".to_string())))
+        Err(P2PError::Transport(crate::error::TransportError::SetupFailed("QUIC transport not available or address not supported".to_string().into())))
     }
     
     /// Add connection to pool
@@ -431,7 +430,7 @@ impl ConnectionPool {
     /// Get a connection using round-robin load balancing
     fn get_connection(&mut self) -> Result<Arc<Mutex<Box<dyn Connection>>>> {
         if self.connections.is_empty() {
-            return Err(P2PError::Network(crate::error::NetworkError::ProtocolError("No connections available".to_string())));
+            return Err(P2PError::Network(crate::error::NetworkError::ProtocolError("No connections available".to_string().into())));
         }
         
         let connection = self.connections[self.round_robin_index % self.connections.len()].clone();
@@ -525,14 +524,14 @@ mod tests {
     impl Transport for MockTransport {
         async fn listen(&self, addr: NetworkAddress) -> Result<NetworkAddress> {
             if self.should_fail {
-                return Err(P2PError::Transport(crate::error::TransportError::SetupFailed("Listen failed".to_string())));
+                return Err(P2PError::Transport(crate::error::TransportError::SetupFailed("Listen failed".to_string().into())));
             }
             Ok(addr)
         }
 
         async fn connect(&self, addr: NetworkAddress) -> Result<Box<dyn Connection>> {
             if self.should_fail {
-                return Err(P2PError::Transport(crate::error::TransportError::SetupFailed("Connection failed".to_string())));
+                return Err(P2PError::Transport(crate::error::TransportError::SetupFailed("Connection failed".to_string().into())));
             }
             Ok(Box::new(MockConnection::new(addr)))
         }
@@ -549,7 +548,7 @@ mod tests {
             }
             Ok(Box::new(MockConnection::new(NetworkAddress::from_str("127.0.0.1:9000")
                 .map_err(|e| crate::error::TransportError::SetupFailed(
-                    format!("Invalid mock address: {}", e) 
+                    format!("Invalid mock address: {}", e).into() 
                 ))?)))
         }
 
@@ -656,12 +655,12 @@ mod tests {
 
     fn create_test_transport_manager() -> TransportManager {
         let options = TransportOptions::default();
-        TransportManager::new(TransportSelection::Auto, options)
+        TransportManager::new(TransportSelection::QUIC, options)
     }
 
     #[test]
     fn test_transport_type_display() {
-        assert_eq!(format!("{}", TransportType::QUIC), "quic");
+        assert_eq!(format!("{}", TransportType::QUIC).into(), "quic");
     }
 
     #[test]
@@ -933,9 +932,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_forced_transport_unavailable() {
+    async fn test_quic_transport_unavailable() -> Result<()> {
         let manager = TransportManager::new(
-            TransportSelection::Force(TransportType::QUIC),
+            TransportSelection::QUIC,
             TransportOptions::default()
         );
 
@@ -943,7 +942,8 @@ mod tests {
         let result = manager.select_transport(&addr).await;
         
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Forced transport QUIC not available"));
+        assert!(result.unwrap_err().to_string().contains("QUIC transport not available"));
+        Ok(())
     }
 
     #[tokio::test]

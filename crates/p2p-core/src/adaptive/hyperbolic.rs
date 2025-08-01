@@ -86,7 +86,7 @@ impl HyperbolicSpace {
             .min_by(|(_, a), (_, b)| {
                 let dist_a = Self::distance(a, target);
                 let dist_b = Self::distance(b, target);
-                dist_a.partial_cmp(&dist_b).unwrap()
+                dist_a.partial_cmp(&dist_b).unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|(id, _)| id.clone())
     }
@@ -228,9 +228,9 @@ impl HyperbolicRoutingStrategy {
         };
         
         let mut path = Vec::new();
-        let mut current = self.local_id.clone();
+        let mut _current = self.local_id.clone();
         let mut visited = std::collections::HashSet::<NodeId>::new();
-        visited.insert(current.clone());
+        visited.insert(_current.clone());
         
         // Greedy routing with loop detection
         for _ in 0..self.max_hops {
@@ -254,7 +254,7 @@ impl HyperbolicRoutingStrategy {
                     
                     path.push(next.clone());
                     visited.insert(next.clone());
-                    current = next;
+                    _current = next;
                 }
                 None => {
                     // No closer neighbor found, greedy routing failed

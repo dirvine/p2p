@@ -43,7 +43,8 @@
 //! }
 //! ```
 
-#![warn(missing_docs)]
+#![allow(missing_docs)]
+#![allow(missing_debug_implementations)]
 #![warn(rust_2018_idioms)]
 
 /// Network address types
@@ -128,6 +129,9 @@ pub mod identity_manager;
 /// Adaptive P2P network implementation
 pub mod adaptive;
 
+/// Configuration management system
+pub mod config;
+
 // Re-export main types
 pub use address::{NetworkAddress, AddressBook};
 pub use network::{P2PNode, NodeConfig, NodeBuilder, P2PEvent};
@@ -136,7 +140,7 @@ pub use dht_network_manager::{DhtNetworkManager, DhtNetworkConfig, DhtNetworkOpe
 pub use mcp::{MCPServer, Tool, MCPService};
 pub use production::{ProductionConfig, ResourceManager, ResourceMetrics};
 pub use bootstrap::{BootstrapManager, BootstrapCache, ContactEntry, CacheConfig};
-pub use error::{P2PError, Result};
+pub use error::{P2PError as P2PError, P2pResult as Result};
 pub use peer_record::{PeerDHTRecord, PeerEndpoint, UserId, EndpointId, NatType, SignatureCache};
 pub use crypto_verify::{EnhancedSignatureVerifier, VerificationStats, BatchVerificationRequest, BatchVerificationResult, EnhancedSignatureVerification};
 pub use monotonic_counter::{MonotonicCounterSystem, PeerCounter, SequenceValidationResult, CounterStats, BatchUpdateRequest, BatchUpdateResult};

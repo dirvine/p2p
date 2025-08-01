@@ -20,8 +20,8 @@
 
 use crate::PeerId;
 use anyhow::{anyhow, Result};
-use ant_quic::crypto::raw_public_keys::key_utils::generate_ed25519_keypair;
 use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
+use rand::rngs::OsRng;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::net::Ipv6Addr;
@@ -547,12 +547,8 @@ pub mod security_types {
     impl KeyPair {
         /// Generate a new key pair
         pub fn generate() -> Self {
-            // Use ant-quic's key generation
-            let (secret_key, _public_key) = generate_ed25519_keypair();
-            
-            // Convert to ed25519-dalek v2 format
-            let secret_bytes = secret_key.to_bytes();
-            let signing_key = SigningKey::from_bytes(&secret_bytes);
+            // Generate key pair using ed25519-dalek directly
+            let signing_key = SigningKey::generate(&mut OsRng);
             
             KeyPair { inner: signing_key }
         }

@@ -269,7 +269,7 @@ mod tests {
             successful_replicas: 8,
             failed_replicas: 0,
             target_replicas: 8,
-            successful_peers: (0..8).map(|i| format!("peer{}", i)).collect(),
+            successful_peers: (0..8).map(|i| format!("peer{}", i).into()).collect(),
             failed_peers: vec![],
             is_sufficient: true,
         };

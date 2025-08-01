@@ -41,13 +41,13 @@ impl FourWordAddress {
         // Simple validation: ensure it has exactly 4 words separated by dots or hyphens
         let parts: Vec<&str> = s.split(['.', '-']).collect();
         if parts.len() != 4 {
-            return Err(P2PError::Bootstrap(crate::error::BootstrapError::InvalidData("Four-word address must have exactly 4 words".to_string())));
+            return Err(P2PError::Bootstrap(crate::error::BootstrapError::InvalidData("Four-word address must have exactly 4 words".to_string().into())));
         }
         
         // Basic validation: each word should be non-empty and contain only letters
         for part in &parts {
             if part.is_empty() || !part.chars().all(|c| c.is_alphabetic()) {
-                return Err(P2PError::Bootstrap(crate::error::BootstrapError::InvalidData("Invalid word in four-word address".to_string())));
+                return Err(P2PError::Bootstrap(crate::error::BootstrapError::InvalidData("Invalid word in four-word address".to_string().into())));
             }
         }
         
@@ -102,7 +102,7 @@ impl WordEncoder {
         let word3 = words3[((hash >> 32) % words3.len() as u64) as usize];
         let word4 = words4[((hash >> 48) % words4.len() as u64) as usize];
         
-        Ok(FourWordAddress(format!("{word1}.{word2}.{word3}.{word4}")))
+        Ok(FourWordAddress(format!("{word1}.{word2}.{word3}.{word4}").into()))
     }
     
     /// Decode a four-word address to a socket address
@@ -264,13 +264,13 @@ impl BootstrapManager {
     /// Convert socket address to four-word address
     pub fn encode_address(&self, socket_addr: &std::net::SocketAddr) -> Result<FourWordAddress> {
         self.word_encoder.encode_socket_addr(socket_addr)
-            .map_err(|e| crate::P2PError::Bootstrap(crate::error::BootstrapError::InvalidData(format!("Failed to encode socket address: {e}"))))
+            .map_err(|e| crate::P2PError::Bootstrap(crate::error::BootstrapError::InvalidData(format!("Failed to encode socket address: {e}").into())))
     }
     
     /// Convert four-word address to socket address
     pub fn decode_address(&self, words: &FourWordAddress) -> Result<std::net::SocketAddr> {
         self.word_encoder.decode_to_socket_addr(words)
-            .map_err(|e| crate::P2PError::Bootstrap(crate::error::BootstrapError::InvalidData(format!("Failed to decode four-word address: {e}"))))
+            .map_err(|e| crate::P2PError::Bootstrap(crate::error::BootstrapError::InvalidData(format!("Failed to decode four-word address: {e}").into())))
     }
     
     /// Validate four-word address format
@@ -278,7 +278,7 @@ impl BootstrapManager {
         if words.validate(&self.word_encoder) {
             Ok(())
         } else {
-            Err(crate::P2PError::Bootstrap(crate::error::BootstrapError::InvalidData("Invalid four-word address format".to_string())))
+            Err(crate::P2PError::Bootstrap(crate::error::BootstrapError::InvalidData("Invalid four-word address format".to_string().into())))
         }
     }
     
@@ -342,13 +342,13 @@ pub struct CacheStats {
 fn home_cache_dir() -> Result<PathBuf> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|_| P2PError::Bootstrap(BootstrapError::CacheError("Unable to determine home directory".to_string())))?;
+        .map_err(|_| P2PError::Bootstrap(BootstrapError::CacheError("Unable to determine home directory".to_string().into())))?;
     
     let cache_dir = PathBuf::from(home).join(DEFAULT_CACHE_DIR);
     
     // Ensure cache directory exists
     std::fs::create_dir_all(&cache_dir)
-        .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to create cache directory: {e}"))))?;
+        .map_err(|e| P2PError::Bootstrap(BootstrapError::CacheError(format!("Failed to create cache directory: {e}").into())))?;
     
     Ok(cache_dir)
 }
