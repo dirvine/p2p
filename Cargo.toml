@@ -10,7 +10,7 @@ members = [
     "apps/saorsa/src-tauri",     # Tauri desktop application
     "apps/saorsa-terminal-chat", # Terminal chat application
     "apps/saorsa-network-tester",# Network testing tool
-    "test-app",                  # Test application
+    "test-app", "apps/communitas",                  # Test application
     # "examples/*",                # Example applications - temporarily disabled for Tauri testing
 ]
 
