@@ -607,7 +607,7 @@ mod tests {
         let node = NodeDescriptor {
             id: node_id.clone(),
             public_key: create_test_verifying_key(),
-            addresses: vec!["127.0.0.1:8080".to_string()],
+            addresses: vec![], // No hardcoded addresses in tests
             hyperbolic: None,
             som_position: None,
             trust: 0.8,

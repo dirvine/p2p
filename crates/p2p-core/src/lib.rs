@@ -31,7 +31,7 @@
 //! 
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     let addr = NetworkAddress::from_str("127.0.0.1:9000")?;
+//!     let addr = "127.0.0.1:9000".parse::<NetworkAddress>()?;
 //!     let node = P2PNode::builder()
 //!         .listen_on(addr)
 //!         .with_mcp_server()
@@ -93,6 +93,9 @@ pub mod quantum_crypto;
 /// Utility functions and types
 pub mod utils;
 
+/// Validation framework for input sanitization and rate limiting
+pub mod validation;
+
 /// Production hardening features
 pub mod production;
 
@@ -132,6 +135,9 @@ pub mod adaptive;
 /// Configuration management system
 pub mod config;
 
+/// Health check system for monitoring and metrics
+pub mod health;
+
 // Re-export main types
 pub use address::{NetworkAddress, AddressBook};
 pub use network::{P2PNode, NodeConfig, NodeBuilder, P2PEvent};
@@ -149,6 +155,8 @@ pub use key_derivation::{MasterSeed, DerivationPath, DerivedKey, HierarchicalKey
 pub use encrypted_key_storage::{EncryptedKeyStorageManager, SecurityLevel, PasswordValidation, StorageStats, KeyMetadata, Argon2Config, DerivationPriority as KeyDerivationPriority};
 pub use persistent_state::{PersistentStateManager, StateConfig, RecoveryMode, FlushStrategy, RecoveryStats, IntegrityReport, WalEntry, TransactionType, StateChangeEvent};
 pub use identity_manager::{IdentityManager, Identity, IdentityState, IdentityKeyPair, IdentityCreationParams, IdentityVerification, IdentityUpdate, RevocationCertificate, RevocationReason, IdentitySyncPackage, IdentityStats};
+pub use validation::{Validate, Sanitize, ValidationContext, ValidationError, RateLimiter, RateLimitConfig, validate_peer_id, validate_network_address, validate_file_path, validate_message_size, validate_dht_key, validate_dht_value, sanitize_string};
+pub use health::{HealthManager, HealthResponse, ComponentHealth, HealthStatus, HealthEndpoints, HealthServer, PrometheusExporter, ComponentChecker};
 
 // Enhanced identity exports
 #[cfg(feature = "quantum-resistant")]

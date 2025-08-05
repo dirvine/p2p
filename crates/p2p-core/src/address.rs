@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn test_network_address_from_string() {
-        let addr = NetworkAddress::from_str("127.0.0.1:8080").unwrap();
+        let addr = "127.0.0.1:8080".parse::<NetworkAddress>().unwrap();
         assert_eq!(addr.ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
         assert_eq!(addr.port(), 8080);
     }

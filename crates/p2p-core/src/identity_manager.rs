@@ -55,6 +55,7 @@ use chacha20poly1305::{
     ChaCha20Poly1305
 };
 use argon2::{Argon2, Algorithm, Version, Params};
+use hkdf;
 
 /// Identity version for forward compatibility
 const IDENTITY_VERSION: u8 = 1;
@@ -279,6 +280,43 @@ pub struct IdentitySyncPackage {
     pub device_fingerprint: [u8; 32],
     /// Package signature
     pub signature: Vec<u8>,
+}
+
+/// Profile access permissions
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProfilePermissions {
+    /// Read-only access
+    ReadOnly,
+    /// Read and write access
+    ReadWrite,
+    /// Full administrative access
+    Admin,
+}
+
+/// Access grant record
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AccessGrant {
+    /// Identity granting access
+    grantor_id: UserId,
+    /// Identity receiving access
+    grantee_id: UserId,
+    /// Permissions granted
+    permissions: ProfilePermissions,
+    /// When access was granted
+    granted_at: u64,
+    /// When access expires (None = never)
+    expires_at: Option<u64>,
+}
+
+/// Access information
+#[derive(Debug, Clone)]
+pub struct AccessInfo {
+    /// Permissions granted
+    pub permissions: ProfilePermissions,
+    /// When access was granted
+    pub granted_at: u64,
+    /// When access expires (None = never)
+    pub expires_at: Option<u64>,
 }
 
 impl IdentityKeyPair {
@@ -546,13 +584,48 @@ impl IdentityManager {
             }
         }
         
-        // Load from storage
-        let identity_path = self.storage_path.join(format!("{identity_id}.json"));
-        let identity_data = tokio::fs::read(&identity_path).await
-            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read identity: {e}").into())))?;
+        // Try to load encrypted file first (.enc)
+        let encrypted_path = self.storage_path.join(format!("{identity_id}.enc"));
+        let plaintext_path = self.storage_path.join(format!("{identity_id}.json"));
         
-        let identity: Identity = serde_json::from_slice(&identity_data)
-            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
+        let identity: Identity = if encrypted_path.exists() {
+            // Load encrypted file
+            let encrypted_data = tokio::fs::read(&encrypted_path).await
+                .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read encrypted identity: {e}").into())))?;
+            
+            // Parse encrypted format
+            if encrypted_data.len() < 1 + 32 + 12 {
+                return Err(P2PError::Security(SecurityError::DecryptionFailed("Invalid encrypted file format".to_string().into())));
+            }
+            
+            let version = encrypted_data[0];
+            if version != 1 {
+                return Err(P2PError::Security(SecurityError::DecryptionFailed(format!("Unsupported encryption version: {version}").into())));
+            }
+            
+            let _salt = &encrypted_data[1..33];
+            let nonce = &encrypted_data[33..45];
+            let ciphertext = &encrypted_data[45..];
+            
+            // Derive decryption key
+            let decryption_key = self.derive_encryption_key_for_identity(identity_id, password).await?;
+            
+            // Decrypt
+            let plaintext = self.decrypt_data(ciphertext, &decryption_key, nonce.try_into().map_err(|_| P2PError::Security(SecurityError::DecryptionFailed("Invalid nonce".to_string().into())))?)?;
+            
+            // Deserialize
+            serde_json::from_slice(&plaintext)
+                .map_err(|e| P2PError::Serialization(e.to_string().into()))?
+        } else if plaintext_path.exists() {
+            // Load legacy plaintext file (for migration)
+            let identity_data = tokio::fs::read(&plaintext_path).await
+                .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read identity: {e}").into())))?;
+            
+            serde_json::from_slice(&identity_data)
+                .map_err(|e| P2PError::Serialization(e.to_string().into()))?
+        } else {
+            return Err(P2PError::Storage(StorageError::FileNotFound(identity_id.to_string().into())));
+        };
         
         // Load key pair
         let master_seed = self.key_storage.retrieve_master_seed(
@@ -685,7 +758,7 @@ impl IdentityManager {
         identity.state = IdentityState::Active;
         
         // Save updated identity
-        self.save_identity(&identity).await?;
+        self.save_identity(&identity, password).await?;
         
         // Update caches
         {
@@ -742,7 +815,7 @@ impl IdentityManager {
         identity.updated_at = current_timestamp();
         
         // Save updated identity
-        self.save_identity(&identity).await?;
+        self.save_identity(&identity, password).await?;
         
         // Remove from active caches
         {
@@ -812,6 +885,45 @@ impl IdentityManager {
         
         cipher.decrypt(nonce, encrypted)
             .map_err(|e| P2PError::Security(SecurityError::DecryptionFailed(format!("ChaCha20Poly1305 decryption failed: {e}").into())))
+    }
+    
+    /// Derive encryption key for a specific identity
+    async fn derive_encryption_key_for_identity(&self, identity_id: &UserId, password: &SecureString) -> Result<[u8; 32]> {
+        // Use a consistent salt derived from identity ID
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"saorsa-identity-encryption-v1");
+        hasher.update(identity_id.to_string().as_bytes());
+        let salt = hasher.finalize();
+        
+        // Get master key from secure key storage
+        // First, try to retrieve the existing master seed for identity encryption
+        let master_seed = match self.key_storage.retrieve_master_seed(
+            "identity_encryption_master",
+            password,
+        ).await {
+            Ok(seed) => seed,
+            Err(_) => {
+                // If no master seed exists, generate and store one
+                let new_seed = crate::key_derivation::MasterSeed::generate()?;
+                self.key_storage.store_master_seed(
+                    "identity_encryption_master",
+                    &new_seed,
+                    password,
+                ).await?;
+                new_seed
+            }
+        };
+        
+        // Get the seed material as master key
+        let master_key = master_seed.seed_material();
+        
+        // Derive identity-specific key using HKDF
+        let mut key = [0u8; 32];
+        let hkdf = hkdf::Hkdf::<sha2::Sha256>::new(Some(salt.as_bytes()), master_key);
+        hkdf.expand(b"identity-encryption", &mut key)
+            .map_err(|_| P2PError::Security(SecurityError::KeyGenerationFailed("HKDF expansion failed".to_string().into())))?;
+        
+        Ok(key)
     }
     
     /// Create a sync package for multi-device sync
@@ -925,7 +1037,7 @@ impl IdentityManager {
         ).await?;
         
         // Save identity
-        self.save_identity(&identity).await?;
+        self.save_identity(&identity, storage_password).await?;
         
         // Load into cache
         self.load_identity(&identity.id, storage_password).await
@@ -939,6 +1051,49 @@ impl IdentityManager {
         Ok("alpha.bravo.charlie.delta".to_string())
     }
     
+    /// Migrate existing plaintext identities to encrypted format
+    pub async fn migrate_existing_identities(&self, password: &SecureString) -> Result<()> {
+        use tokio::fs;
+        
+        // List all files in storage directory
+        let mut entries = fs::read_dir(&self.storage_path).await
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read directory: {e}").into())))?;
+        
+        let mut migrated_count = 0;
+        
+        while let Some(entry) = entries.next_entry().await
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read directory entry: {e}").into())))? {
+            
+            let path = entry.path();
+            
+            // Only process .json files (plaintext identities)
+            if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                // Read plaintext data
+                let plaintext_data = fs::read(&path).await
+                    .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read file: {e}").into())))?;
+                
+                // Try to deserialize as Identity
+                if let Ok(identity) = serde_json::from_slice::<Identity>(&plaintext_data) {
+                    // Save encrypted version
+                    self.save_identity(&identity, password).await?;
+                    
+                    // Remove old plaintext file
+                    fs::remove_file(&path).await
+                        .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to remove old file: {e}").into())))?;
+                    
+                    migrated_count += 1;
+                    tracing::info!("Migrated identity {} to encrypted format", identity.id);
+                }
+            }
+        }
+        
+        if migrated_count > 0 {
+            tracing::info!("Successfully migrated {} identities to encrypted format", migrated_count);
+        }
+        
+        Ok(())
+    }
+    
     /// Get key pair from cache
     fn get_key_pair(&self, identity_id: &UserId) -> Result<IdentityKeyPair> {
         let key_pairs = self.key_pairs.read().map_err(|_| P2PError::Identity(IdentityError::SystemTime("read lock failed".to_string().into())))?;
@@ -949,14 +1104,170 @@ impl IdentityManager {
             )))
     }
     
-    /// Save identity to disk
-    async fn save_identity(&self, identity: &Identity) -> Result<()> {
-        let identity_path = self.storage_path.join(format!("{}.json", identity.id));
-        let identity_data = serde_json::to_vec_pretty(identity)
+    /// Grant access to another identity
+    pub async fn grant_access(
+        &self,
+        grantor_id: &UserId,
+        grantee_id: &UserId,
+        permissions: ProfilePermissions,
+        password: &SecureString,
+    ) -> Result<()> {
+        // Load grantor's identity to verify ownership
+        let _grantor = self.load_identity(grantor_id, password).await?;
+        
+        // Create access grant record
+        let grant = AccessGrant {
+            grantor_id: grantor_id.clone(),
+            grantee_id: grantee_id.clone(),
+            permissions,
+            granted_at: current_timestamp(),
+            expires_at: None, // TODO: Add expiration support
+        };
+        
+        // Encrypt and store the grant
+        let grant_data = serde_json::to_vec(&grant)
             .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
         
-        tokio::fs::write(&identity_path, identity_data).await
-            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to save identity: {e}").into())))?;
+        // Generate encryption key for access grants
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"saorsa-access-grant-v1");
+        hasher.update(grantor_id.to_string().as_bytes());
+        hasher.update(grantee_id.to_string().as_bytes());
+        let grant_key_salt = hasher.finalize();
+        
+        // Derive grant-specific encryption key
+        let mut grant_key = [0u8; 32];
+        let encryption_key = self.derive_encryption_key_for_identity(grantor_id, password).await?;
+        let hkdf = hkdf::Hkdf::<sha2::Sha256>::new(Some(grant_key_salt.as_bytes()), &encryption_key);
+        hkdf.expand(b"access-grant", &mut grant_key)
+            .map_err(|_| P2PError::Security(SecurityError::KeyGenerationFailed("HKDF expansion failed".to_string().into())))?;
+        
+        // Encrypt grant data
+        let mut nonce = [0u8; 12];
+        rand::RngCore::fill_bytes(&mut thread_rng(), &mut nonce);
+        let ciphertext = self.encrypt_data(&grant_data, &grant_key, &nonce)?;
+        
+        // Store encrypted grant
+        let grant_path = self.storage_path.join("grants").join(format!("{}-{}.grant", grantor_id, grantee_id));
+        tokio::fs::create_dir_all(grant_path.parent().ok_or_else(|| P2PError::Storage(StorageError::Database("Invalid grant path".into())))?).await
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to create grants directory: {e}").into())))?;
+        
+        let mut grant_file = Vec::with_capacity(12 + ciphertext.len());
+        grant_file.extend_from_slice(&nonce);
+        grant_file.extend_from_slice(&ciphertext);
+        
+        tokio::fs::write(&grant_path, grant_file).await
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to save access grant: {e}").into())))?;
+        
+        tracing::info!("Granted {:?} access from {} to {}", permissions, grantor_id, grantee_id);
+        
+        Ok(())
+    }
+    
+    /// Revoke access from another identity
+    pub async fn revoke_access(
+        &self,
+        grantor_id: &UserId,
+        grantee_id: &UserId,
+        password: &SecureString,
+    ) -> Result<()> {
+        // Verify ownership
+        let _grantor = self.load_identity(grantor_id, password).await?;
+        
+        // Remove grant file
+        let grant_path = self.storage_path.join("grants").join(format!("{}-{}.grant", grantor_id, grantee_id));
+        
+        if grant_path.exists() {
+            tokio::fs::remove_file(&grant_path).await
+                .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to remove access grant: {e}").into())))?;
+            
+            tracing::info!("Revoked access from {} to {}", grantor_id, grantee_id);
+        }
+        
+        Ok(())
+    }
+    
+    /// Get access information
+    pub async fn get_access_info(
+        &self,
+        grantor_id: &UserId,
+        grantee_id: &UserId,
+        password: &SecureString,
+    ) -> Result<AccessInfo> {
+        // Load grant file
+        let grant_path = self.storage_path.join("grants").join(format!("{}-{}.grant", grantor_id, grantee_id));
+        
+        if !grant_path.exists() {
+            return Err(P2PError::Identity(IdentityError::AccessDenied("No access grant found".to_string().into())));
+        }
+        
+        let grant_data = tokio::fs::read(&grant_path).await
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to read access grant: {e}").into())))?;
+        
+        if grant_data.len() < 12 {
+            return Err(P2PError::Security(SecurityError::DecryptionFailed("Invalid grant file format".to_string().into())));
+        }
+        
+        let nonce = &grant_data[..12];
+        let ciphertext = &grant_data[12..];
+        
+        // Derive decryption key
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"saorsa-access-grant-v1");
+        hasher.update(grantor_id.to_string().as_bytes());
+        hasher.update(grantee_id.to_string().as_bytes());
+        let grant_key_salt = hasher.finalize();
+        
+        let mut grant_key = [0u8; 32];
+        let encryption_key = self.derive_encryption_key_for_identity(grantor_id, password).await?;
+        let hkdf = hkdf::Hkdf::<sha2::Sha256>::new(Some(grant_key_salt.as_bytes()), &encryption_key);
+        hkdf.expand(b"access-grant", &mut grant_key)
+            .map_err(|_| P2PError::Security(SecurityError::KeyGenerationFailed("HKDF expansion failed".to_string().into())))?;
+        
+        // Decrypt
+        let plaintext = self.decrypt_data(ciphertext, &grant_key, nonce.try_into().map_err(|_| P2PError::Security(SecurityError::DecryptionFailed("Invalid nonce".to_string().into())))?)?;
+        
+        // Deserialize grant
+        let grant: AccessGrant = serde_json::from_slice(&plaintext)
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
+        
+        Ok(AccessInfo {
+            permissions: grant.permissions,
+            granted_at: grant.granted_at,
+            expires_at: grant.expires_at,
+        })
+    }
+    
+    /// Save identity to disk with encryption
+    async fn save_identity(&self, identity: &Identity, password: &SecureString) -> Result<()> {
+        // Serialize identity
+        let identity_data = serde_json::to_vec(identity)
+            .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
+        
+        // Generate random salt and nonce
+        let mut salt = [0u8; 32];
+        let mut nonce = [0u8; 12];
+        rand::RngCore::fill_bytes(&mut thread_rng(), &mut salt);
+        rand::RngCore::fill_bytes(&mut thread_rng(), &mut nonce);
+        
+        // Derive encryption key from master password
+        // This uses secure key storage with the provided password
+        let encryption_key = self.derive_encryption_key_for_identity(&identity.id, password).await?;
+        
+        // Encrypt the identity data
+        let ciphertext = self.encrypt_data(&identity_data, &encryption_key, &nonce)?;
+        
+        // Create encrypted file format: version (1 byte) + salt (32 bytes) + nonce (12 bytes) + ciphertext
+        let mut encrypted_file = Vec::with_capacity(1 + 32 + 12 + ciphertext.len());
+        encrypted_file.push(1u8); // Version 1
+        encrypted_file.extend_from_slice(&salt);
+        encrypted_file.extend_from_slice(&nonce);
+        encrypted_file.extend_from_slice(&ciphertext);
+        
+        // Save to disk with .enc extension
+        let identity_path = self.storage_path.join(format!("{}.enc", identity.id));
+        tokio::fs::write(&identity_path, encrypted_file).await
+            .map_err(|e| P2PError::Storage(StorageError::Database(format!("Failed to save encrypted identity: {e}").into())))?;
         
         Ok(())
     }
@@ -1022,15 +1333,15 @@ mod tests {
     use tempfile::TempDir;
     
     #[tokio::test]
-    async fn test_identity_creation() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_identity_creation()  -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let manager = IdentityManager::new(
             temp_dir.path(),
             SecurityLevel::Fast,
-        ).await.unwrap();
+        ).await?;
         
-        let password = SecureString::from_str("test_password_123!").unwrap();
-        manager.initialize(&password).await.unwrap();
+        let password = SecureString::from_str("test_password_123!").expect("Test assertion failed");
+        manager.initialize(&password).await?;
         
         let params = IdentityCreationParams {
             display_name: Some("Test User".to_string()),
@@ -1041,70 +1352,73 @@ mod tests {
             derivation_path: None,
         };
         
-        let identity = manager.create_identity(&password, params).await.unwrap();
+        let identity = manager.create_identity(&password, params).await?;
         
         assert_eq!(identity.state, IdentityState::Active);
         assert_eq!(identity.display_name, Some("Test User".to_string()));
         assert!(identity.is_valid());
+    Ok(())
     }
     
     #[tokio::test]
-    async fn test_identity_verification() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_identity_verification() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let manager = IdentityManager::new(
             temp_dir.path(),
             SecurityLevel::Fast,
-        ).await.unwrap();
+        ).await?;
         
-        let password = SecureString::from_str("test_password_123!").unwrap();
-        manager.initialize(&password).await.unwrap();
+        let password = SecureString::from_str("test_password_123!").expect("Test assertion failed");
+        manager.initialize(&password).await?;
         
         let params = IdentityCreationParams::default();
-        let identity = manager.create_identity(&password, params).await.unwrap();
+        let identity = manager.create_identity(&password, params).await?;
         
-        let verification = manager.verify_identity(&identity).await.unwrap();
+        let verification = manager.verify_identity(&identity).await?;
         assert!(verification.valid);
         assert_eq!(verification.trust_level, 100);
         assert!(verification.issues.is_empty());
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_key_rotation() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_key_rotation() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let manager = IdentityManager::new(
             temp_dir.path(),
             SecurityLevel::Fast,
-        ).await.unwrap();
+        ).await?;
         
-        let password = SecureString::from_str("test_password_123!").unwrap();
-        manager.initialize(&password).await.unwrap();
+        let password = SecureString::from_str("test_password_123!").expect("Test assertion failed");
+        manager.initialize(&password).await?;
         
         let params = IdentityCreationParams::default();
-        let identity = manager.create_identity(&password, params).await.unwrap();
+        let identity = manager.create_identity(&password, params).await?;
         let original_version = identity.key_version;
         
         // Rotate keys
-        manager.rotate_keys(&identity.id, &password).await.unwrap();
+        manager.rotate_keys(&identity.id, &password).await?;
         
         // Load updated identity
-        let updated_identity = manager.load_identity(&identity.id, &password).await.unwrap();
+        let updated_identity = manager.load_identity(&identity.id, &password).await?;
         assert_eq!(updated_identity.key_version, original_version + 1);
         assert!(!updated_identity.previous_keys.is_empty());
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_identity_revocation() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_identity_revocation() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let manager = IdentityManager::new(
             temp_dir.path(),
             SecurityLevel::Fast,
-        ).await.unwrap();
+        ).await?;
         
-        let password = SecureString::from_str("test_password_123!").unwrap();
-        manager.initialize(&password).await.unwrap();
+        let password = SecureString::from_str("test_password_123!").expect("Test assertion failed");
+        manager.initialize(&password).await?;
         
         let params = IdentityCreationParams::default();
-        let identity = manager.create_identity(&password, params).await.unwrap();
+        let identity = manager.create_identity(&password, params).await?;
         
         // Revoke identity
         let cert = manager.revoke_identity(
@@ -1112,35 +1426,36 @@ mod tests {
             &password,
             RevocationReason::UserRequested,
             None,
-        ).await.unwrap();
+        ).await?;
         
         assert_eq!(cert.reason, RevocationReason::UserRequested);
         assert!(!cert.signature.is_empty());
         
         // Try to load revoked identity
-        let revoked = manager.load_identity(&identity.id, &password).await.unwrap();
+        let revoked = manager.load_identity(&identity.id, &password).await?;
         assert_eq!(revoked.state, IdentityState::Revoked);
         assert!(!revoked.is_valid());
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_multi_device_sync() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_multi_device_sync() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let manager1 = IdentityManager::new(
             temp_dir.path().join("device1"),
             SecurityLevel::Fast,
-        ).await.unwrap();
+        ).await?;
         
         let manager2 = IdentityManager::new(
             temp_dir.path().join("device2"),
             SecurityLevel::Fast,
-        ).await.unwrap();
+        ).await?;
         
-        let password = SecureString::from_str("test_password_123!").unwrap();
-        let device_password = SecureString::from_str("device_sync_password").unwrap();
+        let password = SecureString::from_str("test_password_123!").expect("Test assertion failed");
+        let device_password = SecureString::from_str("device_sync_password").expect("Test assertion failed");
         
-        manager1.initialize(&password).await.unwrap();
-        manager2.initialize(&password).await.unwrap();
+        manager1.initialize(&password).await?;
+        manager2.initialize(&password).await?;
         
         // Create identity on device 1
         let params = IdentityCreationParams {
@@ -1148,24 +1463,25 @@ mod tests {
             ..Default::default()
         };
         
-        let identity = manager1.create_identity(&password, params).await.unwrap();
+        let identity = manager1.create_identity(&password, params).await?;
         
         // Create sync package
         let sync_package = manager1.create_sync_package(
             &identity.id,
             &password,
             &device_password,
-        ).await.unwrap();
+        ).await?;
         
         // Import on device 2
         let imported = manager2.import_sync_package(
             &sync_package,
             &device_password,
             &password,
-        ).await.unwrap();
+        ).await?;
         
         assert_eq!(imported.id, identity.id);
         assert_eq!(imported.display_name, identity.display_name);
+        Ok(())
     }
 }
 

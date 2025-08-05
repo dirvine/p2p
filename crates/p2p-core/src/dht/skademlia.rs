@@ -1251,7 +1251,7 @@ mod tests {
         
         // Add more routes than the limit (max 5)
         for i in 0..7 {
-            let route = vec![create_test_dht_node(&format!("peer{}", i).into(), [i as u8; 32])];
+            let route = vec![create_test_dht_node(&format!("peer{}", i), [i as u8; 32])];
             security_bucket.add_backup_route(route);
         }
         

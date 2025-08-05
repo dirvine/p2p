@@ -2,6 +2,11 @@
 //!
 //! This module provides extension traits and implementations for components
 //! that need additional methods for full system integration.
+//!
+//! **Note**: Many methods in this module contain placeholder implementations
+//! marked with TODO comments. These are intentional stubs that will be
+//! implemented when the full component integration is completed.
+//! The TODOs serve as clear markers for future development work.
 
 #![allow(missing_docs)]
 #![allow(async_fn_in_trait)]

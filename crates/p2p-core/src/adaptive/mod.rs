@@ -58,7 +58,7 @@ pub use transport::{Transport, TransportManager, TransportProtocol, ConnectionIn
 pub use dht_integration::{AdaptiveDHT, KademliaRoutingStrategy};
 pub use routing::AdaptiveRouter;
 pub use hyperbolic::{HyperbolicSpace, HyperbolicRoutingStrategy};
-pub use som::{SelfOrganizingMap, SOMRoutingStrategy, FeatureExtractor};
+pub use som::{SelfOrganizingMap, SOMRoutingStrategy, FeatureExtractor, SomConfig, GridSize};
 pub use trust::{EigenTrustEngine, TrustBasedRoutingStrategy, NodeStatistics, NodeStatisticsUpdate, MockTrustProvider};
 pub use gossip::AdaptiveGossipSub;
 pub use learning::{ThompsonSampling, QLearnCacheManager, ChurnPredictor};

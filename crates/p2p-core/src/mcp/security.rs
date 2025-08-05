@@ -594,7 +594,7 @@ mod tests {
 
     /// Helper function to create a test PeerId
     fn create_test_peer() -> PeerId {
-        format!("test_peer_{}", rand::random::<u32>().into())
+        format!("test_peer_{}", rand::random::<u32>())
     }
 
     /// Helper function to create a test security manager

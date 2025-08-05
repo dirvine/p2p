@@ -538,7 +538,7 @@ mod tests {
         }
         
         // Reassemble chunks
-        let reassembled = manager.reassemble_chunks(chunks).unwrap();
+        let reassembled = ChunkManager::reassemble_chunks(chunks).unwrap();
         assert_eq!(reassembled, content);
     }
     

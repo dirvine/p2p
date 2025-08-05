@@ -69,6 +69,10 @@ shellexpand = "3.1"
 [workspace.lints.rust]
 unsafe_code = "warn"
 missing_docs = "warn"
+# Security-focused lints
+anonymous_parameters = "deny"
+non_ascii_idents = "deny"
+trivial_numeric_casts = "deny"
 
 [workspace.lints.clippy]
 # Error handling - CRITICAL for production
@@ -81,16 +85,35 @@ todo = "warn"
 unreachable = "deny"
 fallible_impl_from = "deny"
 
+# Security lints
+arithmetic_overflow = "deny"
+cast_possible_truncation = "warn"
+cast_possible_wrap = "warn"
+cast_precision_loss = "warn"
+cast_sign_loss = "warn"
+integer_arithmetic = "warn"
+float_arithmetic = "warn"
+indexing_slicing = "warn"
+unwrap_in_result = "deny"
+
 # Correctness
 enum_glob_use = "deny"
 mem_forget = "deny"
 clone_on_ref_ptr = "deny"
+multiple_inherent_impl = "warn"
+mutable_key_type = "deny"
 
 # Performance
 inefficient_to_string = "deny"
 large_enum_variant = "warn"
 mutex_atomic = "warn"
 needless_collect = "deny"
+
+# Security-related code patterns
+suspicious_else_formatting = "deny"
+suspicious_unary_op_formatting = "deny"
+mixed_script_confusables = "deny"
+unicode_not_nfc = "warn"
 
 # Security
 lossy_float_literal = "deny"

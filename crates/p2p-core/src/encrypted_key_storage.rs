@@ -837,151 +837,160 @@ fn current_timestamp() -> u64 {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+    use tracing::debug;
     
     #[tokio::test]
-    async fn test_storage_initialization() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_storage_initialization()  -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let storage_path = temp_dir.path().join("test_storage.enc");
         
         let manager = EncryptedKeyStorageManager::new(
             &storage_path,
             SecurityLevel::Fast,
-        ).unwrap();
+        ).expect("Test assertion failed");
         
-        let password = SecureString::from_str("test_password_123!").unwrap();
-        manager.initialize(&password).await.unwrap();
+        let password = SecureString::from_str("test_password_123!").expect("Test assertion failed");
+        manager.initialize(&password).await?;
         
         assert!(storage_path.exists());
+    Ok(())
     }
     
     #[tokio::test]
-    async fn test_master_seed_storage() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_master_seed_storage() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let storage_path = temp_dir.path().join("test_storage.enc");
         
         let manager = EncryptedKeyStorageManager::new(
             &storage_path,
             SecurityLevel::Fast,
-        ).unwrap();
+        ).expect("Test assertion failed");
         
-        let password = SecureString::from_str("test_password_123!").unwrap();
-        manager.initialize(&password).await.unwrap();
+        let password = SecureString::from_str("test_password_123!").expect("Test assertion failed");
+        manager.initialize(&password).await?;
         
         // Create and store master seed
-        let master_seed = MasterSeed::generate().unwrap();
-        manager.store_master_seed("test_seed", &master_seed, &password).await.unwrap();
+        let master_seed = MasterSeed::generate().expect("Test assertion failed");
+        manager.store_master_seed("test_seed", &master_seed, &password).await?;
         
         // Retrieve and verify
-        let retrieved_seed = manager.retrieve_master_seed("test_seed", &password).await.unwrap();
+        let retrieved_seed = manager.retrieve_master_seed("test_seed", &password).await?;
         assert_eq!(master_seed.seed_material(), retrieved_seed.seed_material());
+        
+        Ok(())
     }
     
     #[tokio::test]
     async fn test_password_validation() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let storage_path = temp_dir.path().join("test_storage.enc");
         
         let manager = EncryptedKeyStorageManager::new(
             &storage_path,
             SecurityLevel::Standard,
-        ).unwrap();
+        ).expect("Test assertion failed");
         
         // Test weak password
-        let weak_password = SecureString::from_str("123").unwrap();
-        let validation = manager.validate_password(&weak_password).unwrap();
+        let weak_password = SecureString::from_str("123").expect("Test assertion failed");
+        let validation = manager.validate_password(&weak_password).expect("Test assertion failed");
         assert!(!validation.valid);
         assert!(!validation.errors.is_empty());
         
         // Test strong password
-        let strong_password = SecureString::from_str("MySecurePassword123!").unwrap();
-        let validation = manager.validate_password(&strong_password).unwrap();
+        let strong_password = SecureString::from_str("MySecurePassword123!").expect("Test assertion failed");
+        let validation = manager.validate_password(&strong_password).expect("Test assertion failed");
         assert!(validation.valid);
         assert!(validation.strength_score >= 70);
     }
     
     #[tokio::test]
-    async fn test_password_change() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_password_change() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let storage_path = temp_dir.path().join("test_storage.enc");
         
         let manager = EncryptedKeyStorageManager::new(
             &storage_path,
             SecurityLevel::Fast,
-        ).unwrap();
+        ).expect("Test assertion failed");
         
-        let old_password = SecureString::from_str("old_password_123!").unwrap();
-        let new_password = SecureString::from_str("new_password_456!").unwrap();
+        let old_password = SecureString::from_str("old_password_123!").expect("Test assertion failed");
+        let new_password = SecureString::from_str("new_password_456!").expect("Test assertion failed");
         
-        manager.initialize(&old_password).await.unwrap();
+        manager.initialize(&old_password).await?;
         
         // Store a master seed
-        let master_seed = MasterSeed::generate().unwrap();
-        manager.store_master_seed("test_seed", &master_seed, &old_password).await.unwrap();
+        let master_seed = MasterSeed::generate().expect("Test assertion failed");
+        manager.store_master_seed("test_seed", &master_seed, &old_password).await?;
         
         // Change password
-        manager.change_password(&old_password, &new_password).await.unwrap();
+        manager.change_password(&old_password, &new_password).await?;
         
         // Verify we can retrieve with new password
-        let retrieved_seed = manager.retrieve_master_seed("test_seed", &new_password).await.unwrap();
+        let retrieved_seed = manager.retrieve_master_seed("test_seed", &new_password).await?;
         assert_eq!(master_seed.seed_material(), retrieved_seed.seed_material());
         
         // Verify old password doesn't work
         assert!(manager.retrieve_master_seed("test_seed", &old_password).await.is_err());
+        
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_security_levels() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_security_levels() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         
         for level in [SecurityLevel::Fast, SecurityLevel::Standard, SecurityLevel::High] {
-            let storage_path = temp_dir.path().join(format!("test_storage_{:?}.enc", level).into());
+            let storage_path = temp_dir.path().join(format!("test_storage_{:?}.enc", level));
             
-            let manager = EncryptedKeyStorageManager::new(&storage_path, level).unwrap();
-            let password = SecureString::from_str("test_password_123!").unwrap();
+            let manager = EncryptedKeyStorageManager::new(&storage_path, level).expect("Test assertion failed");
+            let password = SecureString::from_str("test_password_123!").expect("Test assertion failed");
             
             let start_time = Instant::now();
-            manager.initialize(&password).await.unwrap();
+            manager.initialize(&password).await?;
             let derivation_time = start_time.elapsed();
             
             let target_time = level.target_derivation_time();
-            println!("Security level {:?}: {}ms (target: {}ms)", 
+            debug!("Security level {:?}: {}ms (target: {}ms)", 
                 level, derivation_time.as_millis(), target_time.as_millis());
             
             assert!(storage_path.exists());
         }
+        
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_cache_functionality() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_cache_functionality() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let storage_path = temp_dir.path().join("test_storage.enc");
         
         let manager = EncryptedKeyStorageManager::new(
             &storage_path,
             SecurityLevel::Fast,
-        ).unwrap();
+        ).expect("Test assertion failed");
         
-        let password = SecureString::from_str("test_password_123!").unwrap();
-        manager.initialize(&password).await.unwrap();
+        let password = SecureString::from_str("test_password_123!").expect("Test assertion failed");
+        manager.initialize(&password).await?;
         
         // Store master seed
-        let master_seed = MasterSeed::generate().unwrap();
-        manager.store_master_seed("test_seed", &master_seed, &password).await.unwrap();
+        let master_seed = MasterSeed::generate().expect("Test assertion failed");
+        manager.store_master_seed("test_seed", &master_seed, &password).await?;
         
         // First retrieval (cache miss)
         let start_time = Instant::now();
-        let _retrieved_seed1 = manager.retrieve_master_seed("test_seed", &password).await.unwrap();
+        let _retrieved_seed1 = manager.retrieve_master_seed("test_seed", &password).await?;
         let first_access_time = start_time.elapsed();
         
         // Second retrieval (cache hit)
         let start_time = Instant::now();
-        let _retrieved_seed2 = manager.retrieve_master_seed("test_seed", &password).await.unwrap();
+        let _retrieved_seed2 = manager.retrieve_master_seed("test_seed", &password).await?;
         let second_access_time = start_time.elapsed();
         
         // Cache hit should be faster
         assert!(second_access_time < first_access_time);
         
-        let stats = manager.get_stats().unwrap();
+        let stats = manager.get_stats().expect("Test assertion failed");
         assert!(stats.cache_hits > 0);
+        Ok(())
     }
 }

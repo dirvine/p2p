@@ -1341,7 +1341,7 @@ mod tests {
     }
     
     #[tokio::test]
-    async fn test_thompson_sampling_selection() {
+    async fn test_thompson_sampling_selection() -> Result<()> {
         let ts = ThompsonSampling::new();
         
         // Test selection for different content types
@@ -1351,7 +1351,7 @@ mod tests {
             ContentType::ComputeRequest,
             ContentType::RealtimeMessage,
         ] {
-            let strategy = ts.select_strategy(content_type).await.unwrap();
+            let strategy = ts.select_strategy(content_type).await?;
             assert!(matches!(
                 strategy,
                 StrategyChoice::Kademlia |
@@ -1364,10 +1364,11 @@ mod tests {
         let metrics = ts.get_metrics().await;
         assert_eq!(metrics.total_decisions, 4);
         assert_eq!(metrics.decisions_by_type.len(), 4);
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_thompson_sampling_update() {
+    async fn test_thompson_sampling_update() -> Result<()> {
         let ts = ThompsonSampling::new();
         
         // Heavily reward Hyperbolic strategy for DataRetrieval
@@ -1377,7 +1378,7 @@ mod tests {
                 StrategyChoice::Hyperbolic,
                 true,
                 50
-            ).await.unwrap();
+            ).await?;
         }
         
         // Penalize Kademlia for DataRetrieval
@@ -1387,13 +1388,13 @@ mod tests {
                 StrategyChoice::Kademlia,
                 false,
                 200
-            ).await.unwrap();
+            ).await?;
         }
         
         // After training, Hyperbolic should be preferred for DataRetrieval
         let mut hyperbolic_count = 0;
         for _ in 0..100 {
-            let strategy = ts.select_strategy(ContentType::DataRetrieval).await.unwrap();
+            let strategy = ts.select_strategy(ContentType::DataRetrieval).await?;
             if matches!(strategy, StrategyChoice::Hyperbolic) {
                 hyperbolic_count += 1;
             }
@@ -1401,10 +1402,11 @@ mod tests {
         
         // Should select Hyperbolic significantly more often
         assert!(hyperbolic_count > 60, "Expected Hyperbolic to be selected more than 60% of the time, got {}%", hyperbolic_count);
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_confidence_intervals() {
+    async fn test_confidence_intervals() -> Result<()> {
         let ts = ThompsonSampling::new();
         
         // Add some successes and failures
@@ -1414,7 +1416,7 @@ mod tests {
                 StrategyChoice::Kademlia,
                 i % 3 != 0, // 70% success rate
                 100
-            ).await.unwrap();
+            ).await?;
         }
         
         let (lower, upper) = ts.get_confidence_interval(
@@ -1425,10 +1427,11 @@ mod tests {
         assert!(lower > 0.0 && lower < 1.0);
         assert!(upper > lower && upper <= 1.0);
         assert!(upper - lower < 0.5); // Confidence interval should narrow with data
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_exploration_bonus() {
+    async fn test_exploration_bonus() -> Result<()> {
         let ts = ThompsonSampling::new();
         
         // Give one strategy some data
@@ -1438,22 +1441,23 @@ mod tests {
                 StrategyChoice::TrustPath,
                 true,
                 100
-            ).await.unwrap();
+            ).await?;
         }
         
         // Other strategies should still be explored due to exploration bonus
         let mut strategy_counts = HashMap::new();
         for _ in 0..100 {
-            let strategy = ts.select_strategy(ContentType::ComputeRequest).await.unwrap();
+            let strategy = ts.select_strategy(ContentType::ComputeRequest).await?;
             *strategy_counts.entry(strategy).or_insert(0) += 1;
         }
         
         // All strategies should have been tried at least once
         assert!(strategy_counts.len() >= 3, "Expected at least 3 different strategies to be tried");
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_reset_strategy() {
+    async fn test_reset_strategy() -> Result<()> {
         let ts = ThompsonSampling::new();
         
         // Train a strategy
@@ -1463,7 +1467,7 @@ mod tests {
                 StrategyChoice::SOMRegion,
                 true,
                 50
-            ).await.unwrap();
+            ).await?;
         }
         
         // Reset it
@@ -1477,6 +1481,7 @@ mod tests {
         
         assert_eq!(lower, 0.0);
         assert_eq!(upper, 1.0);
+        Ok(())
     }
     
     #[tokio::test]
@@ -1726,24 +1731,25 @@ mod tests {
     }
     
     #[tokio::test]
-    async fn test_action_execution() {
+    async fn test_action_execution() -> Result<()> {
         let manager = QLearnCacheManager::new(1024);
         let hash = ContentHash([1u8; 32]);
         
         // Test Cache action
-        manager.execute_action(&hash, CacheAction::Cache, Some(vec![0u8; 100])).await.unwrap();
+        manager.execute_action(&hash, CacheAction::Cache, Some(vec![0u8; 100])).await?;
         assert!(manager.get(&hash).await.is_some());
         
         // Test NoAction
-        manager.execute_action(&hash, CacheAction::NoAction, None).await.unwrap();
+        manager.execute_action(&hash, CacheAction::NoAction, None).await?;
         assert!(manager.get(&hash).await.is_some()); // Should still be there
         
         // Test Evict action
-        manager.execute_action(&hash, CacheAction::Evict(EvictionPolicy::LRU), None).await.unwrap();
+        manager.execute_action(&hash, CacheAction::Evict(EvictionPolicy::LRU), None).await?;
         // Note: May or may not evict our specific item depending on LRU state
         
         let stats = manager.get_stats();
         assert!(stats.cache_size <= 100); // Should be 0 or 100 depending on eviction
+        Ok(())
     }
     
     #[tokio::test]
@@ -1762,29 +1768,30 @@ mod tests {
     }
     
     #[tokio::test]
-    async fn test_churn_predictor_node_events() {
+    async fn test_churn_predictor_node_events() -> Result<()> {
         let predictor = ChurnPredictor::new();
         let node_id = NodeId { hash: [1u8; 32] };
         
         // Record connection
-        predictor.record_node_event(&node_id, NodeEvent::Connected).await.unwrap();
+        predictor.record_node_event(&node_id, NodeEvent::Connected).await?;
         
         // Record disconnection
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        predictor.record_node_event(&node_id, NodeEvent::Disconnected).await.unwrap();
+        predictor.record_node_event(&node_id, NodeEvent::Disconnected).await?;
         
         // Check that session was recorded
         let features = predictor.extract_features(&node_id).await;
         assert!(features.is_some());
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_churn_predictor_feature_extraction() {
+    async fn test_churn_predictor_feature_extraction() -> Result<()> {
         let predictor = ChurnPredictor::new();
         let node_id = NodeId { hash: [1u8; 32] };
         
         // Create node history
-        predictor.record_node_event(&node_id, NodeEvent::Connected).await.unwrap();
+        predictor.record_node_event(&node_id, NodeEvent::Connected).await?;
         
         // Update behavior
         let features = NodeFeatures {
@@ -1800,12 +1807,13 @@ mod tests {
             connection_stability: 0.85,
         };
         
-        predictor.update_node_behavior(&node_id, features.clone()).await.unwrap();
+        predictor.update_node_behavior(&node_id, features.clone()).await?;
         
         // Extract features
-        let extracted = predictor.extract_features(&node_id).await.unwrap();
+        let extracted = predictor.extract_features(&node_id).await?;
         assert_eq!(extracted.resource_contribution, 0.8);
         assert_eq!(extracted.avg_response_time, 50.0);
+        Ok(())
     }
     
     #[tokio::test]
@@ -1843,12 +1851,12 @@ mod tests {
     }
     
     #[tokio::test]
-    async fn test_churn_predictor_proactive_replication() {
+    async fn test_churn_predictor_proactive_replication() -> Result<()> {
         let predictor = ChurnPredictor::new();
         let node_id = NodeId { hash: [1u8; 32] };
         
         // Create high-risk node history
-        predictor.record_node_event(&node_id, NodeEvent::Connected).await.unwrap();
+        predictor.record_node_event(&node_id, NodeEvent::Connected).await?;
         
         let features = NodeFeatures {
             online_duration: 600.0, // Only 10 minutes online
@@ -1863,17 +1871,18 @@ mod tests {
             connection_stability: 0.1,
         };
         
-        predictor.update_node_behavior(&node_id, features).await.unwrap();
+        predictor.update_node_behavior(&node_id, features).await?;
         
         // Should recommend replication for high-risk node
         let _should_replicate = predictor.should_replicate(&node_id).await;
         // Without full model training, this might not always be true, but test structure is correct
         let prediction = predictor.predict(&node_id).await;
         assert!(prediction.probability_1h > 0.0);
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_churn_predictor_online_learning() {
+    async fn test_churn_predictor_online_learning() -> Result<()> {
         let predictor = ChurnPredictor::new();
         let node_id = NodeId { hash: [1u8; 32] };
         
@@ -1900,26 +1909,28 @@ mod tests {
                 churned,
                 churned,
                 churned
-            ).await.unwrap();
+            ).await?;
         }
         
         // Model should have been updated after 32 examples
         let prediction = predictor.predict(&node_id).await;
         assert!(prediction.confidence > 0.0);
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_churn_predictor_model_persistence() {
+    async fn test_churn_predictor_model_persistence() -> Result<()> {
         let predictor = ChurnPredictor::new();
         let temp_path = std::path::Path::new("/tmp/test_model.json");
         
         // Save model
-        predictor.save_model(temp_path).await.unwrap();
+        predictor.save_model(temp_path).await?;
         
         // Load model
-        predictor.load_model(temp_path).await.unwrap();
+        predictor.load_model(temp_path).await?;
         
         // Clean up
         let _ = std::fs::remove_file(temp_path);
+        Ok(())
     }
 }

@@ -375,7 +375,9 @@ mod tests {
     fn test_proof_of_work_verification() {
         use crate::peer_record::UserId;
         
-        let node_id = UserId::random();
+        let mut hash = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut hash);
+        let node_id = UserId { hash };
         let pow = NodeIdentity::solve_pow_puzzle(&node_id, 8).unwrap();
         
         assert!(NodeIdentity::verify_pow(&node_id, &pow));

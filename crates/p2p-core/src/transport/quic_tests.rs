@@ -30,7 +30,7 @@ mod tests {
         };
         let mut transport = QuicTransport::new(options).unwrap();
         
-        let addr = NetworkAddress::from_str("127.0.0.1:0").unwrap();
+        let addr = "127.0.0.1:0".parse::<NetworkAddress>().unwrap();
         let result = transport.bind(addr).await;
         assert!(result.is_ok());
     }
@@ -39,8 +39,8 @@ mod tests {
     async fn test_quic_connection_info() {
         use std::net::{IpAddr, Ipv4Addr};
         
-        let local_addr = NetworkAddress::from_str("127.0.0.1:9000").unwrap();
-        let remote_addr = NetworkAddress::from_str("127.0.0.1:9001").unwrap();
+        let local_addr = "127.0.0.1:9000".parse::<NetworkAddress>().unwrap();
+        let remote_addr = "127.0.0.1:9001".parse::<NetworkAddress>().unwrap();
         
         // Mock connection for testing info method
         let conn = QuicConnection {

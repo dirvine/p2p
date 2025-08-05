@@ -14,7 +14,7 @@
 //! Integration tests for Multi-Armed Bandit routing optimization
 
 use saorsa_core::adaptive::{
-    MultiArmedBandit, MABConfig, RouteId, RouteDecision,
+    MultiArmedBandit, MABConfig, RouteId,
     ContentType, StrategyChoice, Outcome, NodeId,
 };
 use std::collections::HashMap;

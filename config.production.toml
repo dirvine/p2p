@@ -1,31 +1,33 @@
-# Saorsa P2P Network Configuration - Production Profile
-# Optimized for production deployments
+# P2P Foundation Production Configuration
+# Optimized for production deployment
 
 [network]
-# Production bootstrap nodes
+# Production bootstrap nodes (configure your actual nodes here)
 bootstrap_nodes = [
-    "bootstrap1.saorsa.network:9000",
-    "bootstrap2.saorsa.network:9000",
-    "bootstrap3.saorsa.network:9000",
-    "bootstrap4.saorsa.network:9000",
+    "/ip4/bootstrap1.p2p.network/tcp/9000",
+    "/ip4/bootstrap2.p2p.network/tcp/9000",
+    "/ip6/2001:db8::1/tcp/9000"
 ]
+# Listen on all interfaces
 listen_address = "0.0.0.0:9000"
-ipv6_enabled = true
-max_connections = 50000
+# Production limits
+max_connections = 10000
 connection_timeout = 30
 keepalive_interval = 60
 
 [security]
-# Strict security settings
+# Conservative rate limits
 rate_limit = 1000
 connection_limit = 100
+# Strict security for production
 encryption_enabled = true
 min_tls_version = "1.3"
 identity_security_level = "High"
 
 [storage]
-# Production storage settings
-path = "/var/lib/saorsa"
+# Production data directory
+path = "/var/lib/p2p-foundation"
+# Large storage allocation
 max_size = "100GB"
 cache_size = 1024
 compression_enabled = true
@@ -37,7 +39,7 @@ max_execution_time = 300
 monitoring_enabled = true
 
 [dht]
-# Production DHT parameters
+# Full replication for reliability
 replication_factor = 8
 alpha = 3
 beta = 1
@@ -45,7 +47,7 @@ record_ttl = 3600
 adaptive_routing = true
 
 [transport]
-# QUIC for optimal performance
+# QUIC for performance
 protocol = "quic"
 quic_enabled = true
 tcp_enabled = true
@@ -54,6 +56,8 @@ buffer_size = 131072
 
 [identity]
 derivation_path = "m/44'/0'/0'/0/0"
+# Regular key rotation
 rotation_interval = 90
+# Enable backups
 backup_enabled = true
-backup_interval = 24
+backup_interval = 6

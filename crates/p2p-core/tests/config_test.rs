@@ -81,6 +81,7 @@ encryption_enabled = false
 #[test]
 fn test_env_overrides() {
     // Set environment variables
+    #[allow(unsafe_code)]
     unsafe {
         env::set_var("SAORSA_LISTEN_ADDRESS", "10.0.0.1:7000");
         env::set_var("SAORSA_RATE_LIMIT", "2000");
@@ -96,6 +97,7 @@ fn test_env_overrides() {
     assert!(!config.mcp.enabled);
     
     // Clean up
+    #[allow(unsafe_code)]
     unsafe {
         env::remove_var("SAORSA_LISTEN_ADDRESS");
         env::remove_var("SAORSA_RATE_LIMIT");

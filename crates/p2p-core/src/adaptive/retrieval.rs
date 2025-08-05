@@ -478,7 +478,7 @@ mod tests {
         let metadata = crate::adaptive::storage::ContentMetadata {
             size: content.len(),
             content_type: ContentType::DataRetrieval,
-            created_at: Instant::now(),
+            created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
             chunk_count: None,
             replication_factor: 8,
         };

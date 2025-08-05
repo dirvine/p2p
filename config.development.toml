@@ -1,26 +1,29 @@
-# Saorsa P2P Network Configuration - Development Profile
+# P2P Foundation Development Configuration
 # Optimized for local development and testing
 
 [network]
-# Use localhost for development
-bootstrap_nodes = []
+# Local development bootstrap nodes
+bootstrap_nodes = ["127.0.0.1:9000", "127.0.0.1:9001", "127.0.0.1:9002"]
+# Listen on localhost only for development
 listen_address = "127.0.0.1:9000"
-ipv6_enabled = false
+# Lower limits for development
 max_connections = 100
 connection_timeout = 10
 keepalive_interval = 30
 
 [security]
-# Relaxed limits for development
+# Higher rate limits for development
 rate_limit = 10000
 connection_limit = 1000
-encryption_enabled = true
+# Can disable encryption for local testing
+encryption_enabled = false
 min_tls_version = "1.2"
-identity_security_level = "Low"
+identity_security_level = "Medium"
 
 [storage]
-# Use local dev directory
+# Development data directory
 path = "./dev-data"
+# Smaller storage for development
 max_size = "1GB"
 cache_size = 64
 compression_enabled = false
@@ -29,15 +32,15 @@ compression_enabled = false
 enabled = true
 port = 9001
 max_execution_time = 60
-monitoring_enabled = false
+monitoring_enabled = true
 
 [dht]
-# Smaller values for faster testing
+# Smaller values for faster development testing
 replication_factor = 3
 alpha = 2
 beta = 1
 record_ttl = 300
-adaptive_routing = false
+adaptive_routing = true
 
 [transport]
 protocol = "tcp"
@@ -48,6 +51,6 @@ buffer_size = 32768
 
 [identity]
 derivation_path = "m/44'/0'/0'/0/0"
-rotation_interval = 0
+rotation_interval = 365
 backup_enabled = false
-backup_interval = 0
+backup_interval = 24

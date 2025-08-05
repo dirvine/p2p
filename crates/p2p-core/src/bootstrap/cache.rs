@@ -756,7 +756,7 @@ mod tests {
         // Add contacts exceeding the limit
         for i in 0..10 {
             let contact = ContactEntry::new(
-                PeerId::from(format!("test-peer-{}", i).into()),
+                PeerId::from(format!("test-peer-{}", i)),
                 vec![format!("127.0.0.1:{}", 9000 + i).parse().unwrap()]
             );
             cache.add_contact(contact).await.unwrap();

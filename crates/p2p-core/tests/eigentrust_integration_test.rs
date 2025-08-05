@@ -25,8 +25,8 @@
 
 #[cfg(test)]
 mod eigentrust_tests {
-    use p2p_core::adaptive::trust::*;
-    use p2p_core::identity::NodeId;
+    use saorsa_core::adaptive::trust::*;
+    use saorsa_core::adaptive::NodeId;
     use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
     use std::time::Duration;

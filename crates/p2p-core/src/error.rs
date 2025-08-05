@@ -268,6 +268,9 @@ pub enum IdentityError {
     
     #[error("Insufficient entropy")]
     InsufficientEntropy,
+    
+    #[error("Access denied: {0}")]
+    AccessDenied(Cow<'static, str>),
 }
 
 /// Cryptography-related errors
@@ -823,7 +826,7 @@ mod tests {
             "file not found"
         ));
         
-        let with_context = result.context("Failed to load config");
+        let with_context = crate::error::ErrorContext::context(result, "Failed to load config");
         assert!(with_context.is_err());
         assert!(with_context.unwrap_err().to_string().contains("Failed to load config"));
     }
@@ -850,12 +853,12 @@ mod tests {
     fn test_error_log_serialization() {
         let error = P2PError::Network(NetworkError::ConnectionFailed {
             addr: "127.0.0.1:8080".parse().unwrap(),
-            reason: "Connection refused".to_string(),
+            reason: "Connection refused".into(),
         });
         
         let log = error.report()
-            .with_context("peer_id", "peer123")
-            .with_context("retry_count", 3);
+            .with_context("peer_id", ErrorValue::String("peer123".into()))
+            .with_context("retry_count", ErrorValue::Number(3));
             
         let json = serde_json::to_string_pretty(&log).unwrap();
         assert!(json.contains("Network"));

@@ -1201,7 +1201,7 @@ mod tests {
         let node = NodeDescriptor {
             id: NodeId { hash: [3u8; 32] },
             public_key: ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap(),
-            addresses: vec!["127.0.0.1:4001".to_string()],
+            addresses: vec![], // No hardcoded addresses in tests
             hyperbolic: None,
             som_position: None,
             trust: 0.5,

@@ -15,17 +15,18 @@
 
 use saorsa_core::identity_manager::{IdentityManager, IdentityCreationParams};
 use saorsa_core::secure_memory::SecureString;
+use saorsa_core::encrypted_key_storage::SecurityLevel;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 #[tokio::test]
-async fn test_encryption_performance_overhead() {
+async fn test_encryption_performance_overhead() -> Result<()> {
     // Create temporary directory for storage
     let temp_dir = TempDir::new().unwrap();
     let storage_path = temp_dir.path();
     
     // Create identity manager
-    let manager = IdentityManager::new(storage_path)
+    let manager = IdentityManager::new(storage_path, SecurityLevel::Fast)
         .await
         .unwrap();
     
@@ -38,6 +39,9 @@ async fn test_encryption_performance_overhead() {
         display_name: Some("Performance Test User".to_string()),
         bio: Some("Test bio for performance testing".to_string()),
         derivation_path: None,
+        avatar_url: None,
+        key_lifetime: None,
+        metadata: std::collections::HashMap::new(),
     };
     
     let identity = manager.create_identity(&storage_password, params)
@@ -49,14 +53,14 @@ async fn test_encryption_performance_overhead() {
     
     // Warm up
     for _ in 0..5 {
-        let _ = manager.create_sync_package(&identity.id, &device_password).await.unwrap();
+        let _ = manager.create_sync_package(&identity.id, &device_password, &storage_password).await.unwrap();
     }
     
     // Measure encryption performance
     let mut encryption_times = Vec::new();
     for _ in 0..100 {
         let start = Instant::now();
-        let _ = manager.create_sync_package(&identity.id, &device_password).await.unwrap();
+        let _ = manager.create_sync_package(&identity.id, &device_password, &storage_password).await.unwrap();
         let elapsed = start.elapsed();
         encryption_times.push(elapsed);
     }
@@ -78,7 +82,7 @@ async fn test_encryption_performance_overhead() {
         "Average encryption time {:?} exceeds 10ms requirement", avg_time);
     
     // Test decryption performance
-    let sync_package = manager.create_sync_package(&identity.id, &device_password)
+    let sync_package = manager.create_sync_package(&identity.id, &device_password, &storage_password)
         .await
         .unwrap();
     
@@ -112,10 +116,11 @@ async fn test_encryption_performance_overhead() {
     // Check that decryption also meets requirements
     assert!(avg_decrypt_time < Duration::from_millis(10), 
         "Average decryption time {:?} exceeds 10ms requirement", avg_decrypt_time);
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_encryption_with_different_data_sizes() {
+async fn test_encryption_with_different_data_sizes() -> Result<()> {
     let temp_dir = TempDir::new().unwrap();
     let manager = IdentityManager::new(temp_dir.path(), SecurityLevel::High)
         .await
@@ -137,7 +142,6 @@ async fn test_encryption_with_different_data_sizes() {
             display_name: Some(format!("{} User", name)),
             bio: Some(bio),
             derivation_path: None,
-            recovery_threshold: None,
         };
         
         let identity = manager.create_identity(&storage_password, params)
@@ -147,7 +151,7 @@ async fn test_encryption_with_different_data_sizes() {
         let device_password = SecureString::from_str("device_pass").unwrap();
         
         let start = Instant::now();
-        let sync_package = manager.create_sync_package(&identity.id, &device_password)
+        let sync_package = manager.create_sync_package(&identity.id, &device_password, &storage_password)
             .await
             .unwrap();
         let encryption_time = start.elapsed();
@@ -161,4 +165,5 @@ async fn test_encryption_with_different_data_sizes() {
         assert!(encryption_time < Duration::from_millis(10),
             "{} data encryption time {:?} exceeds 10ms", name, encryption_time);
     }
+    Ok(())
 }

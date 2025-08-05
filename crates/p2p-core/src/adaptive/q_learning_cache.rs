@@ -810,7 +810,7 @@ mod tests {
     }
     
     #[tokio::test]
-    async fn test_q_value_updates() {
+    async fn test_q_value_updates() -> Result<()> {
         let config = QLearningConfig {
             learning_rate: 0.5,
             discount_factor: 0.9,
@@ -828,7 +828,7 @@ mod tests {
             1.0,  // reward
             &next_state,
             false, // not terminal
-        ).await.unwrap();
+        ).await?;
         
         // Check Q-value was updated
         let q_value = manager.get_q_value(&state, ActionType::Cache).await;
@@ -842,15 +842,17 @@ mod tests {
             0.5,
             &next_state,
             false,
-        ).await.unwrap();
+        ).await?;
         
         let new_q_value = manager.get_q_value(&state, ActionType::Cache).await;
         // Should incorporate previous value: 0.5 + 0.5 * (0.5 - 0.5) = 0.5
         assert_eq!(new_q_value, 0.5);
+        
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_epsilon_greedy_selection() {
+    async fn test_epsilon_greedy_selection() -> Result<()> {
         let config = QLearningConfig {
             epsilon: 1.0,  // Always explore
             ..Default::default()
@@ -869,7 +871,7 @@ mod tests {
         let mut nothing_count = 0;
         
         for _ in 0..100 {
-            let action = manager.select_action(&state, actions.clone()).await.unwrap();
+            let action = manager.select_action(&state, actions.clone()).await?;
             match action {
                 CacheAction::Cache(_) => cache_count += 1,
                 CacheAction::DoNothing => nothing_count += 1,
@@ -891,17 +893,19 @@ mod tests {
             10.0,
             &state,
             true,
-        ).await.unwrap();
+        ).await?;
         
         // Should always select Cache action now
         for _ in 0..10 {
-            let action = manager.select_action(&state, actions.clone()).await.unwrap();
+            let action = manager.select_action(&state, actions.clone()).await?;
             assert!(matches!(action, CacheAction::Cache(_)));
         }
+        
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_experience_storage() {
+    async fn test_experience_storage() -> Result<()> {
         let config = QLearningConfig {
             buffer_size: 5,
             batch_size: 2,
@@ -922,7 +926,7 @@ mod tests {
                 next_state: state,
                 terminal: false,
             };
-            manager.add_experience(experience).await.unwrap();
+            manager.add_experience(experience).await?;
         }
         
         // Buffer should be at capacity (5)
@@ -932,6 +936,8 @@ mod tests {
         // Epsilon should have decayed (learning happens every 3 episodes)
         let epsilon = *manager.current_epsilon.read().await;
         assert!(epsilon < 1.0);
+        
+        Ok(())
     }
     
     #[tokio::test]
@@ -997,7 +1003,7 @@ mod tests {
     }
     
     #[tokio::test]
-    async fn test_cache_statistics_updates() {
+    async fn test_cache_statistics_updates() -> Result<()> {
         let config = QLearningConfig::default();
         let manager = QLearnCacheManager::new(config, 1000);
         
@@ -1009,7 +1015,7 @@ mod tests {
             &content_hash,
             100,
             false,
-        ).await.unwrap();
+        ).await?;
         
         let stats = manager.cache_stats.read().await;
         assert_eq!(stats.usage, 100);
@@ -1023,7 +1029,7 @@ mod tests {
             &content_hash,
             100,
             true,
-        ).await.unwrap();
+        ).await?;
         
         let stats = manager.cache_stats.read().await;
         assert_eq!(stats.hits, 1);
@@ -1036,16 +1042,18 @@ mod tests {
             &content_hash,
             100,
             false,
-        ).await.unwrap();
+        ).await?;
         
         let stats = manager.cache_stats.read().await;
         assert_eq!(stats.usage, 0);
         assert_eq!(stats.evictions, 1);
         assert!(!stats.access_frequency.contains_key(&content_hash));
+        
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_available_actions() {
+    async fn test_available_actions() -> Result<()> {
         let config = QLearningConfig::default();
         let manager = QLearnCacheManager::new(config, 200);
         
@@ -1053,7 +1061,7 @@ mod tests {
         let content2 = ContentHash([2u8; 32]);
         
         // Empty cache - can cache
-        let actions = manager.get_available_actions(&content1, 100).await.unwrap();
+        let actions = manager.get_available_actions(&content1, 100).await?;
         assert_eq!(actions.len(), 2); // DoNothing, Cache
         assert!(actions.iter().any(|a| matches!(a, CacheAction::Cache(_))));
         
@@ -1063,20 +1071,22 @@ mod tests {
             &content1,
             150,
             false,
-        ).await.unwrap();
+        ).await?;
         
         // Cache nearly full - should suggest eviction
-        let actions = manager.get_available_actions(&content2, 100).await.unwrap();
+        let actions = manager.get_available_actions(&content2, 100).await?;
         assert!(actions.iter().any(|a| matches!(a, CacheAction::Evict(_))));
         
         // Already cached content - only DoNothing
-        let actions = manager.get_available_actions(&content1, 150).await.unwrap();
+        let actions = manager.get_available_actions(&content1, 150).await?;
         assert_eq!(actions.len(), 1);
         assert!(matches!(actions[0], CacheAction::DoNothing));
+        
+        Ok(())
     }
     
     #[tokio::test]
-    async fn test_reset() {
+    async fn test_reset() -> Result<()> {
         let config = QLearningConfig::default();
         let manager = QLearnCacheManager::new(config, 1000);
         
@@ -1088,7 +1098,7 @@ mod tests {
             1.0,
             &state,
             true,
-        ).await.unwrap();
+        ).await?;
         
         let content_hash = ContentHash([1u8; 32]);
         manager.update_statistics(
@@ -1096,7 +1106,7 @@ mod tests {
             &content_hash,
             100,
             false,
-        ).await.unwrap();
+        ).await?;
         
         // Reset
         manager.reset().await;
@@ -1111,5 +1121,7 @@ mod tests {
         assert_eq!(stats.hits, 0);
         assert_eq!(stats.misses, 0);
         assert!(stats.access_frequency.is_empty());
+        
+        Ok(())
     }
 }

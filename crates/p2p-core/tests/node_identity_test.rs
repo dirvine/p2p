@@ -3,7 +3,7 @@
 use saorsa_core::identity::{NodeIdentity, NodeId};
 
 #[test]
-fn test_node_identity_generation() {
+fn test_node_identity_generation() -> Result<()> {
     // Generate with easy difficulty for testing
     let identity = NodeIdentity::generate(8).unwrap();
     
@@ -15,6 +15,7 @@ fn test_node_identity_generation() {
     println!("  Node ID: {}", identity.node_id());
     println!("  Word address: {}", identity.word_address());
     println!("  PoW computation time: {:?}", identity.proof_of_work().computation_time);
+    Ok(())
 }
 
 #[test]

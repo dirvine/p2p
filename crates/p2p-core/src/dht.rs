@@ -23,6 +23,7 @@
 
 use crate::{PeerId, Multiaddr};
 use crate::error::{P2PError as P2PError, P2pResult as Result};
+use crate::validation::{Validate, ValidationContext, validate_peer_id, validate_dht_key, validate_dht_value};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
@@ -67,6 +68,14 @@ pub struct Key {
     hash: [u8; 32],
 }
 
+impl Validate for Key {
+    fn validate(&self, ctx: &ValidationContext) -> Result<()> {
+        // Validate key hash
+        validate_dht_key(&self.hash, ctx)?;
+        Ok(())
+    }
+}
+
 /// DHT record containing key-value data with metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Record {
@@ -82,6 +91,38 @@ pub struct Record {
     pub expires_at: SystemTime,
     /// Signature for verification (optional)
     pub signature: Option<Vec<u8>>,
+}
+
+impl Validate for Record {
+    fn validate(&self, ctx: &ValidationContext) -> Result<()> {
+        // Validate key
+        self.key.validate(ctx)?;
+        
+        // Validate value size
+        validate_dht_value(&self.value, ctx)?;
+        
+        // Validate publisher
+        validate_peer_id(&self.publisher)?;
+        
+        // Validate timestamps
+        let now = SystemTime::now();
+        if self.created_at > now {
+            return Err(P2PError::validation("Record creation time is in the future"));
+        }
+        
+        if self.expires_at < self.created_at {
+            return Err(P2PError::validation("Record expiration time is before creation time"));
+        }
+        
+        // Validate signature if present
+        if let Some(sig) = &self.signature {
+            if sig.is_empty() || sig.len() > 512 {
+                return Err(P2PError::validation("Invalid signature size"));
+            }
+        }
+        
+        Ok(())
+    }
 }
 
 /// DHT node information
@@ -489,7 +530,8 @@ impl KBucket {
         // Check if node already exists
         if let Some(pos) = self.nodes.iter().position(|n| n.peer_id == node.peer_id) {
             // Move to front (most recently seen)
-            let mut existing = self.nodes.remove(pos).unwrap();
+            let mut existing = self.nodes.remove(pos)
+                .expect("Node position should be valid after successful find");
             existing.touch();
             existing.is_connected = node.is_connected;
             self.nodes.push_front(existing);

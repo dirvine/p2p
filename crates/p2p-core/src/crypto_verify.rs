@@ -362,7 +362,7 @@ mod tests {
     use crate::NetworkAddress;
     use ed25519_dalek::{SigningKey, VerifyingKey, Signer};
     use rand::rngs::OsRng;
-    use std::str::FromStr;
+    // use std::str::FromStr;
 
     fn create_test_keypair() -> (SigningKey, VerifyingKey) {
         let mut csprng = OsRng {};
@@ -375,7 +375,7 @@ mod tests {
         let user_id = UserId::from_public_key(verifying_key);
         let endpoint = PeerEndpoint::new(
             EndpointId::new(),
-            NetworkAddress::from_str("192.168.1.1:8080").expect("valid crypto operation"),
+            "192.168.1.1:8080".parse::<NetworkAddress>().expect("valid crypto operation"),
             NatType::FullCone,
             vec!["coordinator1".to_string()],
             Some("test-device".to_string()),

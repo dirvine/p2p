@@ -22,6 +22,7 @@ pub mod quic;
 mod quic_error_tests;
 
 use crate::{PeerId, P2PError, Result, NetworkAddress};
+use crate::validation::{Validate, ValidationContext, validate_peer_id, validate_message_size};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -118,6 +119,23 @@ pub struct TransportMessage {
     pub protocol: String,
     /// Timestamp when received
     pub received_at: Instant,
+}
+
+impl Validate for TransportMessage {
+    fn validate(&self, ctx: &ValidationContext) -> Result<()> {
+        // Validate sender peer ID
+        validate_peer_id(&self.sender)?;
+        
+        // Validate message size
+        validate_message_size(self.data.len(), ctx.max_message_size)?;
+        
+        // Validate protocol identifier
+        if self.protocol.is_empty() || self.protocol.len() > 64 {
+            return Err(P2PError::validation("Invalid protocol identifier"));
+        }
+        
+        Ok(())
+    }
 }
 
 /// Transport trait for protocol implementations
@@ -492,6 +510,13 @@ mod tests {
     use async_trait::async_trait;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::time::Duration;
+    use crate::error::NetworkError;
+    
+    /// Helper function to parse addresses in tests
+    fn parse_addr(addr: &str) -> Result<NetworkAddress> {
+        addr.parse::<NetworkAddress>()
+            .map_err(|e| P2PError::Network(crate::error::NetworkError::InvalidAddress(e.to_string().into())))
+    }
 
     /// Mock transport implementation for testing
     struct MockTransport {
@@ -543,10 +568,10 @@ mod tests {
         async fn accept(&self) -> Result<Box<dyn Connection>> {
             if self.should_fail {
                 return Err(P2PError::Transport(crate::error::TransportError::SetupFailed(
-                    "Accept failed".to_string()
+                    "Accept failed".into()
                 )));
             }
-            Ok(Box::new(MockConnection::new(NetworkAddress::from_str("127.0.0.1:9000")
+            Ok(Box::new(MockConnection::new("127.0.0.1:9000".parse::<NetworkAddress>()
                 .map_err(|e| crate::error::TransportError::SetupFailed(
                     format!("Invalid mock address: {}", e).into() 
                 ))?)))
@@ -613,7 +638,7 @@ mod tests {
         async fn info(&self) -> ConnectionInfo {
             ConnectionInfo {
                 transport_type: TransportType::QUIC,
-                local_addr: NetworkAddress::from_str("127.0.0.1:9000")
+                local_addr: "127.0.0.1:9000".parse::<NetworkAddress>()
                     .expect("Test address should be valid"),
                 remote_addr: self.remote_addr.clone(),
                 is_encrypted: true,
@@ -644,7 +669,7 @@ mod tests {
         }
 
         fn local_addr(&self) -> NetworkAddress {
-            NetworkAddress::from_str("127.0.0.1:9000")
+            "127.0.0.1:9000".parse::<NetworkAddress>()
                 .expect("Test address should be valid")
         }
 
@@ -660,7 +685,7 @@ mod tests {
 
     #[test]
     fn test_transport_type_display() {
-        assert_eq!(format!("{}", TransportType::QUIC).into(), "quic");
+        assert_eq!(format!("{}", TransportType::QUIC), "quic");
     }
 
     #[test]
@@ -728,7 +753,7 @@ mod tests {
         let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
-        let peer_id = manager.connect(NetworkAddress::from_str("127.0.0.1:9001")?).await?;
+        let peer_id = manager.connect("127.0.0.1:9001".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?).await?;
         assert_eq!(peer_id, "peer_from_127.0.0.1_9001");
 
         let connections = manager.connections.read().await;
@@ -744,7 +769,7 @@ mod tests {
         manager.register_transport(transport);
 
         let peer_id = manager.connect_with_transport(
-            NetworkAddress::from_str("127.0.0.1:9002")?,
+            "127.0.0.1:9002".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?,
             TransportType::QUIC
         ).await?;
 
@@ -758,7 +783,7 @@ mod tests {
         let failing_transport = Arc::new(MockTransport::new(TransportType::QUIC).with_failure());
         manager.register_transport(failing_transport);
 
-        let result = manager.connect(NetworkAddress::from_str("127.0.0.1:9003")?).await;
+        let result = manager.connect("127.0.0.1:9003".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Connection failed"));
         Ok(())
@@ -770,7 +795,7 @@ mod tests {
         let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
-        let peer_id = manager.connect(NetworkAddress::from_str("127.0.0.1:9004")?).await?;
+        let peer_id = manager.connect("127.0.0.1:9004".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?).await?;
         let message = b"Hello, transport!".to_vec();
         
         manager.send_message(&peer_id, message.clone()).await?;
@@ -797,11 +822,11 @@ mod tests {
         let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
-        let peer_id = manager.connect(NetworkAddress::from_str("127.0.0.1:9005")?).await?;
+        let peer_id = manager.connect("127.0.0.1:9005".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?).await?;
         let info = manager.get_connection_info(&peer_id).await?;
 
         assert_eq!(info.transport_type, TransportType::QUIC);
-        assert_eq!(info.remote_addr, NetworkAddress::from_str("127.0.0.1:9005")?);
+        assert_eq!(info.remote_addr, "127.0.0.1:9005".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?);
         assert!(info.is_encrypted);
         assert_eq!(info.cipher_suite, "TLS_AES_256_GCM_SHA384");
 
@@ -814,7 +839,7 @@ mod tests {
         let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
-        let peer_id = manager.connect(NetworkAddress::from_str("127.0.0.1:9006")?).await?;
+        let peer_id = manager.connect("127.0.0.1:9006".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?).await?;
         let pool_info = manager.get_connection_pool_info(&peer_id).await?;
 
         assert_eq!(pool_info.active_connections, 1);
@@ -830,7 +855,7 @@ mod tests {
         let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
-        let peer_id = manager.connect(NetworkAddress::from_str("127.0.0.1:9007")?).await?;
+        let peer_id = manager.connect("127.0.0.1:9007".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?).await?;
         let stats = manager.get_connection_pool_stats(&peer_id).await?;
 
         assert_eq!(stats.messages_per_connection.len(), 1);
@@ -846,7 +871,7 @@ mod tests {
         let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
-        let peer_id = manager.connect(NetworkAddress::from_str("127.0.0.1:9008")?).await?;
+        let peer_id = manager.connect("127.0.0.1:9008".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?).await?;
         let quality = manager.measure_connection_quality(&peer_id).await?;
 
         assert_eq!(quality.latency, Duration::from_millis(10));
@@ -863,7 +888,7 @@ mod tests {
         let transport = Arc::new(MockTransport::new(TransportType::QUIC));
         manager.register_transport(transport);
 
-        let peer_id = manager.connect(NetworkAddress::from_str("127.0.0.1:9009")?).await?;
+        let peer_id = manager.connect("127.0.0.1:9009".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?).await?;
         
         // Transport switching is not fully implemented, but should not error
         let result = manager.switch_transport(&peer_id, TransportType::QUIC).await;
@@ -879,7 +904,7 @@ mod tests {
         
         manager.register_transport(quic_transport);
 
-        let addr = NetworkAddress::from_str("127.0.0.1:9010")?;
+        let addr = "127.0.0.1:9010".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?;
         let selected = manager.auto_select_transport(&addr).await?;
         
         // Should use QUIC when available
@@ -893,7 +918,7 @@ mod tests {
         let manager = create_test_transport_manager();
         // No transports registered
 
-        let addr = NetworkAddress::from_str("127.0.0.1:9011")?;
+        let addr = "127.0.0.1:9011".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?;
         let selected = manager.auto_select_transport(&addr).await;
         
         // Should fail when QUIC not available
@@ -905,7 +930,7 @@ mod tests {
     #[tokio::test]
     async fn test_transport_selection_no_suitable_transport() -> Result<()> {
         let manager = create_test_transport_manager();
-        let addr = NetworkAddress::from_str("127.0.0.1:9012")?;
+        let addr = "127.0.0.1:9012".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?;
         
         let result = manager.auto_select_transport(&addr).await;
         assert!(result.is_err());
@@ -923,7 +948,7 @@ mod tests {
         
         manager.register_transport(quic_transport);
 
-        let addr = NetworkAddress::from_str("127.0.0.1:9013")?;
+        let addr = "127.0.0.1:9013".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?;
         let selected = manager.select_transport(&addr).await?;
         
         assert_eq!(selected, TransportType::QUIC);
@@ -938,7 +963,7 @@ mod tests {
             TransportOptions::default()
         );
 
-        let addr = NetworkAddress::from_str("127.0.0.1:9014")?;
+        let addr = "127.0.0.1:9014".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?;
         let result = manager.select_transport(&addr).await;
         
         assert!(result.is_err());
@@ -956,7 +981,7 @@ mod tests {
         
         manager.register_transport(quic_transport);
 
-        let addr = NetworkAddress::from_str("127.0.0.1:9015")?;
+        let addr = "127.0.0.1:9015".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?;
         let selected = manager.select_transport(&addr).await?;
         
         // Should use QUIC when available
@@ -967,7 +992,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_connection_lifecycle() -> Result<()> {
-        let mut conn = MockConnection::new(NetworkAddress::from_str("127.0.0.1:9016")?);
+        let mut conn = MockConnection::new("127.0.0.1:9016".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?);
 
         assert!(conn.is_alive().await);
 
@@ -1005,17 +1030,17 @@ mod tests {
         let mut pool = ConnectionPool::new(2); // Max 2 connections
 
         // Add first connection
-        let conn1 = Box::new(MockConnection::new(NetworkAddress::from_str("127.0.0.1:9017")?));
+        let conn1 = Box::new(MockConnection::new("127.0.0.1:9017".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?));
         pool.add_connection(conn1).await?;
         assert_eq!(pool.connections.len(), 1);
 
         // Add second connection
-        let conn2 = Box::new(MockConnection::new(NetworkAddress::from_str("127.0.0.1:9018")?));
+        let conn2 = Box::new(MockConnection::new("127.0.0.1:9018".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?));
         pool.add_connection(conn2).await?;
         assert_eq!(pool.connections.len(), 2);
 
         // Add third connection (should remove first)
-        let conn3 = Box::new(MockConnection::new(NetworkAddress::from_str("127.0.0.1:9019")?));
+        let conn3 = Box::new(MockConnection::new("127.0.0.1:9019".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?));
         pool.add_connection(conn3).await?;
         assert_eq!(pool.connections.len(), 2);
 
@@ -1079,8 +1104,8 @@ mod tests {
     async fn test_mock_transport_address_support() -> Result<()> {
         let transport = MockTransport::new(TransportType::QUIC);
         
-        let addr1 = NetworkAddress::from_str("127.0.0.1:9000")?;
-        let addr2 = NetworkAddress::from_str("[::1]:9000")?;
+        let addr1 = "127.0.0.1:9000".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?;
+        let addr2 = "[::1]:9000".parse::<NetworkAddress>().map_err(|e| P2PError::Network(NetworkError::InvalidAddress(format!("{}", e).into())))?;
         
         assert!(transport.supports_address(&addr1)); // IPv4 supported
         assert!(!transport.supports_address(&addr2)); // IPv6 not supported

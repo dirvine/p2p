@@ -14,11 +14,12 @@
 //! Integration tests for Q-Learning Cache Management
 
 use saorsa_core::adaptive::{
-    QLearningCacheManager, QLearningConfig, StateVector, CacheAction,
-    ContentHash, NodeId, Experience,
+    QLearningCacheManager, QLearningConfig,
+    ContentHash,
+    q_learning_cache::Experience,
 };
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio;
 
 /// Simulate different workload patterns

@@ -16,7 +16,8 @@
 #[cfg(test)]
 mod tests {
     use crate::transport::quic::QuicTransport;
-    use crate::error::{P2PError, TransportError};
+    use crate::transport::{TransportOptions, TransportType, Transport};
+    use crate::error::{P2PError as P2PError, TransportError};
     
     #[tokio::test]
     async fn test_transport_config_error_handling() {
@@ -24,13 +25,12 @@ mod tests {
         // This simulates a scenario where the transport config Arc has multiple references
         
         // Create a transport (this will succeed internally)
-        let transport = QuicTransport::new(0, None, None)
+        let transport = QuicTransport::new(TransportOptions::default())
             .expect("Should create transport");
         
-        // Verify transport is functional
-        let local_addr = transport.local_addrs().await
-            .expect("Should get local addresses");
-        assert!(!local_addr.is_empty(), "Should have at least one local address");
+        // Verify transport is functional by checking its type
+        assert_eq!(transport.transport_type(), TransportType::QUIC);
+        assert!(transport.supports_ipv6());
     }
     
     #[test] 

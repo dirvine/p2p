@@ -155,7 +155,7 @@ impl IdentityMigrator {
             .map_err(|e| P2PError::Serialization(e.to_string().into()))?;
         
         // Save using the encrypted manager
-        manager.save_identity(&identity).await?;
+        manager.save_identity(&identity, storage_password).await?;
         
         // Create sync package for backup
         let sync_package = manager.create_sync_package(&identity.id, storage_password, device_password).await?;

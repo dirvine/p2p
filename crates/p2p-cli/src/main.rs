@@ -32,12 +32,14 @@ use std::process::{Command as StdCommand, Stdio};
 use std::time::{Duration, Instant};
 use std::{env};
 use tracing::{error, info, warn, debug};
-use include_dir::{include_dir, Dir};
+// TODO: Remove once Flutter dependencies are fully removed
+// use include_dir::{include_dir, Dir};
 use warp::{Filter, Reply};
 use std::convert::Infallible;
 
 // Embed the Flutter web build at compile time
-static FLUTTER_ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../apps/ant-connect/build/web");
+// TODO: Remove Flutter dependency completely
+// static FLUTTER_ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../apps/ant-connect/build/web");
 
 /// Connection status information
 #[derive(Debug, Clone)]
@@ -213,13 +215,15 @@ impl AntConnectLauncher {
     /// Set up Flutter project from embedded data or serve web assets
     fn setup_flutter_project() -> Result<PathBuf> {
         // Check if we have embedded Flutter assets
-        if FLUTTER_ASSETS.files().next().is_some() {
-            info!("🎉 Found embedded Flutter web app!");
-            info!("🚀 Starting local web server...");
-            
-            // Return a placeholder path - we'll serve from memory
-            Ok(PathBuf::from("embedded://flutter"))
-        } else {
+        // TODO: Remove Flutter dependency completely
+        // if FLUTTER_ASSETS.files().next().is_some() {
+        //     info!("🎉 Found embedded Flutter web app!");
+        //     info!("🚀 Starting local web server...");
+        //     
+        //     // Return a placeholder path - we'll serve from memory
+        //     Ok(PathBuf::from("embedded://flutter"))
+        // } else {
+        {
             error!("🏗️  **Flutter App Not Available in This Build**");
             error!("");
             error!("💡 **Quick Solutions:**");
@@ -851,7 +855,9 @@ async fn serve_embedded_file(path: &str) -> Result<impl warp::Reply + use<>, Inf
     
     debug!("Serving file: {}", file_path);
     
-    match FLUTTER_ASSETS.get_file(file_path) {
+    // TODO: Remove Flutter dependency completely
+    // match FLUTTER_ASSETS.get_file(file_path) {
+    match None::<&include_dir::File> {
         Some(file) => {
             let mime_type = mime_guess::from_path(file_path)
                 .first_or_octet_stream()

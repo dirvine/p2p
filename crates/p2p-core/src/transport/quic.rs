@@ -20,13 +20,14 @@ use super::{Transport, Connection, TransportType, TransportOptions, ConnectionIn
 use crate::NetworkAddress;
 use crate::error::{P2PError as P2PError, P2pResult as Result, TransportError};
 use crate::identity::NodeIdentity;
+use crate::validation::{ValidationContext, validate_message_size};
 use async_trait::async_trait;
 use quinn::{Endpoint, ServerConfig, ClientConfig, VarInt};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 
 /// QUIC transport implementation using Quinn
@@ -160,7 +161,18 @@ impl Transport for QuicTransport {
         let socket_addr = addr.socket_addr();
         debug!("Connecting to {}", socket_addr);
         
-        let connecting = endpoint.connect(socket_addr, "localhost")
+        // Use the server name from configuration or derive from address
+        let server_name = if let Ok(config) = crate::config::Config::load() {
+            config.transport.server_name
+        } else {
+            // Fallback to address-based server name
+            match socket_addr {
+                SocketAddr::V4(addr) => addr.ip().to_string(),
+                SocketAddr::V6(addr) => format!("[{}]", addr.ip()),
+            }
+        };
+        
+        let connecting = endpoint.connect(socket_addr, &server_name)
             .map_err(|e| P2PError::Transport(TransportError::ConnectionFailed { 
                 addr: socket_addr, 
                 reason: e.to_string().into()
@@ -215,6 +227,15 @@ impl Transport for QuicTransport {
 #[async_trait]
 impl Connection for QuicConnection {
     async fn send(&mut self, data: &[u8]) -> Result<()> {
+        // Validate message size before sending
+        let ctx = ValidationContext::default();
+        validate_message_size(data.len(), ctx.max_message_size)?;
+        
+        if data.is_empty() {
+            warn!("Attempting to send empty message");
+            return Ok(());
+        }
+        
         let mut stream = self.connection.open_uni().await
             .map_err(|e| P2PError::Transport(TransportError::StreamError(e.to_string().into())))?;
             
@@ -232,14 +253,25 @@ impl Connection for QuicConnection {
             .map_err(|e| P2PError::Transport(TransportError::StreamError(e.to_string().into())))?;
             
         let mut buf = Vec::new();
-        // Read all data from the stream
+        let ctx = ValidationContext::default();
+        
+        // Read all data from the stream with size validation
         loop {
             match stream.read_chunk(usize::MAX, true).await {
-                Ok(Some(chunk)) => buf.extend_from_slice(&chunk.bytes),
+                Ok(Some(chunk)) => {
+                    // Check if adding this chunk would exceed max message size
+                    let new_size = buf.len() + chunk.bytes.len();
+                    validate_message_size(new_size, ctx.max_message_size)?;
+                    
+                    buf.extend_from_slice(&chunk.bytes);
+                },
                 Ok(None) => break, // End of stream
                 Err(e) => return Err(P2PError::Transport(TransportError::StreamError(e.to_string().into()))),
             }
         }
+        
+        // Final validation of complete message
+        validate_message_size(buf.len(), ctx.max_message_size)?;
             
         Ok(buf)
     }

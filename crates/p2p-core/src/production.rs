@@ -138,7 +138,7 @@ pub struct MCPMetrics {
 
 /// Production resource manager for enforcing limits and monitoring
 pub struct ResourceManager {
-    config: ProductionConfig,
+    pub config: ProductionConfig,
     metrics: Arc<RwLock<ResourceMetrics>>,
     connection_semaphore: Arc<Semaphore>,
     bandwidth_tracker: Arc<BandwidthTracker>,
@@ -682,22 +682,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_resource_manager_cloning() {
+    async fn test_resource_manager_cloning() -> Result<()> {
         let config = create_test_config();
         let manager = ResourceManager::new(config);
         let cloned = manager.clone();
         
         // Both should work independently
-        let _guard1 = manager.acquire_connection().await.unwrap();
-        let _guard2 = cloned.acquire_connection().await.unwrap();
+        let _guard1 = manager.acquire_connection().await?;
+        let _guard2 = cloned.acquire_connection().await?;
         
         // But they share the same semaphore
         assert_eq!(manager.connection_semaphore.available_permits(), 8);
         assert_eq!(cloned.connection_semaphore.available_permits(), 8);
+        
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_connection_acquisition() {
+    async fn test_connection_acquisition() -> Result<()> {
         let config = ProductionConfig {
             max_connections: 2,
             ..create_test_config()
@@ -705,17 +707,19 @@ mod tests {
         let manager = ResourceManager::new(config);
 
         // Acquire first connection
-        let _guard1 = manager.acquire_connection().await.unwrap();
+        let _guard1 = manager.acquire_connection().await?;
         assert_eq!(manager.connection_semaphore.available_permits(), 1);
 
         // Acquire second connection
-        let _guard2 = manager.acquire_connection().await.unwrap();
+        let _guard2 = manager.acquire_connection().await?;
         assert_eq!(manager.connection_semaphore.available_permits(), 0);
 
         // Drop first guard and check permit is released
         drop(_guard1);
         sleep(Duration::from_millis(1)).await; // Allow time for cleanup
         assert_eq!(manager.connection_semaphore.available_permits(), 1);
+        
+        Ok(())
     }
 
     #[tokio::test]
@@ -736,21 +740,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_connection_guard_drop() {
+    async fn test_connection_guard_drop() -> Result<()> {
         let config = create_test_config();
         let manager = ResourceManager::new(config);
         
         let initial_permits = manager.connection_semaphore.available_permits();
         {
-            let _guard = manager.acquire_connection().await.unwrap();
+            let _guard = manager.acquire_connection().await?;
             assert_eq!(manager.connection_semaphore.available_permits(), initial_permits - 1);
         }
         // Guard should be dropped and permit released
         assert_eq!(manager.connection_semaphore.available_permits(), initial_permits);
+        
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_rate_limiting_dht_operations() {
+    async fn test_rate_limiting_dht_operations() -> Result<()> {
         let config = ProductionConfig {
             rate_limits: RateLimitConfig {
                 dht_ops_per_sec: 2,
@@ -762,15 +768,17 @@ mod tests {
         let manager = ResourceManager::new(config);
 
         // Should allow burst capacity
-        assert!(manager.check_rate_limit("peer1", "dht").await.unwrap());
-        assert!(manager.check_rate_limit("peer1", "dht").await.unwrap());
+        assert!(manager.check_rate_limit("peer1", "dht").await?);
+        assert!(manager.check_rate_limit("peer1", "dht").await?);
         
         // Should deny after burst exhausted
-        assert!(!manager.check_rate_limit("peer1", "dht").await.unwrap());
+        assert!(!manager.check_rate_limit("peer1", "dht").await?);
+        
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_rate_limiting_mcp_operations() {
+    async fn test_rate_limiting_mcp_operations() -> Result<()> {
         let config = ProductionConfig {
             rate_limits: RateLimitConfig {
                 mcp_calls_per_sec: 1,
@@ -782,14 +790,15 @@ mod tests {
         let manager = ResourceManager::new(config);
 
         // Should allow first MCP call
-        assert!(manager.check_rate_limit("peer2", "mcp").await.unwrap());
+        assert!(manager.check_rate_limit("peer2", "mcp").await?);
         
         // Should deny second MCP call
-        assert!(!manager.check_rate_limit("peer2", "mcp").await.unwrap());
+        assert!(!manager.check_rate_limit("peer2", "mcp").await?);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_rate_limiting_message_operations() {
+    async fn test_rate_limiting_message_operations() -> Result<()> {
         let config = ProductionConfig {
             rate_limits: RateLimitConfig {
                 messages_per_sec: 3,
@@ -802,25 +811,29 @@ mod tests {
 
         // Should allow burst capacity for messages
         for _ in 0..3 {
-            assert!(manager.check_rate_limit("peer3", "message").await.unwrap());
+            assert!(manager.check_rate_limit("peer3", "message").await?);
         }
         
         // Should deny after burst exhausted
-        assert!(!manager.check_rate_limit("peer3", "message").await.unwrap());
+        assert!(!manager.check_rate_limit("peer3", "message").await?);
+        
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_rate_limiting_unknown_operation() {
+    async fn test_rate_limiting_unknown_operation() -> Result<()> {
         let config = create_test_config();
         let manager = ResourceManager::new(config);
 
         // Unknown operations should be allowed
-        assert!(manager.check_rate_limit("peer4", "unknown").await.unwrap());
-        assert!(manager.check_rate_limit("peer4", "unknown").await.unwrap());
+        assert!(manager.check_rate_limit("peer4", "unknown").await?);
+        assert!(manager.check_rate_limit("peer4", "unknown").await?);
+        
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_rate_limiting_different_peers() {
+    async fn test_rate_limiting_different_peers() -> Result<()> {
         let config = ProductionConfig {
             rate_limits: RateLimitConfig {
                 dht_ops_per_sec: 1,
@@ -832,12 +845,14 @@ mod tests {
         let manager = ResourceManager::new(config);
 
         // Each peer should have independent rate limits
-        assert!(manager.check_rate_limit("peer1", "dht").await.unwrap());
-        assert!(manager.check_rate_limit("peer2", "dht").await.unwrap());
+        assert!(manager.check_rate_limit("peer1", "dht").await?);
+        assert!(manager.check_rate_limit("peer2", "dht").await?);
         
         // But each peer should be limited individually
-        assert!(!manager.check_rate_limit("peer1", "dht").await.unwrap());
-        assert!(!manager.check_rate_limit("peer2", "dht").await.unwrap());
+        assert!(!manager.check_rate_limit("peer1", "dht").await?);
+        assert!(!manager.check_rate_limit("peer2", "dht").await?);
+        
+        Ok(())
     }
 
     #[tokio::test]
@@ -955,7 +970,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_health_check_connection_warning() {
+    async fn test_health_check_connection_warning() -> Result<()> {
         let config = ProductionConfig {
             max_connections: 2,
             ..create_test_config()
@@ -963,8 +978,8 @@ mod tests {
         let manager = ResourceManager::new(config);
         
         // Acquire maximum connections
-        let _guard1 = manager.acquire_connection().await.unwrap();
-        let _guard2 = manager.acquire_connection().await.unwrap();
+        let _guard1 = manager.acquire_connection().await?;
+        let _guard2 = manager.acquire_connection().await?;
         
         // Manually update metrics to reflect max connections
         {
@@ -975,28 +990,31 @@ mod tests {
         // Health check should still pass (connection warning only)
         let result = manager.health_check().await;
         assert!(result.is_ok());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_metrics_collection() {
+    async fn test_metrics_collection() -> Result<()> {
         let config = create_test_config();
         let manager = ResourceManager::new(config);
         
         // Record some activity
         manager.record_bandwidth(500, 1000);
-        let _guard = manager.acquire_connection().await.unwrap();
+        let _guard = manager.acquire_connection().await?;
         
         // Collect metrics
-        manager.collect_metrics().await.unwrap();
+        manager.collect_metrics().await?;
         
         let metrics = manager.get_metrics().await;
         assert_eq!(metrics.active_connections, 1);
         assert!(metrics.bandwidth_usage > 0);
         assert!(metrics.timestamp.elapsed().unwrap().as_millis() < 100); // Recent timestamp
+        
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_graceful_shutdown() {
+    async fn test_graceful_shutdown() -> Result<()> {
         let config = ProductionConfig {
             shutdown_timeout: Duration::from_millis(100),
             ..create_test_config()
@@ -1004,7 +1022,7 @@ mod tests {
         let manager = ResourceManager::new(config);
         
         // Start manager
-        manager.start().await.unwrap();
+        manager.start().await?;
         
         // Shutdown should complete successfully
         let result = manager.shutdown().await;
@@ -1012,10 +1030,12 @@ mod tests {
         
         // Should be marked as shutting down
         assert!(manager.is_shutting_down.load(Ordering::SeqCst));
+        
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_graceful_shutdown_with_connections() {
+    async fn test_graceful_shutdown_with_connections() -> Result<()> {
         let config = ProductionConfig {
             shutdown_timeout: Duration::from_millis(200),
             max_connections: 2,
@@ -1024,7 +1044,7 @@ mod tests {
         let manager = ResourceManager::new(config);
         
         // Acquire a connection
-        let guard = manager.acquire_connection().await.unwrap();
+        let guard = manager.acquire_connection().await?;
         
         // Start shutdown in background
         let manager_clone = manager.clone();
@@ -1037,12 +1057,13 @@ mod tests {
         drop(guard);
         
         // Shutdown should complete
-        let result = shutdown_task.await.unwrap();
+        let result = shutdown_task.await.expect("Task panicked");
         assert!(result.is_ok());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_shutdown_timeout() {
+    async fn test_shutdown_timeout() -> Result<()> {
         let config = ProductionConfig {
             shutdown_timeout: Duration::from_millis(50), // Very short timeout
             max_connections: 1,
@@ -1051,12 +1072,13 @@ mod tests {
         let manager = ResourceManager::new(config);
         
         // Acquire and hold a connection
-        let _guard = manager.acquire_connection().await.unwrap();
+        let _guard = manager.acquire_connection().await?;
         
         // Shutdown should timeout
         let result = manager.shutdown().await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Shutdown timeout"));
+        Ok(())
     }
 
     #[tokio::test]
@@ -1078,7 +1100,7 @@ mod tests {
         let limiter = RateLimiter::new(10.0, 5.0); // 10 tokens max, 5 per second refill
         
         // Should start with full capacity
-        assert!(limiter.try_acquire().unwrap());
+        assert!(limiter.try_acquire().expect("Should succeed in test"));
     }
 
     #[test]
@@ -1086,11 +1108,11 @@ mod tests {
         let limiter = RateLimiter::new(2.0, 1.0); // 2 tokens max, 1 per second refill
         
         // Should allow 2 acquisitions
-        assert!(limiter.try_acquire().unwrap());
-        assert!(limiter.try_acquire().unwrap());
+        assert!(limiter.try_acquire().expect("Should succeed in test"));
+        assert!(limiter.try_acquire().expect("Should succeed in test"));
         
         // Should deny third acquisition
-        assert!(!limiter.try_acquire().unwrap());
+        assert!(!limiter.try_acquire().expect("Should succeed in test"));
     }
 
     #[tokio::test]
@@ -1098,14 +1120,14 @@ mod tests {
         let limiter = RateLimiter::new(1.0, 10.0); // 1 token max, 10 per second refill
         
         // Exhaust tokens
-        assert!(limiter.try_acquire().unwrap());
-        assert!(!limiter.try_acquire().unwrap());
+        assert!(limiter.try_acquire().expect("Should succeed in test"));
+        assert!(!limiter.try_acquire().expect("Should succeed in test"));
         
         // Wait for refill
         sleep(Duration::from_millis(200)).await; // Should refill at least 2 tokens
         
         // Should allow acquisition again
-        assert!(limiter.try_acquire().unwrap());
+        assert!(limiter.try_acquire().expect("Should succeed in test"));
     }
 
     #[test]
@@ -1113,21 +1135,21 @@ mod tests {
         let limiter = RateLimiter::new(10.0, 5.0);
         
         // Should not be expired initially
-        assert!(!limiter.is_expired(Instant::now()));
+        assert!(!limiter.is_expired(Instant::now()).expect("Should succeed in test"));
         
         // Should be expired after 5+ minutes
         let future_time = Instant::now() + Duration::from_secs(400);
-        assert!(limiter.is_expired(future_time));
+        assert!(limiter.is_expired(future_time).expect("Should succeed in test"));
     }
 
     #[tokio::test]
-    async fn test_cleanup_resources() {
+    async fn test_cleanup_resources() -> Result<()> {
         let config = create_test_config();
         let manager = ResourceManager::new(config);
         
         // Add some rate limiters
-        manager.check_rate_limit("peer1", "dht").await.unwrap();
-        manager.check_rate_limit("peer2", "mcp").await.unwrap();
+        manager.check_rate_limit("peer1", "dht").await?;
+        manager.check_rate_limit("peer2", "mcp").await?;
         
         // Should have rate limiters
         {
@@ -1142,6 +1164,7 @@ mod tests {
             let limiters = manager.rate_limiters.read().await;
             assert_eq!(limiters.len(), 2); // Should still have both
         }
+        Ok(())
     }
 
     #[test]

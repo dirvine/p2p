@@ -631,7 +631,7 @@ mod tests {
     fn test_master_seed_generation() {
         let seed = MasterSeed::generate().unwrap();
         assert_eq!(seed.seed_material().len(), MASTER_SEED_SIZE);
-        assert!(seed.created_at > 0);
+        assert!(seed._created_at > 0);
     }
 
     #[test]

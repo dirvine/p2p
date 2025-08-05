@@ -1,5 +1,6 @@
 # Clippy configuration for P2P Foundation project
-# This file configures clippy lints to enforce code quality standards
+# This file configures clippy lints to enforce code quality and security standards
+# Last updated: Security Audit Task 12
 
 # Deny unwrap() in production code to prevent panics
 disallowed-methods = [
@@ -13,9 +14,15 @@ disallowed-methods = [
     { path = "core::panicking::panic", reason = "Production code must not panic" },
     { path = "std::process::abort", reason = "Use graceful shutdown instead" },
     
-    # Prevent index operations that can panic
+    # Prevent unsafe index operations that can panic
     { path = "core::slice::<impl [T]>::get_unchecked", reason = "Use safe indexing with get()" },
     { path = "core::slice::<impl [T]>::get_unchecked_mut", reason = "Use safe indexing with get_mut()" },
+    
+    # Security-critical methods
+    { path = "std::fs::set_permissions", reason = "Permission changes must be audited" },
+    { path = "std::os::unix::fs::PermissionsExt::set_mode", reason = "Permission changes must be audited" },
+    { path = "std::env::set_var", reason = "Environment modifications are security-sensitive" },
+    { path = "std::env::remove_var", reason = "Environment modifications are security-sensitive" },
 ]
 
 # Allow unwraps in tests

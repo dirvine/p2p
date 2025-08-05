@@ -453,7 +453,7 @@ mod tests {
         rand::thread_rng().fill_bytes(&mut hash);
         let node_id = UserId::from_bytes(hash);
         let trust_provider = Arc::new(MockTrustProvider);
-        let router = AdaptiveRouter::new(node_id, trust_provider);
+        let router = AdaptiveRouter::new_with_id(node_id, trust_provider);
         
         let metrics = router.get_metrics().await;
         assert!(metrics.is_empty());

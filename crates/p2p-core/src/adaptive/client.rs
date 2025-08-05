@@ -56,9 +56,28 @@ pub struct ClientConfig {
 
 impl Default for ClientConfig {
     fn default() -> Self {
+        // Load global config for defaults
+        let global_config = crate::config::Config::default();
+        
+        // Use the global listen address as default node address
+        let node_address = global_config.network.listen_address.clone();
+        
         Self {
-            node_address: "localhost:4001".to_string(),
-            connect_timeout: Duration::from_secs(10),
+            node_address,
+            connect_timeout: Duration::from_secs(global_config.network.connection_timeout),
+            request_timeout: Duration::from_secs(30),
+            debug_logging: false,
+            profile: ClientProfile::Full,
+        }
+    }
+}
+
+impl ClientConfig {
+    /// Create ClientConfig from global Config
+    pub fn from_global_config(config: &crate::config::Config) -> Self {
+        Self {
+            node_address: config.network.listen_address.clone(),
+            connect_timeout: Duration::from_secs(config.network.connection_timeout),
             request_timeout: Duration::from_secs(30),
             debug_logging: false,
             profile: ClientProfile::Full,
@@ -711,9 +730,15 @@ mod tests {
         assert!(!state.connected);
     }
     
+    /// Helper function for tests to create a client with test configuration
+    async fn test_client() -> Result<Client> {
+        let config = ClientConfig::default();
+        Client::connect(config).await
+    }
+    
     #[tokio::test]
     async fn test_client_connect() {
-        let client = connect("localhost:4001").await.unwrap();
+        let client = test_client().await.unwrap();
         
         // Should be connected
         let state = client.state.read().await;
@@ -723,7 +748,7 @@ mod tests {
     
     #[tokio::test]
     async fn test_storage_operations() {
-        let client = connect("localhost:4001").await.unwrap();
+        let client = test_client().await.unwrap();
         
         // Store data
         let data = b"Hello, P2P world!".to_vec();
@@ -749,7 +774,7 @@ mod tests {
     
     #[tokio::test]
     async fn test_network_stats() {
-        let client = connect("localhost:4001").await.unwrap();
+        let client = test_client().await.unwrap();
         
         let stats = client.get_network_stats().await.unwrap();
         assert!(stats.routing_success_rate >= 0.0);
@@ -765,7 +790,11 @@ mod tests {
             ClientProfile::Compute,
             ClientProfile::Mobile,
         ] {
-            let client = connect_with_profile("localhost:4001", profile).await.unwrap();
+            let config = ClientConfig {
+                profile,
+                ..Default::default()
+            };
+            let client = Client::connect(config).await.unwrap();
             let info = client.get_node_info().await.unwrap();
             assert!(!info.id.is_empty());
         }
@@ -773,7 +802,7 @@ mod tests {
     
     #[tokio::test]
     async fn test_pubsub_messaging() {
-        let client = connect("localhost:4001").await.unwrap();
+        let client = test_client().await.unwrap();
         
         // Subscribe to topic
         let _stream = client.subscribe("test_topic").await.unwrap();
@@ -788,7 +817,7 @@ mod tests {
     
     #[tokio::test]
     async fn test_compute_job() {
-        let client = connect("localhost:4001").await.unwrap();
+        let client = test_client().await.unwrap();
         
         let job = ComputeJob {
             id: "test_job".to_string(),

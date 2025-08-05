@@ -1286,7 +1286,7 @@ mod tests {
         assert_eq!(deleted.unwrap(), updated);
         
         // Verify deletion
-        assert!(manager.get("key1").is_none());
+        assert!(manager.get("key1").unwrap().is_none());
     }
     
     #[tokio::test]
@@ -1315,12 +1315,12 @@ mod tests {
         
         // Verify all data recovered
         for i in 0..10 {
-            let state = manager.get(&format!("key_{}", i).into()).unwrap();
+            let state = manager.get(&format!("key_{}", i)).unwrap().unwrap();
             assert_eq!(state.id, i);
-            assert_eq!(state.data, format!("test_{}", i).into());
+            assert_eq!(state.data, format!("test_{}", i));
         }
         
-        let stats = manager.recovery_stats();
+        let stats = manager.recovery_stats().unwrap();
         assert!(stats.entries_recovered >= 10);
     }
     
@@ -1371,9 +1371,9 @@ mod tests {
         
         // Verify all inserted
         for i in 0..5 {
-            let state = manager.get(&format!("key_{}", i).into()).unwrap();
+            let state = manager.get(&format!("key_{}", i)).unwrap().unwrap();
             assert_eq!(state.id, i);
-            assert_eq!(state.data, format!("batch_{}", i).into());
+            assert_eq!(state.data, format!("batch_{}", i));
         }
     }
     

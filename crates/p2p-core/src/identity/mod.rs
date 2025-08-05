@@ -40,7 +40,7 @@ pub use secure_node_identity::SecureNodeIdentity;
 
 #[cfg(test)]
 pub use node_identity_extensions::*;
-#[cfg(test)]
-pub use four_words_extensions::*;
+// #[cfg(test)]
+// pub use four_words_extensions::*; // Commented out - module doesn't exist yet
 #[cfg(test)]
 pub use cli_handler::{IdentityCommand, IdentityCliHandler, MessageInput, ExportFormat};

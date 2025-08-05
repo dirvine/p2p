@@ -1014,7 +1014,7 @@ mod tests {
         
         // Verify the signature using the inner keypair
         let inner = keypair.inner();
-        assert!(inner.verify(message, &Signature::from_bytes(&signature).unwrap()).is_ok());
+        assert!(inner.verify(message, &Signature::from_bytes(&signature)).is_ok());
     }
 
     #[test]

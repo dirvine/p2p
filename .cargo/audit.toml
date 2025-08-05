@@ -1,0 +1,42 @@
+# Cargo audit configuration
+# This file configures cargo-audit to handle known issues
+
+[advisories]
+# Temporary exemptions for unmaintained dependencies that come from Tauri
+# These will be resolved when Tauri moves to GTK4 or a different backend
+
+ignore = [
+    # GTK3 bindings are unmaintained but still used by Tauri 2.x
+    # Tracking issue: https://github.com/tauri-apps/tauri/issues/8877
+    "RUSTSEC-2024-0411", # gdkwayland-sys
+    "RUSTSEC-2024-0412", # gdk
+    "RUSTSEC-2024-0413", # atk
+    "RUSTSEC-2024-0414", # gdkx11-sys
+    "RUSTSEC-2024-0415", # gtk
+    "RUSTSEC-2024-0416", # atk-sys
+    "RUSTSEC-2024-0417", # gdkx11
+    "RUSTSEC-2024-0418", # gdk-sys
+    "RUSTSEC-2024-0419", # gtk3-macros
+    "RUSTSEC-2024-0420", # gtk-sys
+    
+    # proc-macro-error is unmaintained but widely used, no good alternative yet
+    # Used by gtk3-macros
+    "RUSTSEC-2024-0370", # proc-macro-error
+    
+    # derivative is unmaintained but used by zbus (Tauri dependency)
+    # Tracking: https://github.com/dbus2/zbus/issues/680
+    "RUSTSEC-2024-0388", # derivative
+    
+    # instant is unmaintained but used by fastrand (async-std dependency)
+    "RUSTSEC-2024-0384", # instant
+    
+    # atty has potential unaligned read, used by criterion
+    # We only use criterion for benchmarking, not in production
+    "RUSTSEC-2021-0145", # atty
+    "RUSTSEC-2024-0375", # atty unmaintained
+    
+    # glib unsoundness - will be fixed when Tauri updates dependencies
+    "RUSTSEC-2024-0429", # glib VariantStrIter
+]
+
+# Security audit configuration complete

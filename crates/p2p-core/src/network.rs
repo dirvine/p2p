@@ -25,8 +25,9 @@ use crate::bootstrap::{BootstrapManager, ContactEntry, QualityMetrics};
 use crate::transport::{TransportManager, QuicTransport, TransportSelection, TransportOptions};
 use crate::identity::manager::IdentityManagerConfig;
 use crate::config::Config;
+use crate::validation::{RateLimiter, RateLimitConfig};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -136,28 +137,44 @@ impl NodeConfig {
     /// 
     /// Returns an error if default addresses cannot be parsed
     pub fn new() -> Result<Self> {
+        // Load config and use its defaults
+        let config = Config::default();
+        
+        // Parse the default listen address
+        let listen_addr = config.listen_socket_addr()?;
+        
+        // Create listen addresses based on config
+        let mut listen_addrs = vec![];
+        
+        // Add IPv6 address if enabled
+        if config.network.ipv6_enabled {
+            let ipv6_addr = std::net::SocketAddr::new(
+                std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+                listen_addr.port()
+            );
+            listen_addrs.push(ipv6_addr);
+        }
+        
+        // Always add IPv4
+        let ipv4_addr = std::net::SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+            listen_addr.port()
+        );
+        listen_addrs.push(ipv4_addr);
+        
         Ok(Self {
             peer_id: None,
-            listen_addrs: vec![
-                "[::]:9000".parse().map_err(|e| NetworkError::InvalidAddress(
-                    format!("[::]:9000: Failed to parse default IPv6 address: {}", e).into()
-                ))?,
-                "0.0.0.0:9000".parse().map_err(|e| NetworkError::InvalidAddress(
-                    format!("0.0.0.0:9000: Failed to parse default IPv4 address: {}", e).into()
-                ))?,
-            ],
-            listen_addr: "127.0.0.1:9000".parse().map_err(|e| NetworkError::InvalidAddress(
-                format!("127.0.0.1:9000: Failed to parse default listen address: {}", e).into()
-            ))?,
+            listen_addrs,
+            listen_addr,
             bootstrap_peers: Vec::new(),
-            bootstrap_peers_str: Vec::new(),
-            enable_ipv6: false, // Default to IPv4 as requested
-            enable_mcp_server: true,
+            bootstrap_peers_str: config.network.bootstrap_nodes.clone(),
+            enable_ipv6: config.network.ipv6_enabled,
+            enable_mcp_server: config.mcp.enabled,
             mcp_server_config: None, // Use default config if None
-            connection_timeout: Duration::from_secs(30),
-            keep_alive_interval: Duration::from_secs(60),
-            max_connections: 1000,
-            max_incoming_connections: 100,
+            connection_timeout: Duration::from_secs(config.network.connection_timeout),
+            keep_alive_interval: Duration::from_secs(config.network.keepalive_interval),
+            max_connections: config.network.max_connections,
+            max_incoming_connections: config.security.connection_limit as usize,
             dht_config: DHTConfig::default(),
             security_config: SecurityConfig::default(),
             production_config: None,
@@ -169,33 +186,38 @@ impl NodeConfig {
 
 impl Default for NodeConfig {
     fn default() -> Self {
-        // Since Default trait cannot return Result, we use safe defaults
-        // that are guaranteed to parse correctly
+        // Use config defaults for network settings
+        let config = Config::default();
+        
+        // Parse the default listen address - use safe fallback if parsing fails
+        let listen_addr = config.listen_socket_addr()
+            .unwrap_or_else(|_| std::net::SocketAddr::new(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)),
+                9000
+            ));
+            
         Self {
             peer_id: None,
             listen_addrs: vec![
                 std::net::SocketAddr::new(
                     std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
-                    9000
+                    listen_addr.port()
                 ),
                 std::net::SocketAddr::new(
                     std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
-                    9000
+                    listen_addr.port()
                 ),
             ],
-            listen_addr: std::net::SocketAddr::new(
-                std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
-                9000
-            ),
+            listen_addr,
             bootstrap_peers: Vec::new(),
             bootstrap_peers_str: Vec::new(),
-            enable_ipv6: false, // Default to IPv4 as requested
-            enable_mcp_server: true,
+            enable_ipv6: config.network.ipv6_enabled,
+            enable_mcp_server: config.mcp.enabled,
             mcp_server_config: None, // Use default config if None
-            connection_timeout: Duration::from_secs(30),
-            keep_alive_interval: Duration::from_secs(60),
-            max_connections: 1000,
-            max_incoming_connections: 100,
+            connection_timeout: Duration::from_secs(config.network.connection_timeout),
+            keep_alive_interval: Duration::from_secs(config.network.keepalive_interval),
+            max_connections: config.network.max_connections,
+            max_incoming_connections: config.security.connection_limit as usize,
             dht_config: DHTConfig::default(),
             security_config: SecurityConfig::default(),
             production_config: None, // Use default production config if enabled
@@ -459,6 +481,9 @@ pub struct P2PNode {
     
     /// Transport manager for real network connections
     transport_manager: Arc<TransportManager>,
+    
+    /// Rate limiter for connection and request throttling
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl P2PNode {
@@ -556,6 +581,9 @@ impl P2PNode {
         
         let transport_manager = Arc::new(transport_manager);
         
+        // Initialize rate limiter with default config
+        let rate_limiter = Arc::new(RateLimiter::new(RateLimitConfig::default()));
+        
         let node = Self {
             config,
             peer_id,
@@ -569,6 +597,7 @@ impl P2PNode {
             resource_manager,
             bootstrap_manager,
             transport_manager,
+            rate_limiter,
         };
         
         info!("Created P2P node with peer ID: {}", node.peer_id);
@@ -611,23 +640,14 @@ impl P2PNode {
                     debug!("Sending network message to {}: {} bytes on protocol {}", peer_id, data.len(), protocol);
                     
                     // Create protocol message wrapper
-                    let message_data = match create_protocol_message_static(&protocol, data) {
-                        Ok(msg) => msg,
-                        Err(e) => {
-                            warn!("Failed to create protocol message: {}", e);
-                            continue;
-                        }
+                    let message_data = match handle_protocol_message_creation(&protocol, data) {
+                        Some(msg) => msg,
+                        None => continue,
                     };
                     
                     // Send message using transport manager
-                    match transport_manager.send_message(&peer_id, message_data).await {
-                        Ok(_) => {
-                            debug!("Message sent to peer {} via transport layer", peer_id);
-                        }
-                        Err(e) => {
-                            warn!("Failed to send message to peer {}: {}", peer_id, e);
-                        }
-                    }
+                    let send_result = transport_manager.send_message(&peer_id, message_data).await;
+                    handle_message_send_result(send_result, &peer_id).await;
                 }
             });
             
@@ -843,15 +863,23 @@ impl P2PNode {
         let peers = Arc::clone(&self.peers);
         let _transport_manager = Arc::clone(&self.transport_manager);
         let mcp_server = self.mcp_server.clone();
+        let rate_limiter = Arc::clone(&self.rate_limiter);
         
         // Spawn background task to accept incoming connections
         tokio::spawn(async move {
             loop {
                 match transport.accept().await {
-                    Ok(mut connection) => {
+                    Ok(connection) => {
                         let remote_addr = connection.remote_addr();
                         let connection_peer_id = format!("peer_from_{}", 
                             remote_addr.to_string().replace(":", "_"));
+                        
+                        // Apply rate limiting for incoming connections
+                        let socket_addr = remote_addr.socket_addr();
+                        if check_rate_limit(&rate_limiter, &socket_addr, &remote_addr).is_err() {
+                            // Connection dropped automatically when it goes out of scope
+                            continue;
+                        }
                         
                         info!("Accepted {:?} connection from {} (peer: {})", 
                               transport_type, remote_addr, connection_peer_id);
@@ -860,74 +888,16 @@ impl P2PNode {
                         let _ = event_tx.send(P2PEvent::PeerConnected(connection_peer_id.clone()));
                         
                         // Store the peer connection
-                        {
-                            let mut peers_guard = peers.write().await;
-                            let peer_info = PeerInfo {
-                                peer_id: connection_peer_id.clone(),
-                                addresses: vec![remote_addr.to_string()],
-                                connected_at: tokio::time::Instant::now(),
-                                last_seen: tokio::time::Instant::now(),
-                                status: ConnectionStatus::Connected,
-                                protocols: vec!["p2p-chat/1.0.0".to_string()],
-                                heartbeat_count: 0,
-                            };
-                            peers_guard.insert(connection_peer_id.clone(), peer_info);
-                        }
+                        register_new_peer(&peers, &connection_peer_id, &remote_addr).await;
                         
                         // Spawn task to handle this specific connection's messages
-                        let connection_event_tx = event_tx.clone();
-                        let connection_peer_id_clone = connection_peer_id.clone();
-                        let connection_peers = Arc::clone(&peers);
-                        let connection_mcp_server = mcp_server.clone();
-                        
-                        tokio::spawn(async move {
-                            loop {
-                                match connection.receive().await {
-                                    Ok(message_data) => {
-                                        debug!("Received {} bytes from peer: {}", 
-                                               message_data.len(), connection_peer_id_clone);
-                                        
-                                        // Handle the received message
-                                        if let Err(e) = handle_received_message_standalone(
-                                            message_data, 
-                                            &connection_peer_id_clone,
-                                            "unknown", // TODO: Extract protocol from message
-                                            &connection_event_tx,
-                                            &connection_mcp_server
-                                        ).await {
-                                            warn!("Failed to handle message from {}: {}", 
-                                                  connection_peer_id_clone, e);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        warn!("Failed to receive message from {}: {}", 
-                                              connection_peer_id_clone, e);
-                                        
-                                        // Check if connection is still alive
-                                        if !connection.is_alive().await {
-                                            info!("Connection to {} is dead, removing peer", 
-                                                  connection_peer_id_clone);
-                                            
-                                            // Remove dead peer
-                                            {
-                                                let mut peers_guard = connection_peers.write().await;
-                                                peers_guard.remove(&connection_peer_id_clone);
-                                            }
-                                            
-                                            // Generate peer disconnected event
-                                            let _ = connection_event_tx.send(
-                                                P2PEvent::PeerDisconnected(connection_peer_id_clone.clone())
-                                            );
-                                            
-                                            break; // Exit the message receiving loop
-                                        }
-                                        
-                                        // Brief pause before retrying
-                                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                                    }
-                                }
-                            }
-                        });
+                        spawn_connection_handler(
+                            connection,
+                            connection_peer_id,
+                            event_tx.clone(),
+                            Arc::clone(&peers),
+                            mcp_server.clone()
+                        );
                     }
                     Err(e) => {
                         warn!("Failed to accept {:?} connection on {}: {}", transport_type, addr, e);
@@ -1032,13 +1002,8 @@ impl P2PNode {
                             debug!("Received heartbeat from peer {}", peer_id);
                             
                             // Update peer last seen timestamp
-                            {
-                                let mut peers = self.peers.write().await;
-                                if let Some(peer_info) = peers.get_mut(peer_id) {
-                                    peer_info.last_seen = Instant::now();
-                                    peer_info.heartbeat_count += 1;
-                                }
-                            }
+                            let _ = update_peer_heartbeat(&self.peers, peer_id).await
+                                .map_err(|e| debug!("Failed to update heartbeat for peer {}: {}", peer_id, e));
                             
                             // Send heartbeat acknowledgment
                             let timestamp = std::time::SystemTime::now()
@@ -1053,9 +1018,8 @@ impl P2PNode {
                                 "timestamp": timestamp
                             })).map_err(|e| P2PError::Serialization(e.to_string().into()))?;
                             
-                            if let Err(e) = self.send_message(peer_id, MCP_PROTOCOL, ack_data).await {
-                                warn!("Failed to send heartbeat ack to {}: {}", peer_id, e);
-                            }
+                            let _ = self.send_message(peer_id, MCP_PROTOCOL, ack_data).await
+                                .map_err(|e| warn!("Failed to send heartbeat ack to {}: {}", peer_id, e));
                         }
                         crate::mcp::P2PMCPMessageType::HealthCheck => {
                             // Handle health check request
@@ -1065,15 +1029,8 @@ impl P2PNode {
                             let peers_count = self.peers.read().await.len();
                             let uptime = self.start_time.elapsed();
                             
-                            let mut memory_usage = 0u64;
-                            let mut cpu_usage = 0.0f64;
-                            
                             // Get resource metrics if available
-                            if let Some(ref resource_manager) = self.resource_manager {
-                                let metrics = resource_manager.get_metrics().await;
-                                memory_usage = metrics.memory_used;
-                                cpu_usage = metrics.cpu_usage;
-                            }
+                            let (memory_usage, cpu_usage) = get_resource_metrics(&self.resource_manager).await;
                             
                             // Create health check response
                             let timestamp = std::time::SystemTime::now()
@@ -2271,6 +2228,175 @@ async fn handle_mcp_message_standalone(
     Ok(())
 }
 
+
+/// Helper function to handle protocol message creation
+fn handle_protocol_message_creation(
+    protocol: &str, 
+    data: Vec<u8>
+) -> Option<Vec<u8>> {
+    match create_protocol_message_static(protocol, data) {
+        Ok(msg) => Some(msg),
+        Err(e) => {
+            warn!("Failed to create protocol message: {}", e);
+            None
+        }
+    }
+}
+
+/// Helper function to handle message send result
+async fn handle_message_send_result(
+    result: Result<()>,
+    peer_id: &PeerId
+) {
+    match result {
+        Ok(_) => {
+            debug!("Message sent to peer {} via transport layer", peer_id);
+        }
+        Err(e) => {
+            warn!("Failed to send message to peer {}: {}", peer_id, e);
+        }
+    }
+}
+
+/// Helper function to check rate limit
+fn check_rate_limit(
+    rate_limiter: &RateLimiter,
+    socket_addr: &std::net::SocketAddr,
+    remote_addr: &NetworkAddress
+) -> Result<()> {
+    rate_limiter.check_ip(&socket_addr.ip()).map_err(|e| {
+        warn!("Rate limit exceeded for {}: {}", remote_addr, e);
+        e
+    })
+}
+
+/// Helper function to register a new peer
+async fn register_new_peer(
+    peers: &Arc<RwLock<HashMap<PeerId, PeerInfo>>>,
+    peer_id: &PeerId,
+    remote_addr: &NetworkAddress
+) {
+    let mut peers_guard = peers.write().await;
+    let peer_info = PeerInfo {
+        peer_id: peer_id.clone(),
+        addresses: vec![remote_addr.to_string()],
+        connected_at: tokio::time::Instant::now(),
+        last_seen: tokio::time::Instant::now(),
+        status: ConnectionStatus::Connected,
+        protocols: vec!["p2p-chat/1.0.0".to_string()],
+        heartbeat_count: 0,
+    };
+    peers_guard.insert(peer_id.clone(), peer_info);
+}
+
+/// Helper function to spawn connection handler
+fn spawn_connection_handler(
+    connection: Box<dyn crate::transport::Connection>,
+    peer_id: PeerId,
+    event_tx: broadcast::Sender<P2PEvent>,
+    peers: Arc<RwLock<HashMap<PeerId, PeerInfo>>>,
+    mcp_server: Option<Arc<MCPServer>>
+) {
+    tokio::spawn(async move {
+        handle_peer_connection(connection, peer_id, event_tx, peers, mcp_server).await;
+    });
+}
+
+/// Helper function to handle peer connection
+async fn handle_peer_connection(
+    mut connection: Box<dyn crate::transport::Connection>,
+    peer_id: PeerId,
+    event_tx: broadcast::Sender<P2PEvent>,
+    peers: Arc<RwLock<HashMap<PeerId, PeerInfo>>>,
+    mcp_server: Option<Arc<MCPServer>>
+) {
+    loop {
+        match connection.receive().await {
+            Ok(message_data) => {
+                debug!("Received {} bytes from peer: {}", 
+                       message_data.len(), peer_id);
+                
+                // Handle the received message
+                if let Err(e) = handle_received_message_standalone(
+                    message_data, 
+                    &peer_id,
+                    "unknown", // TODO: Extract protocol from message
+                    &event_tx,
+                    &mcp_server
+                ).await {
+                    warn!("Failed to handle message from {}: {}", 
+                          peer_id, e);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to receive message from {}: {}", 
+                      peer_id, e);
+                
+                // Check if connection is still alive
+                if !connection.is_alive().await {
+                    info!("Connection to {} is dead, removing peer", 
+                          peer_id);
+                    
+                    // Remove dead peer
+                    remove_peer(&peers, &peer_id).await;
+                    
+                    // Generate peer disconnected event
+                    let _ = event_tx.send(
+                        P2PEvent::PeerDisconnected(peer_id.clone())
+                    );
+                    
+                    break; // Exit the message receiving loop
+                }
+                
+                // Brief pause before retrying
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
+    }
+}
+
+/// Helper function to remove a peer
+async fn remove_peer(
+    peers: &Arc<RwLock<HashMap<PeerId, PeerInfo>>>,
+    peer_id: &PeerId
+) {
+    let mut peers_guard = peers.write().await;
+    peers_guard.remove(peer_id);
+}
+
+/// Helper function to update peer heartbeat
+async fn update_peer_heartbeat(
+    peers: &Arc<RwLock<HashMap<PeerId, PeerInfo>>>,
+    peer_id: &PeerId
+) -> Result<()> {
+    let mut peers_guard = peers.write().await;
+    match peers_guard.get_mut(peer_id) {
+        Some(peer_info) => {
+            peer_info.last_seen = Instant::now();
+            peer_info.heartbeat_count += 1;
+            Ok(())
+        }
+        None => {
+            warn!("Received heartbeat from unknown peer: {}", peer_id);
+            Err(P2PError::Network(NetworkError::PeerNotFound(
+                format!("Peer {} not found", peer_id).into()
+            )))
+        }
+    }
+}
+
+/// Helper function to get resource metrics
+async fn get_resource_metrics(
+    resource_manager: &Option<Arc<ResourceManager>>
+) -> (u64, f32) {
+    if let Some(manager) = resource_manager {
+        let metrics = manager.get_metrics().await;
+        (metrics.memory_used, metrics.cpu_usage as f32)
+    } else {
+        (0, 0.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2700,6 +2826,7 @@ mod tests {
         for i in 0..5 {
             let addr = format!("/ip4/127.0.0.1/tcp/{}", 9010 + i);
             node.connect_peer(&addr).await?;
+    Ok(())
         }
 
         // Health check should still pass

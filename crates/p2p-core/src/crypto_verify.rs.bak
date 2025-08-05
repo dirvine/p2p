@@ -61,7 +61,7 @@ struct CachedVerificationKey {
     /// The verifying key
     key: VerifyingKey,
     /// Precomputed point for batch verification
-    precomputed_point: Option<Vec<u8>>, // Placeholder for actual precomputed data
+    _precomputed_point: Option<Vec<u8>>, // Placeholder for actual precomputed data
     /// Last access timestamp
     last_used: Instant,
     /// Number of times this key has been used
@@ -162,7 +162,7 @@ impl EnhancedSignatureVerifier {
             results.push(BatchVerificationResult {
                 index,
                 success: result.is_ok(),
-                error: result.err().map(|e| format!("Verification failed: {e}")),
+                error: result.err().map(|e| format!("Verification failed: {e}").into()),
             });
         }
         
@@ -196,12 +196,12 @@ impl EnhancedSignatureVerifier {
         let age = now.saturating_sub(record.timestamp);
         
         if age > SIGNATURE_FRESHNESS_WINDOW.as_secs() {
-            return Err(P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed("Signature verification failed".to_string())));
+            return Err(P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed("Signature verification failed".to_string().into())));
         }
         
         // Also check for future timestamps (clock skew protection)
         if record.timestamp > now + 60 {
-            return Err(P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed("Signature verification failed".to_string())));
+            return Err(P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed("Signature verification failed".to_string().into())));
         }
         
         Ok(())
@@ -223,7 +223,7 @@ impl EnhancedSignatureVerifier {
         let verifying_key = self.create_verifying_key(public_key)?;
         let cached_key = CachedVerificationKey {
             key: verifying_key,
-            precomputed_point: None, // Would contain actual precomputed data
+            _precomputed_point: None, // Would contain actual precomputed data
             last_used: Instant::now(),
             usage_count: 1,
         };
@@ -246,7 +246,7 @@ impl EnhancedSignatureVerifier {
         
         // Check for low-order points and other curve attacks
         if self.is_low_order_point(key_bytes) {
-            return Err(P2PError::Security(crate::error::SecurityError::InvalidKey("Invalid curve point".to_string())));
+            return Err(P2PError::Security(crate::error::SecurityError::InvalidKey("Invalid curve point".to_string().into())));
         }
         
         // For ed25519_dalek 1.0, we just return the public key as-is
@@ -278,7 +278,7 @@ impl EnhancedSignatureVerifier {
     ) -> Result<()> {
         // Use constant-time verification
         verifying_key.verify(message, signature)
-            .map_err(|_| P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed("Signature verification failed".to_string())))
+            .map_err(|_| P2PError::Security(crate::error::SecurityError::SignatureVerificationFailed("Signature verification failed".to_string().into())))
     }
 
     /// Evict the least recently used key from cache
@@ -429,7 +429,7 @@ mod tests {
                 message,
                 signature,
                 public_key,
-                context: Some(format!("test_{}", i)),
+                context: Some(format!("test_{}", i).into()),
             });
         }
         

@@ -133,7 +133,6 @@ async fn run_quick_test() -> Result<()> {
         }
         Err(e) => {
             println!("  {} Node creation failed: {}", "❌".red(), e);
-            failed += 1;
             return Err(e.into());
         }
     };

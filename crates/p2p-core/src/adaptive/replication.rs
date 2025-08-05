@@ -466,7 +466,14 @@ mod tests {
         let router = Arc::new(AdaptiveRouter::new(
             trust_provider.clone(),
             Arc::new(crate::adaptive::hyperbolic::HyperbolicSpace::new()),
-            Arc::new(crate::adaptive::som::SelfOrganizingMap::new(10, 10, 4)),
+            Arc::new(crate::adaptive::som::SelfOrganizingMap::new(
+                crate::adaptive::som::SomConfig {
+                    initial_learning_rate: 0.5,
+                    initial_radius: 3.0,
+                    iterations: 1000,
+                    grid_size: crate::adaptive::som::GridSize::Fixed(10, 10),
+                }
+            )),
         ));
         
         ReplicationManager::new(config, trust_provider, churn_predictor, router)
@@ -507,7 +514,7 @@ mod tests {
         let metadata = ContentMetadata {
             size: content.len(),
             content_type: ContentType::DataRetrieval,
-            created_at: Instant::now(),
+            created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
             chunk_count: None,
             replication_factor: 8,
         };
@@ -538,7 +545,7 @@ mod tests {
             metadata: ContentMetadata {
                 size: 100,
                 content_type: ContentType::DataRetrieval,
-                created_at: Instant::now(),
+                created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
                 chunk_count: None,
                 replication_factor: 5,
             },
@@ -579,7 +586,7 @@ mod tests {
             metadata: ContentMetadata {
                 size: 100,
                 content_type: ContentType::DataRetrieval,
-                created_at: Instant::now(),
+                created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
                 chunk_count: None,
                 replication_factor: 5,
             },

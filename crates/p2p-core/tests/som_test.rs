@@ -1,12 +1,12 @@
 // Copyright 2024 P2P Foundation
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use p2p_core::adaptive::som::{
+use saorsa_core::adaptive::som::{
     SelfOrganizingMap, NodeFeatures, SomConfig, GridSize
 };
-use p2p_core::identity::NodeId;
+use saorsa_core::identity::NodeId;
 use proptest::prelude::*;
-use std::collections::HashSet;
+// use std::collections::HashSet;
 use std::time::Instant;
 
 /// Create test features with predictable values

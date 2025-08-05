@@ -303,7 +303,7 @@ mod tests {
         let config = DHTConfig::default();
         let identity = Arc::new(NodeIdentity::generate().unwrap());
         let trust_provider = Arc::new(MockTrustProvider);
-        let router = Arc::new(AdaptiveRouter::new(
+        let router = Arc::new(AdaptiveRouter::new_with_id(
             identity.node_id().clone(),
             trust_provider.clone(),
         ));

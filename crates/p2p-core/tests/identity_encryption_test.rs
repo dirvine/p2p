@@ -11,7 +11,8 @@
 // distributed under these licenses is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 
-use saorsa_core::identity_manager::{IdentityManager, IdentityCreationParams, SecurityLevel};
+use saorsa_core::identity_manager::{IdentityManager, IdentityCreationParams};
+use saorsa_core::encrypted_key_storage::SecurityLevel;
 use saorsa_core::secure_memory::SecureString;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -36,7 +37,9 @@ async fn test_identity_encryption_sync_package() {
         display_name: Some("Test User".to_string()),
         bio: Some("Test bio for encryption".to_string()),
         derivation_path: None,
-        recovery_threshold: None,
+        avatar_url: None,
+        key_lifetime: None,
+        metadata: std::collections::HashMap::new(),
     };
     
     let identity = manager.create_identity(&storage_password, params)
@@ -45,7 +48,7 @@ async fn test_identity_encryption_sync_package() {
     
     // Create sync package with device password
     let device_password = SecureString::from_str("device_password_456!").unwrap();
-    let sync_package = manager.create_sync_package(&identity.id, &device_password)
+    let sync_package = manager.create_sync_package(&identity.id, &device_password, &storage_password)
         .await
         .unwrap();
     
@@ -105,7 +108,7 @@ async fn test_identity_encryption_wrong_password() {
     
     // Create sync package
     let device_password = SecureString::from_str("correct_password").unwrap();
-    let sync_package = manager.create_sync_package(&identity.id, &device_password)
+    let sync_package = manager.create_sync_package(&identity.id, &device_password, &storage_password)
         .await
         .unwrap();
     

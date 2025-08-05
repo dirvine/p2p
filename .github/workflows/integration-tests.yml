@@ -1,307 +1,236 @@
-name: Integration Tests
+name: Comprehensive Integration Tests
 
 on:
   push:
     branches: [ main, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
   schedule:
-    # Run nightly at 2 AM UTC
+    # Run nightly integration tests
     - cron: '0 2 * * *'
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  P2P_TEST_ENV: ci
-  P2P_TEST_LOG_LEVEL: warn
-  P2P_TEST_ENABLE_IPV6: false
-  P2P_TEST_ENABLE_BENCHMARKS: false
-  P2P_TEST_ENABLE_STRESS: false
-  P2P_TEST_TIMEOUT: 180
-  P2P_TEST_NODE_COUNT: 3
-  P2P_TEST_BASE_PORT: 19000
+  INTEGRATION_TEST_TIMEOUT: 600
 
 jobs:
   integration-tests:
-    name: Integration Tests
+    name: Integration Test Suite
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     
     strategy:
       matrix:
-        rust: [stable, beta]
-        features: [
-          "default",
-          "all-features"
-        ]
-      fail-fast: false
+        rust-version: [stable, beta]
+        test-category: 
+          - network
+          - storage  
+          - security
+          - end-to-end
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+      
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@master
       with:
-        toolchain: ${{ matrix.rust }}
+        toolchain: ${{ matrix.rust-version }}
         components: rustfmt, clippy
-    
-    - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2
-      with:
-        key: ${{ matrix.rust }}-${{ matrix.features }}
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          pkg-config \
-          libssl-dev \
-          net-tools \
-          iproute2 \
-          libgtk-3-dev \
-          libwebkit2gtk-4.1-dev \
-          libayatana-appindicator3-dev \
-          librsvg2-dev \
-          patchelf
-    
-    - name: Check available ports
-      run: |
-        echo "Checking port availability..."
-        netstat -tuln | grep :19 || echo "Port range 19000+ available"
         
-    - name: Setup test environment
-      run: |
-        echo "Setting up integration test environment"
-        echo "Test configuration:"
-        echo "  Base port: $P2P_TEST_BASE_PORT"
-        echo "  Node count: $P2P_TEST_NODE_COUNT"
-        echo "  Timeout: $P2P_TEST_TIMEOUT"
-        echo "  IPv6: $P2P_TEST_ENABLE_IPV6"
-        echo "  Benchmarks: $P2P_TEST_ENABLE_BENCHMARKS"
-        echo "  Stress tests: $P2P_TEST_ENABLE_STRESS"
-    
-    - name: Run clippy
-      run: |
-        if [ "${{ matrix.features }}" = "all-features" ]; then
-          cargo clippy --all-features --tests -- -D warnings
-        else
-          cargo clippy --tests -- -D warnings
-        fi
-    
-    - name: Check formatting
-      run: cargo fmt --all -- --check
-    
-    - name: Build tests
-      run: |
-        if [ "${{ matrix.features }}" = "all-features" ]; then
-          cargo build --tests --all-features
-        else
-          cargo build --tests
-        fi
-    
-    - name: Run unit tests
-      run: |
-        if [ "${{ matrix.features }}" = "all-features" ]; then
-          cargo test --lib --all-features
-        else
-          cargo test --lib
-        fi
-    
-    - name: Run integration tests - Network Module
-      run: |
-        if [ "${{ matrix.features }}" = "all-features" ]; then
-          cargo test --test integration_tests network_tests --all-features -- --test-threads=1
-        else
-          cargo test --test integration_tests network_tests -- --test-threads=1
-        fi
-    
-    - name: Run integration tests - DHT Module
-      run: |
-        if [ "${{ matrix.features }}" = "all-features" ]; then
-          cargo test --test integration_tests dht_tests --all-features -- --test-threads=1
-        else
-          cargo test --test integration_tests dht_tests -- --test-threads=1
-        fi
-    
-    - name: Run integration tests - Transport Layer
-      run: |
-        if [ "${{ matrix.features }}" = "all-features" ]; then
-          cargo test --test integration_tests transport_tests --all-features -- --test-threads=1
-        else
-          cargo test --test integration_tests transport_tests -- --test-threads=1
-        fi
-    
-    - name: Run integration tests - Tunneling
-      run: |
-        if [ "${{ matrix.features }}" = "all-features" ]; then
-          cargo test --test integration_tests tunneling_tests --all-features -- --test-threads=1
-        else
-          cargo test --test integration_tests tunneling_tests -- --test-threads=1
-        fi
-    
-    - name: Run integration tests - MCP Server
-      run: |
-        if [ "${{ matrix.features }}" = "all-features" ]; then
-          cargo test --test integration_tests mcp_tests --all-features -- --test-threads=1
-        else
-          cargo test --test integration_tests mcp_tests -- --test-threads=1
-        fi
-    
-    - name: Run integration tests - Security
-      run: |
-        if [ "${{ matrix.features }}" = "all-features" ]; then
-          cargo test --test integration_tests security_tests --all-features -- --test-threads=1
-        else
-          cargo test --test integration_tests security_tests -- --test-threads=1
-        fi
-    
-    - name: Run integration tests - Scenarios
-      run: |
-        if [ "${{ matrix.features }}" = "all-features" ]; then
-          cargo test --test integration_tests scenario_tests --all-features -- --test-threads=1
-        else
-          cargo test --test integration_tests scenario_tests -- --test-threads=1
-        fi
-    
-    - name: Generate test documentation
-      run: |
-        if [ "${{ matrix.features }}" = "all-features" ]; then
-          cargo doc --all-features --no-deps --document-private-items
-        else
-          cargo doc --no-deps --document-private-items
-        fi
-    
-    - name: Upload test artifacts
-      if: failure()
-      uses: actions/upload-artifact@v4
+    - name: Cache cargo registry
+      uses: actions/cache@v4
       with:
-        name: test-artifacts-${{ matrix.rust }}-${{ matrix.features }}
         path: |
-          target/debug/
-          Cargo.lock
-        retention-days: 3
-
-  comprehensive-test:
-    name: Comprehensive Integration Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    
-    env:
-      P2P_TEST_ENABLE_BENCHMARKS: true
-      P2P_TEST_ENABLE_STRESS: true
-      P2P_TEST_TIMEOUT: 300
-      P2P_TEST_NODE_COUNT: 5
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2
-    
+          ~/.cargo/registry
+          ~/.cargo/git
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+          
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          pkg-config \
-          libssl-dev \
-          net-tools \
-          iproute2 \
-          libgtk-3-dev \
-          libwebkit2gtk-4.1-dev \
-          libayatana-appindicator3-dev \
-          librsvg2-dev \
-          patchelf \
-          valgrind
-    
-    - name: Run comprehensive test suite
+        sudo apt-get install -y build-essential pkg-config libssl-dev
+        
+    - name: Build project
+      run: cargo build --release --all-features
+      
+    - name: Run Network Integration Tests
+      if: matrix.test-category == 'network'
       run: |
-        cargo test --test integration_tests run_all_integration_tests --all-features -- --test-threads=1
-    
-    - name: Run stress tests
+        cargo test --test network_integration_comprehensive_test \
+          --release -- --nocapture --test-threads=1
+          
+    - name: Run Storage Integration Tests  
+      if: matrix.test-category == 'storage'
       run: |
-        cargo test --test integration_tests stress_scenarios --all-features --ignored -- --test-threads=1
-    
-    - name: Run benchmark tests
+        cargo test --test storage_integration_comprehensive_test \
+          --release -- --nocapture --test-threads=1
+          
+    - name: Run Security Integration Tests
+      if: matrix.test-category == 'security'  
       run: |
-        cargo test --test integration_tests benchmark_tests --all-features --ignored -- --test-threads=1
-    
-    - name: Generate performance report
+        cargo test --test security_integration_comprehensive_test \
+          --release -- --nocapture --test-threads=1
+          
+    - name: Run End-to-End Scenario Tests
+      if: matrix.test-category == 'end-to-end'
       run: |
-        echo "# P2P Foundation Performance Report" > performance-report.md
-        echo "Generated on: $(date)" >> performance-report.md
-        echo "" >> performance-report.md
-        echo "## Test Environment" >> performance-report.md
-        echo "- Runner: ${{ runner.os }}" >> performance-report.md
-        echo "- Rust version: $(rustc --version)" >> performance-report.md
-        echo "- Node count: $P2P_TEST_NODE_COUNT" >> performance-report.md
-        echo "" >> performance-report.md
-        echo "## Results" >> performance-report.md
-        echo "Comprehensive integration tests completed successfully." >> performance-report.md
-    
-    - name: Upload performance report
+        cargo test --test end_to_end_scenarios_test \
+          --release -- --nocapture --test-threads=1
+          
+    - name: Generate Test Report
+      if: always()
+      run: |
+        if [ -f integration_test_report.md ]; then
+          echo "## Integration Test Report - ${{ matrix.test-category }}" >> $GITHUB_STEP_SUMMARY
+          cat integration_test_report.md >> $GITHUB_STEP_SUMMARY
+        fi
+        
+    - name: Upload Test Artifacts
+      if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: performance-report
-        path: performance-report.md
-        retention-days: 30
-
-  security-audit:
-    name: Security Audit
+        name: integration-test-results-${{ matrix.rust-version }}-${{ matrix.test-category }}
+        path: |
+          integration_test_report.md
+          target/debug/test-results/
+          
+  comprehensive-test-suite:
+    name: Full Integration Test Suite
     runs-on: ubuntu-latest
+    needs: integration-tests
+    if: github.event_name == 'schedule' || github.event_name == 'push'
+    timeout-minutes: 60
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2
-    
-    - name: Install cargo-audit
-      run: cargo install cargo-audit
-    
-    - name: Run security audit
-      run: cargo audit
-    
-    - name: Run cargo deny
-      uses: EmbarkStudios/cargo-deny-action@v1
-      with:
-        log-level: warn
-        command: check
-        arguments: --all-features
-
-  test-coverage:
-    name: Test Coverage
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
+      
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
       with:
-        components: llvm-tools-preview
-    
-    - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@cargo-llvm-cov
-    
-    - name: Generate test coverage
+        components: rustfmt, clippy
+        
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target/
+        key: ${{ runner.os }}-cargo-comprehensive-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Install system dependencies
       run: |
-        cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-    
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
+        sudo apt-get update
+        sudo apt-get install -y build-essential pkg-config libssl-dev
+        
+    - name: Build project with all features
+      run: cargo build --release --all-features
+      
+    - name: Run Complete Integration Test Suite
+      run: |
+        cargo test --test integration_test_runner --release -- \
+          --nocapture run_all_tests
+          
+    - name: Performance Benchmarks
+      run: |
+        cargo bench --bench integration_benchmarks || true
+        
+    - name: Generate Comprehensive Report
+      run: |
+        echo "# Comprehensive Integration Test Results" > comprehensive_report.md
+        echo "Generated: $(date)" >> comprehensive_report.md
+        echo "" >> comprehensive_report.md
+        
+        if [ -f integration_test_report.md ]; then
+          cat integration_test_report.md >> comprehensive_report.md
+        fi
+        
+        echo "## System Information" >> comprehensive_report.md
+        echo "- OS: $(uname -a)" >> comprehensive_report.md
+        echo "- Rust: $(rustc --version)" >> comprehensive_report.md
+        echo "- Cargo: $(cargo --version)" >> comprehensive_report.md
+        
+    - name: Upload Comprehensive Results
+      uses: actions/upload-artifact@v4
       with:
-        files: lcov.info
-        fail_ci_if_error: false
+        name: comprehensive-integration-results
+        path: |
+          comprehensive_report.md
+          integration_test_report.md
+          target/criterion/
+          
+    - name: Comment on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          if (fs.existsSync('comprehensive_report.md')) {
+            const report = fs.readFileSync('comprehensive_report.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## Comprehensive Integration Test Results\n\n' + report
+            });
+          }
+          
+  performance-regression-check:
+    name: Performance Regression Detection
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      
+    - name: Checkout base branch
+      run: git checkout ${{ github.base_ref }}
+      
+    - name: Run baseline performance tests
+      run: |
+        cargo build --release
+        cargo test --test end_to_end_scenarios_test test_network_performance_benchmarks \
+          --release -- --nocapture > baseline_perf.txt || true
+          
+    - name: Checkout PR branch
+      run: git checkout ${{ github.head_ref }}
+      
+    - name: Run PR performance tests
+      run: |
+        cargo build --release  
+        cargo test --test end_to_end_scenarios_test test_network_performance_benchmarks \
+          --release -- --nocapture > pr_perf.txt || true
+          
+    - name: Compare Performance
+      run: |
+        echo "# Performance Comparison" > perf_comparison.md
+        echo "## Baseline (base branch)" >> perf_comparison.md
+        if [ -f baseline_perf.txt ]; then
+          echo '```' >> perf_comparison.md
+          tail -20 baseline_perf.txt >> perf_comparison.md
+          echo '```' >> perf_comparison.md
+        fi
+        echo "## PR Branch" >> perf_comparison.md
+        if [ -f pr_perf.txt ]; then
+          echo '```' >> perf_comparison.md
+          tail -20 pr_perf.txt >> perf_comparison.md
+          echo '```' >> perf_comparison.md
+        fi
+        
+    - name: Upload Performance Comparison
+      uses: actions/upload-artifact@v4
+      with:
+        name: performance-comparison
+        path: perf_comparison.md

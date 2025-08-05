@@ -12,6 +12,7 @@
 
 use super::*;
 use crate::{Result, P2PError};
+use log::{info, error};
 use crate::adaptive::gossip::GossipMessage;
 use crate::adaptive::coordinator_extensions::{
     StorageStrategy,
@@ -134,11 +135,29 @@ pub struct NetworkConfig {
 
 impl Default for NetworkConfig {
     fn default() -> Self {
+        // Load global config for defaults
+        let global_config = crate::config::Config::default();
+        
         Self {
-            bootstrap_nodes: vec![],
+            bootstrap_nodes: global_config.network.bootstrap_nodes.clone(),
             storage_capacity: 100, // 100 GB
-            max_connections: 1000,
-            replication_factor: 5,
+            max_connections: global_config.network.max_connections,
+            replication_factor: global_config.dht.replication_factor,
+            ml_enabled: true,
+            monitoring_interval: Duration::from_secs(30),
+            security_level: 7,
+        }
+    }
+}
+
+impl NetworkConfig {
+    /// Create NetworkConfig from global Config
+    pub fn from_global_config(config: &crate::config::Config) -> Self {
+        Self {
+            bootstrap_nodes: config.network.bootstrap_nodes.clone(),
+            storage_capacity: 100, // TODO: parse from config.storage.max_size
+            max_connections: config.network.max_connections,
+            replication_factor: config.dht.replication_factor,
             ml_enabled: true,
             monitoring_interval: Duration::from_secs(30),
             security_level: 7,
@@ -421,13 +440,13 @@ impl NetworkCoordinator {
     
     /// Join the P2P network
     pub async fn join_network(&self) -> Result<()> {
-        println!("Joining P2P network with identity: {:?}", self.identity.node_id());
+        info!("Joining P2P network with identity: {:?}", self.identity.node_id());
         
         // Connect to bootstrap nodes
         for bootstrap in &self.config.bootstrap_nodes {
             match <TransportManager as TransportExtensions>::connect(&self.transport, bootstrap).await {
-                Ok(_) => println!("Connected to bootstrap node: {}", bootstrap),
-                Err(e) => eprintln!("Failed to connect to {}: {:?}", bootstrap, e),
+                Ok(_) => info!("Connected to bootstrap node: {}", bootstrap),
+                Err(e) => error!("Failed to connect to {}: {:?}", bootstrap, e),
             }
         }
         
@@ -447,7 +466,7 @@ impl NetworkCoordinator {
         let mut state = self.state.write().await;
         state.joined = true;
         
-        println!("Successfully joined P2P network");
+        info!("Successfully joined P2P network");
         Ok(())
     }
     
@@ -604,7 +623,7 @@ impl NetworkCoordinator {
     
     /// Handle graceful degradation
     pub async fn handle_degradation(&self, reason: DegradationReason) -> Result<()> {
-        eprintln!("Network degradation detected: {:?}", reason);
+        error!("Network degradation detected: {:?}", reason);
         
         match reason {
             DegradationReason::HighChurn => {
@@ -636,7 +655,7 @@ impl NetworkCoordinator {
     
     /// Graceful shutdown
     pub async fn shutdown(self) -> Result<()> {
-        println!("Initiating graceful shutdown");
+        info!("Initiating graceful shutdown");
         
         // Set shutdown flag
         {
@@ -662,7 +681,7 @@ impl NetworkCoordinator {
         // Wait for graceful termination
         tokio::time::sleep(Duration::from_secs(5)).await;
         
-        println!("Shutdown complete");
+        info!("Shutdown complete");
         Ok(())
     }
 }
@@ -780,8 +799,7 @@ mod tests {
     #[tokio::test]
     async fn test_network_join() {
         let identity = NodeIdentity::generate().unwrap();
-        let mut config = NetworkConfig::default();
-        config.bootstrap_nodes = vec!["localhost:8000".to_string()];
+        let config = NetworkConfig::default(); // No hardcoded addresses
         
         let coordinator = NetworkCoordinator::new(identity, config).await.unwrap();
         

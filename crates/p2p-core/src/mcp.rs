@@ -2394,7 +2394,7 @@ impl MCPServer {
         let stats = self.stats.read().await;
         
         ServiceLoadMetrics {
-            active_requests: 0, // TODO: Track active requests
+            active_requests: self.request_handlers.read().await.len() as u32,
             requests_per_second: stats.total_requests as f64 / 60.0, // Rough estimate
             avg_response_time_ms: stats.avg_response_time.as_millis() as f64,
             error_rate: if stats.total_requests > 0 {
@@ -2865,6 +2865,7 @@ mod tests {
     use std::pin::Pin;
     use std::future::Future;
     use tokio::time::timeout;
+    use std::time::UNIX_EPOCH;
 
     /// Test implementation of ToolHandler for unit tests
     struct TestTool {
@@ -3018,7 +3019,7 @@ mod tests {
         // Verify tool is registered
         let tools = server.tools.read().await;
         assert!(tools.contains_key("test_calculator"));
-        assert_eq!(tools.get("test_calculator").unwrap().definition.name, "test_calculator");
+        assert_eq!(tools.get("test_calculator").expect("Should succeed in test").definition.name, "test_calculator");
 
         // Verify stats updated
         let stats = server.stats.read().await;
@@ -3089,7 +3090,7 @@ mod tests {
 
         // Verify tool metadata updated
         let tools = server.tools.read().await;
-        let tool_metadata = &tools.get("success_tool").unwrap().metadata;
+        let tool_metadata = &tools.get("success_tool").ok_or_else(|| P2PError::Mcp(McpError::NotFound("Tool not found".to_string())))?.metadata;
         assert_eq!(tool_metadata.call_count, 1);
         assert!(tool_metadata.last_called.is_some());
 
@@ -3242,11 +3243,11 @@ mod tests {
         assert!(capabilities.resources.is_some());
         assert!(capabilities.logging.is_some());
 
-        let tools_cap = capabilities.tools.unwrap();
+        let tools_cap = capabilities.tools.expect("Test assertion failed");
         assert_eq!(tools_cap.list_changed, Some(true));
 
-        let logging_cap = capabilities.logging.unwrap();
-        let levels = logging_cap.levels.unwrap();
+        let logging_cap = capabilities.logging.expect("Test assertion failed");
+        let levels = logging_cap.levels.expect("Test assertion failed");
         assert!(levels.contains(&MCPLogLevel::Debug));
         assert!(levels.contains(&MCPLogLevel::Info));
         assert!(levels.contains(&MCPLogLevel::Warning));
@@ -3272,8 +3273,8 @@ mod tests {
             },
         };
 
-        let serialized = serde_json::to_string(&init_msg).unwrap();
-        let deserialized: MCPMessage = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&init_msg).expect("Test assertion failed");
+        let deserialized: MCPMessage = serde_json::from_str(&serialized).expect("Test assertion failed");
 
         match deserialized {
             MCPMessage::Initialize { protocol_version, client_info, .. } => {
@@ -3292,8 +3293,8 @@ mod tests {
             text: "Hello, world!".to_string(),
         };
 
-        let serialized = serde_json::to_string(&text_content).unwrap();
-        let deserialized: MCPContent = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&text_content).expect("Test assertion failed");
+        let deserialized: MCPContent = serde_json::from_str(&serialized).expect("Test assertion failed");
 
         match deserialized {
             MCPContent::Text { text } => assert_eq!(text, "Hello, world!"),
@@ -3306,8 +3307,8 @@ mod tests {
             mime_type: "image/png".to_string(),
         };
 
-        let serialized = serde_json::to_string(&image_content).unwrap();
-        let deserialized: MCPContent = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&image_content).expect("Test assertion failed");
+        let deserialized: MCPContent = serde_json::from_str(&serialized).expect("Test assertion failed");
 
         match deserialized {
             MCPContent::Image { data, mime_type } => {
@@ -3369,14 +3370,14 @@ mod tests {
             message_id: uuid::Uuid::new_v4().to_string(),
             source_peer: source_peer.clone(),
             target_peer: Some(target_peer.clone()),
-            timestamp: SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_else(|_| Duration::from_secs(0)).as_secs(),
             payload: MCPMessage::ListTools { cursor: None },
             ttl: 10,
         };
 
         // Test serialization
-        let serialized = serde_json::to_string(&p2p_message).unwrap();
-        let deserialized: P2PMCPMessage = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&p2p_message).expect("Test assertion failed");
+        let deserialized: P2PMCPMessage = serde_json::from_str(&serialized).expect("Test assertion failed");
 
         assert_eq!(deserialized.message_type, P2PMCPMessageType::Request);
         assert_eq!(deserialized.source_peer, source_peer);
@@ -3401,7 +3402,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mcp_server_stats() {
+    async fn test_mcp_server_stats() -> Result<()> {
         let server = create_test_mcp_server().await;
 
         // Initial stats should be zero
@@ -3415,10 +3416,12 @@ mod tests {
 
         // Register a tool and verify stats update
         let tool = create_test_tool("stats_test_tool");
-        server.register_tool(tool).await.unwrap();
+        server.register_tool(tool).await?;
 
         let stats = server.stats.read().await;
         assert_eq!(stats.total_tools, 1);
+        
+        Ok(())
     }
 
     #[tokio::test]
@@ -3436,9 +3439,10 @@ mod tests {
         ];
 
         for level in levels {
-            let serialized = serde_json::to_string(&level).unwrap();
-            let deserialized: MCPLogLevel = serde_json::from_str(&serialized).unwrap();
+            let serialized = serde_json::to_string(&level).expect("Test assertion failed");
+            let deserialized: MCPLogLevel = serde_json::from_str(&serialized).expect("Test assertion failed");
             assert_eq!(level as u8, deserialized as u8);
+    Ok(())
         }
     }
 
@@ -3452,8 +3456,8 @@ mod tests {
             auth_required: true,
         };
 
-        let serialized = serde_json::to_string(&endpoint).unwrap();
-        let deserialized: MCPEndpoint = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&endpoint).expect("Test assertion failed");
+        let deserialized: MCPEndpoint = serde_json::from_str(&serialized).expect("Test assertion failed");
 
         assert_eq!(deserialized.protocol, "p2p");
         assert_eq!(deserialized.address, "127.0.0.1");
@@ -3483,8 +3487,8 @@ mod tests {
         };
 
         // Test serialization
-        let serialized = serde_json::to_string(&metadata).unwrap();
-        let deserialized: MCPServiceMetadata = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&metadata).expect("Test assertion failed");
+        let deserialized: MCPServiceMetadata = serde_json::from_str(&serialized).expect("Test assertion failed");
 
         assert_eq!(deserialized.name, "test_service");
         assert_eq!(deserialized.version, "2.1.0");
@@ -3496,21 +3500,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_function_tool_handler() {
+    async fn test_function_tool_handler() -> Result<()> {
         // Test function tool handler creation and execution
         let handler = FunctionToolHandler::new(|args: Value| async move {
             let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("world");
-            Ok(json!({"greeting": format!("Hello, {}!", name).into()}))
+            Ok(json!({"greeting": format!("Hello, {}!", name)}))
         });
 
         let args = json!({"name": "Alice"});
-        let result = handler.execute(args).await.unwrap();
+        let result = handler.execute(args).await?;
         assert_eq!(result["greeting"], "Hello, Alice!");
 
         // Test with missing argument
         let empty_args = json!({});
-        let result = handler.execute(empty_args).await.unwrap();
+        let result = handler.execute(empty_args).await?;
         assert_eq!(result["greeting"], "Hello, world!");
+        
+        Ok(())
     }
 
     #[tokio::test]
@@ -3540,15 +3546,15 @@ mod tests {
         assert!(capabilities.resources.is_some());
         assert!(capabilities.logging.is_some());
 
-        let tools_cap = capabilities.tools.unwrap();
+        let tools_cap = capabilities.tools.expect("Test assertion failed");
         assert_eq!(tools_cap.list_changed, Some(true));
 
-        let resources_cap = capabilities.resources.unwrap();
+        let resources_cap = capabilities.resources.expect("Test assertion failed");
         assert_eq!(resources_cap.subscribe, Some(true));
         assert_eq!(resources_cap.list_changed, Some(true));
 
-        let logging_cap = capabilities.logging.unwrap();
-        let levels = logging_cap.levels.unwrap();
+        let logging_cap = capabilities.logging.expect("Test assertion failed");
+        let levels = logging_cap.levels.expect("Test assertion failed");
         assert!(levels.contains(&MCPLogLevel::Debug));
         assert!(levels.contains(&MCPLogLevel::Info));
         assert!(levels.contains(&MCPLogLevel::Warning));
@@ -3596,8 +3602,8 @@ mod tests {
             P2PMCPMessageType::ServiceAdvertisement,
             P2PMCPMessageType::ServiceDiscovery,
         ] {
-            let serialized = serde_json::to_string(&msg_type).unwrap();
-            let deserialized: P2PMCPMessageType = serde_json::from_str(&serialized).unwrap();
+            let serialized = serde_json::to_string(&msg_type).expect("Test assertion failed");
+            let deserialized: P2PMCPMessageType = serde_json::from_str(&serialized).expect("Test assertion failed");
             assert_eq!(msg_type, deserialized);
         }
     }

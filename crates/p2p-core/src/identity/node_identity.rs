@@ -110,7 +110,7 @@ impl ProofOfWork {
             if *byte == 0 {
                 zero_bits += 8;
             } else {
-                zero_bits += byte.leading_zeros() as u32;
+                zero_bits += byte.leading_zeros();
                 break;
             }
         }

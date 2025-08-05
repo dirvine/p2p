@@ -100,7 +100,7 @@ async fn create_chat_room() -> Result<()> {
     println!("{}", "Type messages to send, or /quit to exit\n".dimmed());
     
     // Spawn event handler
-    let node_clone = node.clone();
+    let _node_clone = node.clone();
     tokio::spawn(async move {
         while let Ok(event) = events.recv().await {
             match event {
@@ -122,7 +122,6 @@ async fn create_chat_room() -> Result<()> {
                     print!("> ");
                     io::stdout().flush().unwrap();
                 }
-                _ => {}
             }
         }
     });

@@ -193,7 +193,7 @@ async fn test_full_network_simulation() {
 }
 
 #[tokio::test]
-async fn test_adaptive_routing_layers() {
+async fn test_adaptive_routing_layers() -> Result<()> {
     let sim = NetworkSimulation::new(5).await;
     sim.join_all_nodes().await;
     
@@ -211,10 +211,11 @@ async fn test_adaptive_routing_layers() {
             println!("Routing coordination result: {:?}", e);
         }
     }
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_ml_optimization_impact() {
+async fn test_ml_optimization_impact() -> Result<()> {
     // Create two networks - one with ML, one without
     let identity1 = NodeIdentity::generate().unwrap();
     let identity2 = NodeIdentity::generate().unwrap();
@@ -259,6 +260,7 @@ async fn test_ml_optimization_impact() {
     
     // In a real network, ML should improve performance
     // In this simulation, we just verify both work
+    Ok(())
 }
 
 #[tokio::test]

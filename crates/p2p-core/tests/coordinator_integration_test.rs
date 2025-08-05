@@ -2,7 +2,7 @@
 
 use saorsa_core::adaptive::{
     NetworkCoordinator, NetworkConfig, NodeIdentity, ContentHash,
-    DegradationReason, NetworkStats,
+    coordinator::DegradationReason,
 };
 use std::time::Duration;
 use tokio::time::timeout;

@@ -537,7 +537,7 @@ mod tests {
     fn create_test_endpoint() -> PeerEndpoint {
         PeerEndpoint::new(
             EndpointId::new(),
-            NetworkAddress::from_str("192.168.1.1:8080").unwrap(),
+            "192.168.1.1:8080".parse::<NetworkAddress>().unwrap(),
             NatType::FullCone,
             vec!["coordinator1".to_string()],
             Some("test-device".to_string()),

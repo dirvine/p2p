@@ -18,6 +18,7 @@ use crate::{P2PError, Result};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::fs;
+use sha2::Digest;
 
 impl NodeIdentity {
     /// Save identity to file
@@ -63,7 +64,7 @@ impl NodeIdentity {
     pub fn default_path() -> Result<PathBuf> {
         let home = dirs::home_dir()
             .ok_or_else(|| P2PError::Identity(crate::error::IdentityError::InvalidFormat(
-                "Could not determine home directory".to_string()
+                "Could not determine home directory".into()
             )))?;
         
         Ok(home.join(".p2p").join("identity.json"))
@@ -83,7 +84,7 @@ impl NodeIdentity {
     
     /// Verify proof of work
     pub fn verify_proof_of_work(&self) -> bool {
-        self.proof_of_work.verify(&self.node_id, self.proof_of_work.difficulty)
+        self.proof_of_work().verify(self.node_id(), self.proof_of_work().difficulty)
     }
 }
 
@@ -99,7 +100,15 @@ impl ProofOfWork {
         let mut nonce = 0u64;
         
         loop {
-            if Self::check_pow(node_id, nonce, difficulty) {
+            // Calculate hash to check proof of work
+            let mut hasher = sha2::Sha256::new();
+            hasher.update(node_id.to_bytes());
+            hasher.update(nonce.to_le_bytes());
+            let hash = hasher.finalize();
+            
+            // Check leading zeros
+            let leading_zeros = hash.iter().take_while(|&&b| b == 0).count() as u32 * 8;
+            if leading_zeros >= difficulty {
                 return Ok(ProofOfWork {
                     nonce,
                     difficulty,

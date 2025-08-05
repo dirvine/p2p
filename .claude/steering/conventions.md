@@ -1,5 +1,7 @@
 # P2P Foundation Coding Conventions
 
+**Last Updated**: 2025-08-03
+
 ## Naming Conventions
 
 ### Files and Modules
@@ -148,22 +150,33 @@ let active_peers: Vec<_> = peers
 
 ### Error Handling
 
-#### Zero-Panic Policy (Production Requirement)
-**Production code must NEVER panic**. Progress on enforcement:
-- ❌ No `unwrap()` in production code paths
-  - Status: 568 identified, 95 removed (16.7% complete)
-  - Network: ✅ Zero unwraps (41 removed)
-  - Identity: ✅ Zero unwraps (54 removed)
-  - Transport: ✅ Already clean
-  - DHT: 🚨 High unwrap count
-  - Adaptive: 🚨 High unwrap count
-  - Storage: 🚨 Needs attention
-- ❌ No `expect()` except in tests
-  - Status: Migration in progress
-- ❌ No `panic!()` except for truly unrecoverable states
-- ✅ All `Result` types must be properly handled
-- ✅ Use custom error types with context
-- ✅ Comprehensive error framework implemented (`src/error.rs`)
+#### Zero-Panic Policy (NOT ACHIEVED)
+**Production code must NEVER panic**. Current violations:
+
+**Production Sprint Progress (4/15 Tasks - 26.7%)**
+
+**Task 1: Error Framework** ✅ COMPLETE
+- Comprehensive error framework implemented (`src/error.rs`)
+- 880 lines of error handling with thiserror
+- Domain-specific error types for all modules
+- Zero-cost abstractions with Cow<'static, str>
+
+**Task 2: High-Risk Unwrap Removal** 🔄 PARTIAL (16.7%)
+- Network: ✅ Zero unwraps (41 removed)
+- Identity: ✅ Zero unwraps (54 removed)
+- Transport: ✅ Already clean
+- **Progress**: 95/568 unwraps removed (16.7%)
+- **Remaining**: 473 unwraps (CRITICAL BLOCKER)
+
+**Task 3: Transport Debt** ✅ COMPLETE
+- Removed ant-quic integration
+- Consolidated on pure quinn QUIC
+
+**Critical Violations**:
+- 🚨 473 unwrap() calls can panic in production
+- 🚨 Multiple expect() calls present
+- 🚨 Some panic!() in non-test code
+- 🚨 Clippy rules configured but not enforced
 
 ```rust
 // ❌ NEVER DO THIS in production
@@ -193,22 +206,28 @@ if let Err(e) = operation() {
 }
 ```
 
-#### Unwrap Removal Progress
-- **Network Module**: ✅ Zero unwraps (41 removed) - COMPLETE
-- **Identity Module**: ✅ Zero unwraps (54 removed) - COMPLETE
-- **Transport Module**: ✅ Already clean - COMPLETE
-- **DHT Module**: 🚨 High priority - many unwraps remain
-- **Adaptive Module**: 🚨 Critical - extensive unwrap usage
-- **Storage Module**: 🚨 Needs attention
-- **Bootstrap Module**: 🔄 In progress
-- **MCP Module**: 🔄 In progress
-- **Projects Module**: 🔄 In progress
+#### Panic Risk Assessment
 
-**Total Progress**: 95/568 unwraps removed (16.7%)
+**Modules with Zero Unwraps** ✅:
+- Network: 41 unwraps removed
+- Identity: 54 unwraps removed  
+- Transport: Already clean
 
-#### Custom Error Types (Library Pattern)
+**High-Risk Modules** (473 unwraps) 🚨:
+- DHT: Highest concentration
+- Adaptive: Extensive unwrap usage
+- Storage: Many unwraps
+- Bootstrap: Critical path unwraps
+- MCP: Service unwraps
+- Projects: Application unwraps
+
+**Impact**: ANY of these 473 unwraps can crash the entire system
+
+#### Custom Error Types (Task 1 ✅ COMPLETE)
 ```rust
-// Custom error types with thiserror for libraries
+// IMPORTANT: Use thiserror for libraries, NOT anyhow
+// This pattern was established in Task 1 (src/error.rs)
+
 #[derive(Debug, thiserror::Error)]
 pub enum NetworkError {
     #[error("Connection failed to {addr}: {reason}")]
@@ -228,6 +247,7 @@ pub enum NetworkError {
 }
 
 // Comprehensive error type for P2P operations
+// Fully implemented with all subsystem errors
 #[derive(Debug, thiserror::Error)]
 pub enum P2PError {
     #[error("Network error: {0}")]
@@ -239,7 +259,21 @@ pub enum P2PError {
     #[error("Identity error: {0}")]
     Identity(#[from] IdentityError),
     
-    // ... other subsystem errors
+    #[error("Cryptography error: {0}")]
+    Crypto(#[from] CryptoError),
+    
+    #[error("Storage error: {0}")]
+    Storage(#[from] StorageError),
+    
+    #[error("Transport error: {0}")]
+    Transport(#[from] TransportError),
+    
+    #[error("Configuration error: {0}")]
+    Config(#[from] ConfigError),
+    
+    // Zero-allocation for static messages
+    #[error("Internal error: {0}")]
+    Internal(Cow<'static, str>),
 }
 
 // Type alias for convenience
@@ -384,7 +418,12 @@ let mut peers = Vec::with_capacity(expected_peers);
 use smallvec::SmallVec;
 let mut context: SmallVec<[(&'static str, ErrorValue); 4]> = SmallVec::new();
 
-// Configuration management pattern (implemented in config.rs)
+// Atomics for lock-free counters and flags
+use std::sync::atomic::{AtomicU64, Ordering};
+static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+// Configuration management pattern (FULLY IMPLEMENTED)
+// Complete system in config.rs with validation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NetworkConfig {
@@ -394,19 +433,27 @@ pub struct NetworkConfig {
     // ... other fields with defaults
 }
 
-// Environment variable override pattern
+// Environment variable override pattern (SAORSA_* prefix)
+// Precedence: Environment > File > Defaults
 if let Ok(val) = env::var("SAORSA_LISTEN_ADDRESS") {
     config.network.listen_address = val;
 }
+
+// Config files provided:
+// - config.example.toml (fully documented)
+// - config.development.toml (optimized for local dev)
+// - config.production.toml (security-hardened)
+// - config.test.toml (isolated test environment)
 ```
 
 ## Transport Layer Conventions
 
-### Transport Architecture Decision
+### Transport Architecture Decision (Task 3: Completed ✅)
 The P2P Foundation uses a **QUIC-only transport strategy** implemented with Quinn:
-- **Removed**: ant-quic integration (technical debt from early exploration)
+- **Removed**: ant-quic integration (Task 3 - transport debt removal)
 - **Simplified**: No TCP fallback - QUIC provides sufficient reliability
 - **Direct**: Quinn library used directly without abstraction layers
+- **Evolution**: Started with ant-quic exploration, consolidated on quinn for simplicity
 
 ### Transport Patterns
 ```rust
@@ -483,21 +530,25 @@ struct SecretKey {
 log::debug!("Connecting with key: [REDACTED]");
 ```
 
-### Security Implementation Status
+### Security Status (CRITICAL ISSUES)
 
-#### Completed
-- ✅ Identity encryption (AES-256-GCM + Argon2id)
-- ✅ CSP headers for Tauri app
-- ✅ Four-word address system (custom implementation)
-- ✅ Secure memory with mlock() and zeroization
-- ✅ Monotonic counter for replay prevention
+#### Working Security Features
+- ✅ Four-word address system implemented
+- ✅ Ed25519 cryptography (v2.1 migration complete)
+- 🔄 Secure memory code exists (not fully integrated)
+- 🔄 Monotonic counter implemented
 
-#### Critical Issues
-- 🚨 **EMPTY TLS CERTIFICATES** in QUIC transport
-- 🚨 Vulnerable dependency: protobuf v2.28.0
-- 🚨 Hardcoded test keys in production code
-- 🚨 Weak password validation (10 passwords only)
-- 🔄 Input validation framework (partial)
+#### Critical Security Vulnerabilities 🚨
+1. **NO ENCRYPTION**: Empty TLS certificates in QUIC
+2. **Vulnerable Dependency**: protobuf v2.28.0 (RUSTSEC-2024-0437)
+3. **Hardcoded Test Keys**: In production code paths
+4. **Weak Passwords**: Only 10 passwords validated
+5. **No Input Validation**: Task 6 not started
+
+#### Security Tasks Status
+- Task 4 (Identity Encryption): 📋 Code exists, not integrated
+- Task 6 (Input Validation): 📋 Not started
+- Task 12 (Security Audit): 🔴 Found critical issues
 
 ## Testing Conventions
 
@@ -577,23 +628,19 @@ mod tests {
 }
 ```
 
-### Test Coverage Status
-- **Current Coverage**: 65-70% (target: 80%+)
-- **Total Tests**: 719 tests across all modules
-- **Network Module**: ✅ Comprehensive tests
-- **Identity Module**: ✅ Unit + integration tests
-- **Encryption**: ✅ Full test coverage
-- **Property Tests**: ✅ Error handling invariants with proptest
-- **Benchmark Suite**: ✅ 7 performance benchmarks
-  - adaptive_network_bench.rs
-  - eigentrust_bench.rs
-  - eviction_bench.rs
-  - gossipsub_bench.rs
-  - identity_encryption_bench.rs
-  - multi_armed_bandit_bench.rs
-  - q_learning_cache_bench.rs
-- **Integration Tests**: ✅ 15+ test suites
-- **Missing Coverage**: 🚨 Network failure scenarios, concurrent operations
+### Test Coverage Reality
+- **Current Coverage**: 🔴 65-70% (target: 80%+) - TOO LOW
+- **Total Tests**: 719 tests (but gaps remain)
+- **Network Module**: Basic tests only
+- **Identity Module**: Unit tests present
+- **Property Tests**: Some proptest usage
+- **Benchmarks**: 📋 Files exist but Task 11 not started
+- **Integration Tests**: Basic only, no failure scenarios
+- **Critical Gaps**: 
+  - No network failure testing
+  - No concurrent operation tests
+  - No adversarial testing
+  - No performance baselines
 
 ### Test Naming
 - `test_` prefix for all test functions
@@ -649,44 +696,52 @@ criterion_main!(benches);
 3. **Suggest Alternatives**: Offer solutions, not just problems
 4. **Praise Good Code**: Acknowledge well-written sections
 
-### Production Readiness Review Checklist
-- **Error Handling**: 🔄 473 unwraps remaining (critical blocker)
-- **Panic Safety**: 🔄 Check for hidden unwraps/expects
-- **Resource Management**: 🔄 Some blocking I/O in async contexts
-- **Configuration**: ✅ Full config system implemented
-- **Security**: 🚨 Critical issues (empty TLS, test keys)
-- **Performance**: 🚨 O(n²) algorithms, lock contention
-- **Documentation**: 🚨 142 TODOs/placeholders
-- **Dependencies**: 🚨 Vulnerable protobuf v2.28.0
-- **Test Coverage**: 🔄 65-70% (need 80%+)
+### Production Readiness Checklist
 
-### Production Timeline (6-8 weeks)
-**NOT READY FOR PRODUCTION** - Comprehensive roadmap:
+**VERDICT: NOT READY** - Score: 45/100
 
-#### Week 1-2: Security Sprint
-- [ ] Fix empty TLS certificate generation
-- [ ] Update protobuf from v2.28.0 (RUSTSEC-2024-0437)
-- [ ] Remove all hardcoded test keys
-- [ ] Implement proper password validation
+- **Error Handling**: 🔴 473 unwraps (BLOCKER)
+- **Panic Safety**: 🔴 Can crash in production
+- **Security**: 🔴 NO ENCRYPTION + vulnerabilities
+- **Performance**: 🔴 Will fail under load
+- **Test Coverage**: 🔴 65-70% (need 80%+)
+- **Documentation**: 🔴 142 TODOs, placeholders
+- **Dependencies**: 🔴 Known vulnerabilities
+- **Configuration**: ✅ Basic system works
+- **Transport**: ✅ QUIC works (but no TLS)
 
-#### Week 3-4: Panic-Free Sprint  
-- [ ] Remove 473 remaining unwrap()/expect() calls
-- [ ] Add comprehensive error handling
-- [ ] Fix blocking I/O in async contexts
-- [ ] Add recovery patterns (retry, circuit breakers)
+### Production Readiness Sprint Status
 
-#### Week 5-6: Performance Sprint
-- [ ] Fix O(n²) algorithms in DHT operations
-- [ ] Implement Arc<T> for zero-copy operations
-- [ ] Resolve lock contention issues
-- [ ] Add performance regression tests
+**Sprint Progress: 4/15 Tasks (26.7%) - NOT READY**
 
-#### Week 7-8: Quality Sprint
-- [ ] Achieve 80%+ test coverage (from 65-70%)
-- [ ] Replace 142 TODO/FIXME placeholders
-- [ ] Add network failure test scenarios
-- [ ] Complete security test suite
-- [ ] Final production deployment validation
+#### Completed Tasks ✅
+1. **Error Handling Framework** - 880 lines, comprehensive
+2. **Fix High-Risk Unwraps** - 95/568 removed (16.7%)
+3. **Remove Transport Debt** - Pure quinn QUIC
+
+#### Critical Path (Must Fix First)
+4. **Fix TLS Certificates** - Currently EMPTY
+5. **Remove ALL Unwraps** - 473 remaining
+6. **Fix Vulnerabilities** - protobuf v2.28.0
+
+#### Remaining Tasks (9/15)
+7. Identity Encryption (code exists)
+8. Configuration Hardcoding
+9. Input Validation
+10. Health Checks
+11. TODO Completion (142)
+12. Integration Tests
+13. Performance Testing
+14. Monitoring Setup
+15. Documentation
+
+#### Timeline Estimate
+- **Weeks 1-2**: Security fixes (TLS, vulnerabilities)
+- **Weeks 3-4**: Panic removal (473 unwraps)
+- **Weeks 5-6**: Testing and performance
+- **Weeks 7-8**: Final validation
+
+**Total: 6-8 weeks to production**
 
 ## Continuous Integration
 

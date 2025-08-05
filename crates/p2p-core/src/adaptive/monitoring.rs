@@ -1277,7 +1277,7 @@ mod tests {
         
         // Check received logs
         let mut count = 0;
-        while let Ok(Some(entry)) = rx.try_recv() {
+        while let Ok(entry) = rx.try_recv() {
             count += 1;
             assert!(entry.level <= LogLevel::Debug);
         }

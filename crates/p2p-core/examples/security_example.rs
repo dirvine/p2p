@@ -20,7 +20,7 @@ use std::time::Duration;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create a node identity
-    let identity = NodeIdentity::generate().await?;
+    let identity = NodeIdentity::generate()?;
     println!("Generated node identity: {:?}", identity.node_id());
     
     // Configure security settings
