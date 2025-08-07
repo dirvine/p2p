@@ -20,16 +20,15 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout p2p repository
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
-        path: p2p
+        path: workspace/p2p
     
-    - name: Checkout four-word-networking dependency
+    - name: Checkout four-word-networking dependency  
       uses: actions/checkout@v4
       with:
         repository: dirvine/four-word-networking
-        path: four-word-networking
+        path: workspace/four-word-networking
     
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -51,27 +50,27 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-          p2p/target
+          workspace/p2p/target
         key: ${{ runner.os }}-cargo-communitas-${{ hashFiles('**/Cargo.lock') }}
         
     - name: Build
       run: |
-        cd p2p/apps/communitas
+        cd workspace/p2p/apps/communitas
         cargo build --release --all-features
         
     - name: Test
       run: |
-        cd p2p/apps/communitas
+        cd workspace/p2p/apps/communitas
         cargo test --all-features
         
     - name: Clippy
       run: |
-        cd p2p/apps/communitas
+        cd workspace/p2p/apps/communitas
         cargo clippy --all-features -- -W clippy::correctness -W clippy::suspicious -A warnings
         
     - name: Format check
       run: |
-        cd p2p/apps/communitas
+        cd workspace/p2p/apps/communitas
         cargo fmt -- --check
 
   # Tauri build will be added in Task 2
