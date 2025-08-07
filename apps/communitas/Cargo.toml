@@ -1,5 +1,6 @@
 [package]
 name = "communitas"
+# Fixed four-word-networking import dependency issue
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
