@@ -17,7 +17,7 @@ identifier = "com.p2pfoundation.communitas"
 
 [dependencies]
 # P2P Foundation
-saorsa-core = { version = "0.2.6", path = "../../crates/p2p-core" }
+saorsa-core = { version = "0.2.6" }
 
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }
