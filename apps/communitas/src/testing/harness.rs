@@ -2,6 +2,7 @@
 
 use super::{TestScenario, TestResult, TestMetrics};
 use anyhow::Result;
+use std::fmt;
 
 /// Test harness for running scenarios
 pub struct TestHarness {
@@ -11,11 +12,23 @@ pub struct TestHarness {
     test_nodes: Vec<TestNode>,
 }
 
+impl fmt::Debug for TestHarness {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TestHarness")
+            .field("scenarios_count", &self.scenarios.len())
+            .field("test_nodes", &self.test_nodes)
+            .finish()
+    }
+}
+
 /// Test node instance
+#[derive(Debug)]
 pub struct TestNode {
     /// Node ID
+    #[allow(dead_code)]
     pub id: String,
     /// Four-word address
+    #[allow(dead_code)]
     pub address: String,
     // TODO: Add actual P2P node instance
 }
