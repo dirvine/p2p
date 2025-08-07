@@ -22,11 +22,7 @@ use std::fmt::{self, Display};
 
 use serde::{Deserialize, Serialize};
 use anyhow::{anyhow, Result};
-
-// Note: The four-word-networking crate is designed for IP addresses,
-// while our four_words.rs module handles node ID encoding.
-// This address module could potentially use four-word-networking in the future
-// if we want to encode IP addresses specifically.
+use four_word_networking::FourWordEncoder;
 
 /// Network address that can be represented as IP:port or four-word format
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -91,23 +87,15 @@ impl NetworkAddress {
     /// Encode a SocketAddr to four-word format
     #[cfg(feature = "four-word-addresses")]
     fn encode_four_words(addr: &SocketAddr) -> Option<String> {
-        // Generate a simple four-word representation for IP addresses
-        // Note: Could use four-word-networking crate here for better encoding
-        let ip_bytes = match addr.ip() {
-            std::net::IpAddr::V4(ip) => ip.octets().to_vec(),
-            std::net::IpAddr::V6(ip) => ip.octets().to_vec(),
-        };
-        
-        // Simple placeholder: convert IP and port to words
-        let words = ["alpha", "beta", "gamma", "delta", "echo", "foxtrot", "golf", "hotel"]; // placeholder
-        let word_combo = format!("{}-{}-{}-{}", 
-            words[ip_bytes[0] as usize % words.len()],
-            words[ip_bytes.get(1).copied().unwrap_or(0) as usize % words.len()],
-            words[ip_bytes.get(2).copied().unwrap_or(0) as usize % words.len()],
-            words[(addr.port() % words.len() as u16) as usize]
-        );
-        
-        Some(word_combo)
+        // Use four-word-networking for proper encoding
+        let encoder = FourWordEncoder::new();
+        match encoder.encode(*addr) {
+            Ok(encoding) => Some(encoding.to_string()),
+            Err(e) => {
+                log::warn!("Failed to encode address {addr}: {e}");
+                None
+            }
+        }
     }
 
     /// Encode a SocketAddr to four-word format (feature disabled)
@@ -119,23 +107,16 @@ impl NetworkAddress {
     /// Decode four-word format to NetworkAddress
     #[cfg(feature = "four-word-addresses")]
     pub fn from_four_words(words: &str) -> Result<Self> {
-        // Decode four-word format to address
-        // Note: This is a placeholder implementation
-        // This is a very basic reverse mapping - in real implementation would be more sophisticated
+        // Use four-word-networking for proper decoding
+        let encoder = FourWordEncoder::new();
         
-        if words.contains("-") {
-            // Try to parse as our simple placeholder format
-            // For now, just return a default address
-            let socket_addr = SocketAddr::from_str("127.0.0.1:8080")
-                .map_err(|e| anyhow!("Invalid address format: {}", e))?;
-            
-            Ok(Self {
-                socket_addr,
-                four_words: Some(words.to_string()),
-            })
-        } else {
-            Err(anyhow!("Invalid four-word format: {}", words))
-        }
+        let socket_addr = encoder.decode(words)
+            .map_err(|e| anyhow!("Failed to decode four-word address '{}': {}", words, e))?;
+        
+        Ok(Self {
+            socket_addr,
+            four_words: Some(words.to_string()),
+        })
     }
 
     /// Decode four-word format to NetworkAddress (feature disabled)

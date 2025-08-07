@@ -307,8 +307,8 @@ impl StorageManager {
     }
 }
 
-/// Multi-device sync manager (temporarily disabled)
 /*
+// Multi-device sync manager (temporarily disabled)
 pub struct SyncManager {
     storage: StorageManager,
     identity: EnhancedIdentity,

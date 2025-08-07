@@ -630,13 +630,13 @@ impl Validate for ApiRequest {
 }
 
 /// Configuration value validation
-pub fn validate_config_value<T: std::str::FromStr>(
+pub fn validate_config_value<T>(
     value: &str,
     min: Option<T>,
     max: Option<T>,
 ) -> P2pResult<T>
 where
-    T: PartialOrd + std::fmt::Display,
+    T: std::str::FromStr + PartialOrd + std::fmt::Display,
 {
     let parsed = value.parse::<T>()
         .map_err(|_| ValidationError::InvalidFormat(
