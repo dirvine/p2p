@@ -36,22 +36,22 @@ jobs:
         
     - name: Build
       run: |
-        cd apps/communitas/src-tauri
+        cd apps/communitas
         cargo build --release --all-features
         
     - name: Test
       run: |
-        cd apps/communitas/src-tauri
+        cd apps/communitas
         cargo test --all-features
         
     - name: Clippy
       run: |
-        cd apps/communitas/src-tauri
+        cd apps/communitas
         cargo clippy --all-features -- -D warnings
         
     - name: Format check
       run: |
-        cd apps/communitas/src-tauri
+        cd apps/communitas
         cargo fmt -- --check
 
   # Tauri build will be added in Task 2
