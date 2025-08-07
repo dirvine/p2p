@@ -22,6 +22,8 @@ use std::fmt::{self, Display};
 
 use serde::{Deserialize, Serialize};
 use anyhow::{anyhow, Result};
+
+#[cfg(feature = "four-word-addresses")]
 use four_word_networking::FourWordEncoder;
 
 /// Network address that can be represented as IP:port or four-word format
