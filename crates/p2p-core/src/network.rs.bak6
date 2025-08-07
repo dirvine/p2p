@@ -561,30 +561,9 @@ impl P2PNode {
             }
         };
         
-        // Initialize transport manager with QUIC preferred and TCP fallback
-        let transport_options = TransportOptions::default();
-        let transport_manager = TransportManager::new(
-            TransportSelection::default(), // Prefer QUIC with TCP fallback
-            transport_options.clone()
-        );
-        
-        // Add QUIC transport (preferred) - DISABLED during ant-quic migration
-        // TODO: Reimplement using AntQuicAdapter API
-        /*
-        match QuicTransport::new(transport_options.clone()) {
-            Ok(quic_transport) => {
-                transport_manager.register_transport(Arc::new(quic_transport));
-                info!("Registered QUIC transport");
-            }
-            Err(e) => {
-                warn!("Failed to create QUIC transport: {}, continuing without QUIC", e);
-            }
-        }
-        */
-        
-        // Only QUIC transport is supported - no TCP fallback
-        
-        let transport_manager = Arc::new(transport_manager);
+        // Initialize P2P network node with ant-quic
+        let bind_addr = std::net::SocketAddr::from(([0, 0, 0, 0], config.port));
+        let network_node = Arc::new(P2PNetworkNode::new(bind_addr).await?);
         
         // Initialize rate limiter with default config
         let rate_limiter = Arc::new(RateLimiter::new(RateLimitConfig::default()));
@@ -601,10 +580,9 @@ impl P2PNode {
             dht,
             resource_manager,
             bootstrap_manager,
-            transport_manager,
+            network_node,
             rate_limiter,
-        };
-        
+        };        
         info!("Created P2P node with peer ID: {}", node.peer_id);
         
         // Connect MCP server to network layer if enabled
@@ -638,7 +616,7 @@ impl P2PNode {
             _mcp_server.set_network_sender(Arc::new(network_sender)).await;
             
             // Start background task to handle network messages
-            let transport_manager = Arc::clone(&self.transport_manager);
+            let network_node = Arc::clone(&self.network_node);
             let _peer_id_for_task = self.peer_id.clone();
             tokio::spawn(async move {
                 while let Some((peer_id, protocol, data)) = send_rx.recv().await {
@@ -651,7 +629,7 @@ impl P2PNode {
                     };
                     
                     // Send message using transport manager
-                    let send_result = transport_manager.send_message(&peer_id, message_data).await;
+                    let send_result = network_node.send_to_peer(&peer_id, &message_data).await;
                     handle_message_send_result(send_result, &peer_id).await;
                 }
             });
@@ -769,7 +747,7 @@ impl P2PNode {
         info!("Starting network listeners...");
         
         // Get available transports from transport manager
-        let _transport_manager = &self.transport_manager;
+        let _network_node = &self.network_node;
         
         // Listen on each configured address
         for &socket_addr in &self.config.listen_addrs {
@@ -870,7 +848,7 @@ impl P2PNode {
         let event_tx = self.event_tx.clone();
         let _peer_id = self.peer_id.clone();
         let peers = Arc::clone(&self.peers);
-        let _transport_manager = Arc::clone(&self.transport_manager);
+        let _network_node = Arc::clone(&self.network_node);
         let mcp_server = self.mcp_server.clone();
         let rate_limiter = Arc::clone(&self.rate_limiter);
         
@@ -1307,7 +1285,7 @@ impl P2PNode {
             )))?;
         
         // Use transport manager to establish real connection
-        let peer_id = match self.transport_manager.connect(NetworkAddress::new(socket_addr)).await {
+        let peer_id = match self.network_node.connect_to_peer(socket_addr).await {
             Ok(connected_peer_id) => {
                 info!("Successfully connected to peer: {}", connected_peer_id);
                 connected_peer_id
@@ -1410,7 +1388,7 @@ impl P2PNode {
         let message_data = self.create_protocol_message(protocol, data)?;
         
         // Send message using transport manager with proper error handling
-        match self.transport_manager.send_message(peer_id, message_data).await {
+        match self.network_node.send_message(peer_id, message_data).await {
             Ok(_) => {
                 debug!("Message sent to peer {} via transport layer", peer_id);
             }

@@ -530,19 +530,14 @@ impl KBucket {
         // Check if node already exists
         if let Some(pos) = self.nodes.iter().position(|n| n.peer_id == node.peer_id) {
             // Move to front (most recently seen)
-            // Update existing node safely
-            let updated_node = if let Some(existing_node) = self.nodes.get_mut(pos) {
-                existing_node.touch();
-                existing_node.is_connected = node.is_connected;
-                existing_node.clone()
-            } else {
-                return false; // Position invalid (should not happen)
-            };
-            // Remove and re-add at front
-            self.nodes.remove(pos);
-            self.nodes.push_front(updated_node);
+            let mut existing = self.nodes.remove(pos)
+                .expect("Node position should be valid after successful find");
+            existing.touch();
+            existing.is_connected = node.is_connected;
+            self.nodes.push_front(existing);
             return true;
         }
+        
         if self.nodes.len() < self.capacity {
             // Add new node to front
             self.nodes.push_front(node);

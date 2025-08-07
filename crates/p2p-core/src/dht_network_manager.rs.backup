@@ -20,7 +20,6 @@
 
 use crate::{
     PeerId, Multiaddr, P2PError, Result,
-    error::NetworkError,
     dht::{DHT, DHTConfig, Key, DHTNode, SerializableDHTNode},
     network::{P2PNode, NodeConfig},
 };
@@ -565,7 +564,7 @@ impl DhtNetworkManager {
             payload: operation,
             timestamp: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
-                .map_err(|_| P2PError::Network(NetworkError::ProtocolError("System clock error: unable to get current timestamp".into())))?
+                .unwrap()
                 .as_secs(),
             ttl: 10,
             hop_count: 0,
@@ -929,7 +928,7 @@ impl DhtNetworkManager {
             },
             timestamp: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
-                .map_err(|_| P2PError::Network(NetworkError::ProtocolError("System clock error: unable to get current timestamp".into())))?
+                .unwrap()
                 .as_secs(),
             ttl: request.ttl.saturating_sub(1),
             hop_count: request.hop_count + 1,

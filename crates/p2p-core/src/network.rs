@@ -22,7 +22,9 @@ use crate::mcp::{MCPServer, MCPServerConfig, Tool, MCPCallContext, MCP_PROTOCOL,
 use crate::dht::{DHT, DHTConfig as DHTConfigInner};
 use crate::production::{ProductionConfig, ResourceManager, ResourceMetrics};
 use crate::bootstrap::{BootstrapManager, ContactEntry, QualityMetrics};
-use crate::transport::{TransportManager, QuicTransport, TransportSelection, TransportOptions};
+use crate::transport::ant_quic_adapter::P2PNetworkNode;
+#[allow(unused_imports)] // Temporarily unused during migration
+use crate::transport::{TransportType, TransportOptions};
 use crate::identity::manager::IdentityManagerConfig;
 use crate::config::Config;
 use crate::validation::{RateLimiter, RateLimitConfig};
@@ -480,9 +482,10 @@ pub struct P2PNode {
     bootstrap_manager: Option<Arc<RwLock<BootstrapManager>>>,
     
     /// Transport manager for real network connections
-    transport_manager: Arc<TransportManager>,
+    network_node: Arc<P2PNetworkNode>,
     
     /// Rate limiter for connection and request throttling
+    #[allow(dead_code)]
     rate_limiter: Arc<RateLimiter>,
 }
 
@@ -559,29 +562,32 @@ impl P2PNode {
             }
         };
         
-        // Initialize transport manager with QUIC preferred and TCP fallback
-        let transport_options = TransportOptions::default();
-        let mut transport_manager = TransportManager::new(
-            TransportSelection::default(), // Prefer QUIC with TCP fallback
-            transport_options.clone()
-        );
+        // Initialize P2P network node with ant-quic
+        // Initialize P2P network node with ant-quic
+        let bind_addr = std::net::SocketAddr::from(([0, 0, 0, 0], config.listen_addr.port()));
         
-        // Add QUIC transport (preferred)
-        match QuicTransport::new(transport_options.clone()) {
-            Ok(quic_transport) => {
-                transport_manager.register_transport(Arc::new(quic_transport));
-                info!("Registered QUIC transport");
-            }
-            Err(e) => {
-                warn!("Failed to create QUIC transport: {}, continuing without QUIC", e);
-            }
-        }
+        // Configure bootstrap nodes for ant-quic
+        let bootstrap_nodes: Vec<std::net::SocketAddr> = config.bootstrap_peers_str
+            .iter()
+            .filter_map(|addr_str| addr_str.parse().ok())
+            .collect();
+            
+        let quic_config = ant_quic::QuicNodeConfig {
+            role: if bootstrap_nodes.is_empty() { 
+                ant_quic::EndpointRole::Server { can_coordinate: false } 
+            } else { 
+                ant_quic::EndpointRole::Client 
+            },
+            bootstrap_nodes,
+            enable_coordinator: false,
+            max_connections: config.max_connections.min(1000),
+            connection_timeout: config.connection_timeout,
+            stats_interval: std::time::Duration::from_secs(60),
+            auth_config: ant_quic::auth::AuthConfig::default(),
+            bind_addr: Some(bind_addr),
+        };
         
-        // Only QUIC transport is supported - no TCP fallback
-        
-        let transport_manager = Arc::new(transport_manager);
-        
-        // Initialize rate limiter with default config
+        let network_node = Arc::new(P2PNetworkNode::new_with_config(bind_addr, quic_config).await.map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to create P2P network node: {}", e).into())))?);        // Initialize rate limiter with default config
         let rate_limiter = Arc::new(RateLimiter::new(RateLimitConfig::default()));
         
         let node = Self {
@@ -596,10 +602,9 @@ impl P2PNode {
             dht,
             resource_manager,
             bootstrap_manager,
-            transport_manager,
+            network_node,
             rate_limiter,
-        };
-        
+        };        
         info!("Created P2P node with peer ID: {}", node.peer_id);
         
         // Connect MCP server to network layer if enabled
@@ -633,7 +638,7 @@ impl P2PNode {
             _mcp_server.set_network_sender(Arc::new(network_sender)).await;
             
             // Start background task to handle network messages
-            let transport_manager = Arc::clone(&self.transport_manager);
+            let network_node: Arc<crate::transport::ant_quic_adapter::P2PNetworkNode> = Arc::clone(&self.network_node);
             let _peer_id_for_task = self.peer_id.clone();
             tokio::spawn(async move {
                 while let Some((peer_id, protocol, data)) = send_rx.recv().await {
@@ -646,8 +651,8 @@ impl P2PNode {
                     };
                     
                     // Send message using transport manager
-                    let send_result = transport_manager.send_message(&peer_id, message_data).await;
-                    handle_message_send_result(send_result, &peer_id).await;
+                    let send_result = network_node.send_to_peer_string(&peer_id, &message_data).await;
+                    handle_message_send_result(send_result.map_err(|e| P2PError::Transport(crate::error::TransportError::StreamError(e.to_string().into()))), &peer_id).await;
                 }
             });
             
@@ -764,7 +769,7 @@ impl P2PNode {
         info!("Starting network listeners...");
         
         // Get available transports from transport manager
-        let _transport_manager = &self.transport_manager;
+        let _network_node = &self.network_node;
         
         // Listen on each configured address
         for &socket_addr in &self.config.listen_addrs {
@@ -809,8 +814,10 @@ impl P2PNode {
     
     /// Start a listener on a specific socket address
     async fn start_listener_on_address(&self, addr: std::net::SocketAddr) -> Result<()> {
-        use crate::transport::{Transport};
+        // use crate::transport::{Transport}; // Unused during migration
         
+        // DISABLED during ant-quic migration - TODO: Reimplement using AntQuicAdapter
+        /*
         // Try QUIC first (preferred transport)
         match crate::transport::QuicTransport::new(Default::default()) {
             Ok(quic_transport) => {
@@ -843,13 +850,16 @@ impl P2PNode {
                 warn!("Failed to create QUIC transport for listening: {}", e);
             }
         }
+        */
         
+        warn!("QUIC transport temporarily disabled during ant-quic migration");
         // No TCP fallback - QUIC only
-        Err(crate::P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to start QUIC listener on {addr}").into())))
+        Err(crate::P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to start QUIC listener on {addr} - transport disabled during migration").into())))
     }
     
     /// Start connection acceptor background task
-    async fn start_connection_acceptor(
+    #[allow(dead_code)] // Deprecated during ant-quic migration
+        async fn start_connection_acceptor(
         &self, 
         transport: Arc<dyn crate::transport::Transport>, 
         addr: std::net::SocketAddr,
@@ -861,7 +871,7 @@ impl P2PNode {
         let event_tx = self.event_tx.clone();
         let _peer_id = self.peer_id.clone();
         let peers = Arc::clone(&self.peers);
-        let _transport_manager = Arc::clone(&self.transport_manager);
+        let _network_node = Arc::clone(&self.network_node);
         let mcp_server = self.mcp_server.clone();
         let rate_limiter = Arc::clone(&self.rate_limiter);
         
@@ -1298,7 +1308,7 @@ impl P2PNode {
             )))?;
         
         // Use transport manager to establish real connection
-        let peer_id = match self.transport_manager.connect(NetworkAddress::new(socket_addr)).await {
+        let peer_id = match self.network_node.connect_to_peer_string(socket_addr).await {
             Ok(connected_peer_id) => {
                 info!("Successfully connected to peer: {}", connected_peer_id);
                 connected_peer_id
@@ -1401,7 +1411,7 @@ impl P2PNode {
         let message_data = self.create_protocol_message(protocol, data)?;
         
         // Send message using transport manager with proper error handling
-        match self.transport_manager.send_message(peer_id, message_data).await {
+        match self.network_node.send_message(peer_id, message_data).await {
             Ok(_) => {
                 debug!("Message sent to peer {} via transport layer", peer_id);
             }
@@ -2158,6 +2168,7 @@ impl NodeBuilder {
 }
 
 /// Standalone function to handle received messages without borrowing self
+#[allow(dead_code)] // Deprecated during ant-quic migration
 async fn handle_received_message_standalone(
     message_data: Vec<u8>, 
     peer_id: &PeerId,
@@ -2203,6 +2214,7 @@ async fn handle_received_message_standalone(
 }
 
 /// Standalone function to handle MCP messages
+#[allow(dead_code)] // Deprecated during ant-quic migration
 async fn handle_mcp_message_standalone(
     message_data: Vec<u8>, 
     peer_id: &PeerId,
@@ -2259,6 +2271,7 @@ async fn handle_message_send_result(
 }
 
 /// Helper function to check rate limit
+#[allow(dead_code)] // Deprecated during ant-quic migration
 fn check_rate_limit(
     rate_limiter: &RateLimiter,
     socket_addr: &std::net::SocketAddr,
@@ -2271,6 +2284,7 @@ fn check_rate_limit(
 }
 
 /// Helper function to register a new peer
+#[allow(dead_code)] // Deprecated during ant-quic migration
 async fn register_new_peer(
     peers: &Arc<RwLock<HashMap<PeerId, PeerInfo>>>,
     peer_id: &PeerId,
@@ -2290,6 +2304,7 @@ async fn register_new_peer(
 }
 
 /// Helper function to spawn connection handler
+#[allow(dead_code)] // Deprecated during ant-quic migration
 fn spawn_connection_handler(
     connection: Box<dyn crate::transport::Connection>,
     peer_id: PeerId,
@@ -2303,6 +2318,7 @@ fn spawn_connection_handler(
 }
 
 /// Helper function to handle peer connection
+#[allow(dead_code)] // Deprecated during ant-quic migration
 async fn handle_peer_connection(
     mut connection: Box<dyn crate::transport::Connection>,
     peer_id: PeerId,
@@ -2356,6 +2372,7 @@ async fn handle_peer_connection(
 }
 
 /// Helper function to remove a peer
+#[allow(dead_code)] // Deprecated during ant-quic migration
 async fn remove_peer(
     peers: &Arc<RwLock<HashMap<PeerId, PeerInfo>>>,
     peer_id: &PeerId

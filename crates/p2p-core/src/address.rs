@@ -105,10 +105,9 @@ impl NetworkAddress {
 
 
 
-    /// Decode four-word format to NetworkAddress (feature disabled)
-    #[cfg(not(feature = "four-word-addresses"))]
+    /// Decode four-word format to NetworkAddress (temporarily disabled)
     pub fn from_four_words(_words: &str) -> Result<Self> {
-        Err(anyhow!("Four-word addresses feature not enabled"))
+        Err(anyhow!("Four-word addresses temporarily disabled"))
     }
 
     /// Check if this is an IPv4 address

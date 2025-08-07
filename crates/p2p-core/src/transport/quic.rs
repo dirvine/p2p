@@ -11,10 +11,17 @@
 // distributed under these licenses is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 
-//! QUIC Transport Implementation using Quinn
+//! QUIC Transport Implementation (DEPRECATED - using ant-quic instead)
 //!
-//! This module provides QUIC-based transport using the quinn library.
-//! QUIC provides better performance, 0-RTT connections, and built-in encryption.
+//! This module is deprecated in favor of ant-quic integration.
+//! See ant_quic_adapter.rs for the new implementation.
+
+// This module is temporarily disabled during ant-quic migration
+// TODO: Remove this module completely once ant-quic integration is complete
+
+/*
+// This entire module is commented out during ant-quic migration
+// All the quinn-based code below should be removed once migration is complete
 
 use super::{Transport, Connection, TransportType, TransportOptions, ConnectionInfo, ConnectionQuality};
 use crate::NetworkAddress;
@@ -22,7 +29,7 @@ use crate::error::{P2PError as P2PError, P2pResult as Result, TransportError};
 use crate::identity::NodeIdentity;
 use crate::validation::{ValidationContext, validate_message_size};
 use async_trait::async_trait;
-use quinn::{Endpoint, ServerConfig, ClientConfig, VarInt};
+// use quinn::{Endpoint, ServerConfig, ClientConfig, VarInt}; // Removed - using ant-quic now
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -331,3 +338,4 @@ fn generate_self_signed_cert() -> Result<(CertificateDer<'static>, PrivatePkcs8K
     let key = PrivatePkcs8KeyDer::from(vec![]);
     Ok((cert, key))
 }
+*/

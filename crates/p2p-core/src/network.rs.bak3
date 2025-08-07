@@ -561,30 +561,9 @@ impl P2PNode {
             }
         };
         
-        // Initialize transport manager with QUIC preferred and TCP fallback
-        let transport_options = TransportOptions::default();
-        let transport_manager = TransportManager::new(
-            TransportSelection::default(), // Prefer QUIC with TCP fallback
-            transport_options.clone()
-        );
-        
-        // Add QUIC transport (preferred) - DISABLED during ant-quic migration
-        // TODO: Reimplement using AntQuicAdapter API
-        /*
-        match QuicTransport::new(transport_options.clone()) {
-            Ok(quic_transport) => {
-                transport_manager.register_transport(Arc::new(quic_transport));
-                info!("Registered QUIC transport");
-            }
-            Err(e) => {
-                warn!("Failed to create QUIC transport: {}, continuing without QUIC", e);
-            }
-        }
-        */
-        
-        // Only QUIC transport is supported - no TCP fallback
-        
-        let transport_manager = Arc::new(transport_manager);
+        // Initialize P2P network node with ant-quic
+        let bind_addr = std::net::SocketAddr::from(([0, 0, 0, 0], config.port));
+        let network_node = Arc::new(P2PNetworkNode::new(bind_addr).await?);
         
         // Initialize rate limiter with default config
         let rate_limiter = Arc::new(RateLimiter::new(RateLimitConfig::default()));
@@ -601,10 +580,9 @@ impl P2PNode {
             dht,
             resource_manager,
             bootstrap_manager,
-            transport_manager,
+            network_node,
             rate_limiter,
-        };
-        
+        };        
         info!("Created P2P node with peer ID: {}", node.peer_id);
         
         // Connect MCP server to network layer if enabled

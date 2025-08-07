@@ -22,7 +22,7 @@
 //! Use `ant_quic_adapter::P2PNetworkNode` directly for all networking needs.
 
 // Legacy QUIC module (deprecated - use ant-quic instead)
-#[allow(dead_code)] // Deprecated during ant-quic migration
+#[deprecated(note = "Use ant_quic_adapter::P2PNetworkNode instead")]
 pub mod quic;
 
 // Native ant-quic integration with advanced NAT traversal and PQC support
@@ -151,7 +151,7 @@ impl Validate for TransportMessage {
 }
 
 /// Transport trait for protocol implementations
-#[allow(dead_code)] // Deprecated during ant-quic migration
+#[deprecated(note = "Use ant_quic_adapter::P2PNetworkNode instead of Transport trait")]
 #[async_trait]
 pub trait Transport: Send + Sync {
     /// Start listening on the given address
@@ -177,7 +177,7 @@ pub trait Transport: Send + Sync {
 }
 
 /// Connection trait for active connections
-#[allow(dead_code)] // Deprecated during ant-quic migration
+#[deprecated(note = "Use ant_quic_adapter::P2PNetworkNode methods instead of Connection trait")]
 #[async_trait]
 pub trait Connection: Send + Sync {
     /// Send data over the connection
@@ -221,7 +221,7 @@ pub struct TransportOptions {
 }
 
 /// Transport manager coordinates different transport protocols
-#[allow(dead_code)] // Deprecated during ant-quic migration
+#[deprecated(note = "Use ant_quic_adapter::P2PNetworkNode directly instead of TransportManager")]
 pub struct TransportManager {
     /// Available transports
     transports: HashMap<TransportType, Arc<dyn Transport>>,
