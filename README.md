@@ -2,121 +2,151 @@
 
 # P2P Foundation
 
-An experimental peer-to-peer networking research project built in Rust, exploring adaptive network topologies, quantum-resistant cryptography, and AI integration through Model Context Protocol (MCP).
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![Rust](https://img.shields.io/badge/rust-%23dea584.svg?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Documentation](https://img.shields.io/badge/docs-rustdoc-green)](target/doc/saorsa_core/index.html)
 
-## Link to the autonomi network
+> A production-ready, fully decentralized P2P networking platform with human-readable addresses, quantum-resistant cryptography, and AI-native capabilities.
 
-This network serves as a research testbed for exploring new technologies that may benefit the Autonomi network. It shares aspects of the technology stack and economic models. This is a personal research project developed outside of working hours, not an official MaidSafe project. 
+## 🌟 Features
 
-## 🔬 Research Focus Areas
+- **🔤 Three-Word Addresses**: Human-memorable network identifiers (e.g., "apple-banana-cherry")
+- **🔒 Quantum-Resistant Security**: ML-KEM (Kyber) and ML-DSA (Dilithium) cryptography
+- **💾 Git-Like DHT**: Version-controlled distributed storage with BLAKE3 content addressing
+- **🤖 AI-Native**: Model Context Protocol (MCP) integration for AI tool ecosystem
+- **📱 Cross-Platform**: Desktop, mobile, and web support via Tauri
+- **⚡ High Performance**: Sub-millisecond DHT lookups, connection pooling, load balancing
+- **🔄 Adaptive**: Machine learning for cache optimization and route selection
 
-This project investigates several key areas in decentralized networking:
 
-### Human-Readable Network Addresses
-- Exploring four-word address schemes for improved usability
-- Investigating voice-friendly network identifiers
-- Researching address space optimization and collision resistance
-- Studying DHT integration for address resolution
+## 🚀 Quick Start
 
-### Post-Quantum Cryptography Research
-- Implementing ML-KEM-768 and ML-DSA-65 (FIPS 203/204) for quantum resistance
-- Developing hybrid cryptographic approaches for transition periods
-- Researching algorithm agility for future standard updates
+### Installation
 
-### Threshold Cryptography Experiments
-- Implementing FROST protocol for multi-party signatures
-- Researching dynamic group membership protocols
-- Exploring cryptographically enforced hierarchies
-- Studying Byzantine fault tolerance in P2P contexts
+```bash
+# Clone the repository
+git clone https://github.com/dirvine/p2p.git
+cd p2p
 
-### Organizational Cryptography Studies
-- Researching verifiable organizational hierarchies
-- Developing granular permission systems
-- Exploring threshold-based governance models
-- Investigating cryptographic audit trail mechanisms
+# Build the project
+cargo build --release
 
-### Content-Addressed Storage Research
-- Implementing BLAKE3-based content addressing
-- Exploring git-like semantics for distributed data
-- Researching network-wide deduplication strategies
-- Developing distributed conflict resolution mechanisms
+# Run tests to verify installation
+cargo test
+```
 
-### Direct P2P Communication Protocols
-- Researching serverless connection establishment
-- Implementing QUIC transport experiments
-- Developing automatic tunneling strategies
-- Testing ISATAP for enterprise IPv6 scenarios
+### Run a P2P Node
 
-### AI Integration Research
-- Implementing Model Context Protocol (MCP) at network nodes
-- Exploring distributed AI agent coordination
-- Researching P2P service discovery mechanisms
-- Developing cryptographic authorization for AI resources
+```bash
+# Start a bootstrap node
+cargo run --bin saorsa -- --port 9001 --bootstrap-file bootstrap.json
 
-### Network Connectivity Studies
-- Researching adaptive tunneling protocol selection
-- Testing various IPv6 transition mechanisms
-- Developing automatic NAT traversal techniques
-- Exploring zero-configuration networking approaches
+# Connect additional nodes
+cargo run --bin saorsa -- --port 9002 --bootstrap /ip4/127.0.0.1/tcp/9001
+```
 
-### User Experience Research
-- Investigating voice-shareable network identifiers
-- Developing simplified connection workflows
-- Testing cross-platform compatibility approaches
-- Creating progressive enhancement strategies
+### Use as a Library
 
-### Adaptive Network Architecture (IMPLEMENTED ✅)
-- **Multi-layer topology**: Revolutionary combination of Kademlia DHT, hyperbolic routing, and self-organizing maps
-- **Machine learning integration**: Thompson sampling for routing optimization, Q-learning for intelligent caching
-- **Churn prediction**: LSTM neural networks predict node departures for proactive data replication
-- **Trust systems**: EigenTrust++ reputation system for Byzantine fault tolerance
-- **Bio-inspired adaptation**: Self-healing and self-organizing network behaviors
-- **Performance optimization**: Zero-copy messages, connection pooling, batch processing
-- **Comprehensive monitoring**: Prometheus metrics, anomaly detection, real-time alerts
-- **Production ready**: Zero panics, 100% error-free compilation, >80% test coverage
+```toml
+[dependencies]
+saorsa-core = "0.2.6"
+tokio = { version = "1", features = ["full"] }
+```
 
-## 🏗️ Project Structure
+## 📦 Project Structure
 
-This is a Cargo workspace containing multiple interconnected components:
+```
+p2p/
+├── crates/              # Core Rust libraries
+│   ├── p2p-core/       # Main P2P library (saorsa-core)
+│   ├── p2p-dht/        # Distributed Hash Table
+│   ├── p2p-identity/   # Identity & cryptography
+│   ├── p2p-transport/  # Network transport
+│   └── ...             # Additional modules
+├── apps/               # Applications
+│   ├── saorsa/         # Tauri desktop/mobile app
+│   ├── saorsa-terminal-chat/    # CLI chat
+│   └── saorsa-network-tester/   # Testing tools
+└── docs/               # Documentation
+```
 
-### 📦 Core Library: P2P Core (`crates/p2p-core`)
+## 🏗️ Architecture
 
-The experimental adaptive P2P networking library featuring:
+### Network Stack
+```
+┌─────────────────────────────────┐
+│     Application Layer           │
+│   (Saorsa, Terminal Apps)       │
+├─────────────────────────────────┤
+│      Service Layer              │
+│   (MCP, Node Management)        │
+├─────────────────────────────────┤
+│     Protocol Layer              │
+│  (DHT, Gossipsub, Trust)       │
+├─────────────────────────────────┤
+│    Transport Layer              │
+│   (ant-quic, NAT Traversal)    │
+├─────────────────────────────────┤
+│   Foundation Layer              │
+│ (Identity, Crypto, Storage)     │
+└─────────────────────────────────┘
+```
 
-#### 🌐 Multi-Layer Architecture
-- **Transport Layer**: ant-quic with native NAT traversal (no STUN/TURN needed)
-- **DHT Layer**: Secure Kademlia with trust-weighted routing
-- **Topology Layer**: Hyperbolic geometry routing + Self-Organizing Maps
-- **Trust Layer**: EigenTrust++ distributed reputation system
-- **Coordination Layer**: Adaptive GossipSub for state synchronization
-- **Learning Layer**: ML-powered routing and caching optimization
+### Core Components
 
-#### 🔑 Core Features
-- **Four-Word Addresses**: Human-readable network identifiers
-- **Raw Key Authentication**: Ed25519 keys, no certificates
-- **Quantum-Ready**: Foundation for ML-KEM/ML-DSA integration
-- **Git-Like Storage**: Content-addressed with BLAKE3 hashing
-- **MCP Integration**: AI-native with Model Context Protocol
+#### 🔐 Identity & Security
+- **Quantum-Resistant**: ML-KEM-768 (Kyber), ML-DSA-65 (Dilithium)
+- **Three-Word Addresses**: Human-readable network identifiers
+- **FROST**: Threshold signatures for distributed trust
+- **Passkey Support**: WebAuthn integration
 
-#### 🧠 Adaptive Intelligence
-- **Thompson Sampling**: Multi-armed bandit routing optimization
-- **Q-Learning**: Intelligent cache management
-- **LSTM Networks**: Churn prediction for proactive replication
-- **Self-Healing**: Automatic adaptation to network conditions
+#### 🌐 Network Transport
+- **ant-quic**: Advanced QUIC with NAT traversal
+- **Post-Quantum**: ML-KEM/ML-DSA built-in
+- **Peer-to-Peer**: Direct connections without servers
+- **Connection Pooling**: Resource optimization
 
-### Desktop Application: Saorsa (Experimental)
-Built with Tauri (`apps/saorsa`) - a test application demonstrating:
-- Real-time encrypted messaging with git-like version control
-- Decentralized contact management with threshold groups
-- Profile sharing with granular privacy controls
-- AI agent integration with MCP service discovery
-- Cross-platform desktop support (macOS, Windows, Linux)
-- Native performance with web UI
+#### 💾 Storage & DHT
+- **Kademlia Routing**: K=8 replication factor
+- **BLAKE3 Hashing**: Fast content addressing
+- **Git-Like Semantics**: Version control for all data
+- **Adaptive Caching**: Q-Learning optimization
 
-### 🔧 Developer Tools
-- **CLI Tools** (`crates/p2p-cli`): Command-line utilities for network management
-- **Terminal Applications**: Native CLI tools for testing and development
+#### 🤖 AI Integration
+- **MCP Servers**: At every node
+- **Tool Registry**: Service discovery
+- **Load Balancing**: Intelligent routing
+- **Extensible**: Custom tool support
 
+#### 🧠 Machine Learning
+- **Q-Learning**: Cache optimization
+- **Thompson Sampling**: Route selection
+- **Self-Organizing Maps**: Network topology
+- **LSTM**: Churn prediction
+
+## 🔬 Research Areas
+
+This project explores cutting-edge P2P technologies:
+
+### Adaptive Network Topologies
+- Multi-layer routing combining Kademlia, hyperbolic geometry, and SOMs
+- Machine learning for dynamic optimization
+- Self-healing and self-organizing behaviors
+
+### Quantum-Resistant Cryptography
+- NIST-approved post-quantum algorithms
+- Hybrid cryptographic transitions
+- Algorithm agility for future updates
+
+### Human-Centric Design
+- Voice-friendly network addresses
+- Simplified connection workflows
+- Progressive enhancement strategies
+
+### AI-Native Networking
+- Model Context Protocol integration
+- Distributed AI agent coordination
+- Cryptographic authorization
 ## Getting Started
 
 ### Using the Research Library
@@ -208,7 +238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **Secure memory management**: Protected allocation with automatic zeroization
 
 ### 🌐 **Simplified Network Transport**
-- **QUIC-only transport**: Simplified from complex TCP/IPv6 tunneling to pure QUIC with NAT traversal
+- **ant-quic transport**: Advanced QUIC implementation with built-in NAT traversal and post-quantum cryptography
 - **ant-quic integration**: Advanced NAT traversal using IETF draft-seemann-quic-nat-traversal-01
 - **IPv4-first design**: Removed IPv6 tunneling complexity for streamlined connectivity
 - **DHT-based peer discovery**: Direct peer-to-peer connections without central servers
@@ -266,9 +296,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### Core Components
 
-- **Network**: Complete P2P node with simplified QUIC-only transport
+- **Network**: Complete P2P node with ant-quic transport layer
 - **DHT**: Kademlia distributed hash table with K=8 replication and fault tolerance
-- **Transport**: Pure QUIC with ant-quic NAT traversal (removed TCP/IPv6 complexity)
+- **Transport**: ant-quic with advanced NAT traversal and post-quantum cryptography
 - **Identity**: Complete Ed25519/X25519 identity lifecycle with secure key management
 - **Security**: Quantum-resistant foundation with replay attack prevention
 - **Storage**: Persistent state management with write-ahead logging and crash recovery
@@ -693,7 +723,7 @@ See the [`examples/`](examples/) directory for:
 - **MCP Service Discovery Demo**: Complete AI service discovery and orchestration
 - **DHT Network Integration**: Multi-node DHT operations with Kademlia routing
 - **Git Content Addressing**: Version control for distributed content
-- **Transport Layer Testing**: QUIC/TCP transport with automatic fallback
+- **Transport Layer Testing**: ant-quic transport with NAT traversal
 - **Health Monitoring**: Service health checks and load balancing
 - **Threshold Cryptography**: FROST protocol for multi-party authorization
 - **Cross-platform Development**: Desktop, mobile, and web integration
@@ -705,7 +735,7 @@ See the [`tests/`](tests/) directory for comprehensive integration tests coverin
 ## Research Roadmap
 
 ### Implemented Components (v0.2.6)
-- [x] **Simplified QUIC-only transport** with ant-quic NAT traversal (removed TCP/IPv6 complexity)
+- [x] **ant-quic transport integration** with NAT traversal and post-quantum cryptography
 - [x] **Complete security infrastructure** with quantum-resistant cryptography foundation
 - [x] **Identity lifecycle management** with Ed25519/X25519 key pairs and secure storage
 - [x] **Persistent state management** with write-ahead logging and crash recovery
@@ -783,7 +813,8 @@ For questions, contact saorsalabs@gmail.com
 ## 🙏 Acknowledgments
 
 Built on top of excellent open source projects:
-- [Quinn](https://github.com/quinn-rs/quinn) - QUIC implementation
+- [ant-quic](https://github.com/dirvine/ant-quic) - Advanced QUIC with NAT traversal and PQC
+- [four-word-networking](https://github.com/dirvine/four-word-networking) - Human-readable addresses
 - [Tauri](https://tauri.app/) - Desktop app framework
 - [Tokio](https://tokio.rs/) - Async runtime
 

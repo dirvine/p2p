@@ -1,0 +1,34 @@
+{
+  "project": "communitas-ui",
+  "status": "active", 
+  "current_task": {
+    "number": 3,
+    "id": "UI-03",
+    "name": "Collaborative Documents UI",
+    "file": "ui-task-003.md",
+    "started": "2025-08-07T00:15:00Z",
+    "iterations": 0,
+    "last_check": "2025-08-07T00:15:00Z"
+  },
+  "completed_tasks": ["UI-01", "UI-02"],
+  "pending_tasks": ["UI-03", "UI-04", "UI-05", "UI-06", "UI-07", "UI-08"],
+  "total_tasks": 8,
+  "progress_percentage": 25,
+  "metrics": {
+    "total_time": "45m",
+    "average_per_task": "22.5m", 
+    "total_iterations": 2,
+    "last_update": "2025-08-07T00:15:00Z"
+  },
+  "signals": {
+    "pending_progression": false,
+    "last_signal": "2025-08-07T00:15:00Z",
+    "auto_progress": true
+  },
+  "task_progress": {
+    "UI-01": "COMPLETED - Enhanced messaging interface with comprehensive group management placeholder",
+    "UI-02": "COMPLETED - File sharing interface with drag-drop, progress tracking, and comprehensive file management",
+    "UI-03": "STARTED - Collaborative documents UI with Yjs integration"
+  }
+}
+EOF < /dev/null

@@ -32,4 +32,4 @@ allow-expect-in-tests = true
 # Threshold configurations
 cognitive-complexity-threshold = 30
 excessive-nesting-threshold = 5
-too-many-arguments-threshold = 7
+too-many-arguments-threshold = 7unwrap_used = "deny"

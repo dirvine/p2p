@@ -19,15 +19,16 @@
 use crate::{PeerId, NetworkAddress};
 use crate::error::{P2PError as P2PError, P2pResult as Result, NetworkError};
 use crate::mcp::{MCPServer, MCPServerConfig, Tool, MCPCallContext, MCP_PROTOCOL, NetworkSender, HealthMonitorConfig};
-use crate::dht::{DHT, DHTConfig as DHTConfigInner};
+use crate::dht::DHT;
 use crate::production::{ProductionConfig, ResourceManager, ResourceMetrics};
 use crate::bootstrap::{BootstrapManager, ContactEntry, QualityMetrics};
+#[cfg(feature = "ant-quic")]
 use crate::transport::ant_quic_adapter::P2PNetworkNode;
 #[allow(unused_imports)] // Temporarily unused during migration
 use crate::transport::{TransportType, TransportOptions};
 use crate::identity::manager::IdentityManagerConfig;
 use crate::config::Config;
-use crate::validation::{RateLimiter, RateLimitConfig};
+use crate::validation::RateLimiter;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -482,6 +483,7 @@ pub struct P2PNode {
     bootstrap_manager: Option<Arc<RwLock<BootstrapManager>>>,
     
     /// Transport manager for real network connections
+    #[cfg(feature = "ant-quic")]
     network_node: Arc<P2PNetworkNode>,
     
     /// Rate limiter for connection and request throttling
@@ -491,6 +493,7 @@ pub struct P2PNode {
 
 impl P2PNode {
     /// Create a new P2P node with the given configuration
+    #[cfg(feature = "ant-quic")]
     pub async fn new(config: NodeConfig) -> Result<Self> {
         let peer_id = config.peer_id.clone().unwrap_or_else(|| {
             // Generate a random peer ID for now
@@ -501,7 +504,7 @@ impl P2PNode {
         
         // Initialize DHT if needed
         let dht = if config.enable_mcp_server || true { // Always enable DHT for now
-            let dht_config = DHTConfigInner {
+            let dht_config = crate::dht::DHTConfig {
                 replication_factor: config.dht_config.k_value,
                 bucket_size: config.dht_config.k_value,
                 alpha: config.dht_config.alpha_value,
@@ -587,8 +590,10 @@ impl P2PNode {
             bind_addr: Some(bind_addr),
         };
         
-        let network_node = Arc::new(P2PNetworkNode::new_with_config(bind_addr, quic_config).await.map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to create P2P network node: {}", e).into())))?);        // Initialize rate limiter with default config
-        let rate_limiter = Arc::new(RateLimiter::new(RateLimitConfig::default()));
+        let network_node = Arc::new(P2PNetworkNode::new_with_config(bind_addr, quic_config).await.map_err(|e| P2PError::Transport(crate::error::TransportError::SetupFailed(format!("Failed to create P2P network node: {}", e).into())))?);
+        
+        // Initialize rate limiter with default config
+        let rate_limiter = Arc::new(RateLimiter::new(crate::validation::RateLimitConfig::default()));
         
         let node = Self {
             config,
@@ -614,6 +619,11 @@ impl P2PNode {
         Ok(node)
     }
     
+    #[cfg(not(feature = "ant-quic"))]
+    pub async fn new(_config: NodeConfig) -> Result<Self> {
+        Err(P2PError::Transport(crate::error::TransportError::SetupFailed("ant-quic feature not enabled".into())))
+    }
+    
     /// Create a new node builder
     pub fn builder() -> NodeBuilder {
         NodeBuilder::new()
@@ -626,6 +636,7 @@ impl P2PNode {
     
     /// Initialize MCP network integration
     /// This method should be called after node creation to enable MCP network features
+    #[cfg(feature = "ant-quic")]
     pub async fn initialize_mcp_network(&self) -> Result<()> {
         if let Some(ref _mcp_server) = self.mcp_server {
             // Create a channel for sending messages from MCP to the network layer
@@ -658,6 +669,12 @@ impl P2PNode {
             
             info!("MCP network integration initialized for peer {}", self.peer_id);
         }
+        Ok(())
+    }
+    
+    #[cfg(not(feature = "ant-quic"))]
+    pub async fn initialize_mcp_network(&self) -> Result<()> {
+        warn!("MCP network integration not available - ant-quic feature is disabled");
         Ok(())
     }
 
@@ -769,6 +786,7 @@ impl P2PNode {
         info!("Starting network listeners...");
         
         // Get available transports from transport manager
+        #[cfg(feature = "ant-quic")]
         let _network_node = &self.network_node;
         
         // Listen on each configured address
@@ -871,6 +889,7 @@ impl P2PNode {
         let event_tx = self.event_tx.clone();
         let _peer_id = self.peer_id.clone();
         let peers = Arc::clone(&self.peers);
+        #[cfg(feature = "ant-quic")]
         let _network_node = Arc::clone(&self.network_node);
         let mcp_server = self.mcp_server.clone();
         let rate_limiter = Arc::clone(&self.rate_limiter);
@@ -1302,24 +1321,36 @@ impl P2PNode {
         };
         
         // Parse the address to SocketAddr format
-        let socket_addr: std::net::SocketAddr = address.parse()
+        let _socket_addr: std::net::SocketAddr = address.parse()
             .map_err(|e| P2PError::Network(crate::error::NetworkError::InvalidAddress(
                 format!("{}: {}", address, e).into()
             )))?;
         
         // Use transport manager to establish real connection
-        let peer_id = match self.network_node.connect_to_peer_string(socket_addr).await {
-            Ok(connected_peer_id) => {
-                info!("Successfully connected to peer: {}", connected_peer_id);
-                connected_peer_id
+        let peer_id = {
+            #[cfg(feature = "ant-quic")]
+            {
+                match self.network_node.connect_to_peer_string(_socket_addr).await {
+                    Ok(connected_peer_id) => {
+                        info!("Successfully connected to peer: {}", connected_peer_id);
+                        connected_peer_id
+                    }
+                    Err(e) => {
+                        warn!("Failed to connect to peer at {}: {}", address, e);
+                        
+                        // For demo purposes, try a simplified connection approach
+                        // Create a mock peer ID based on address for now
+                        let demo_peer_id = format!("peer_from_{}", address.replace("/", "_").replace(":", "_"));
+                        warn!("Using demo peer ID: {} (transport connection failed)", demo_peer_id);
+                        demo_peer_id
+                    }
+                }
             }
-            Err(e) => {
-                warn!("Failed to connect to peer at {}: {}", address, e);
-                
-                // For demo purposes, try a simplified connection approach
-                // Create a mock peer ID based on address for now
+            #[cfg(not(feature = "ant-quic"))]
+            {
+                // Without ant-quic, create a mock peer ID based on address
                 let demo_peer_id = format!("peer_from_{}", address.replace("/", "_").replace(":", "_"));
-                warn!("Using demo peer ID: {} (transport connection failed)", demo_peer_id);
+                warn!("Using demo peer ID: {} (ant-quic transport not available)", demo_peer_id);
                 demo_peer_id
             }
         };
@@ -1408,19 +1439,27 @@ impl P2PNode {
         }
         
         // Create protocol message wrapper
-        let message_data = self.create_protocol_message(protocol, data)?;
+        let _message_data = self.create_protocol_message(protocol, data)?;
         
         // Send message using transport manager with proper error handling
-        match self.network_node.send_message(peer_id, message_data).await {
-            Ok(_) => {
-                debug!("Message sent to peer {} via transport layer", peer_id);
+        #[cfg(feature = "ant-quic")]
+        {
+            match self.network_node.send_message(peer_id, _message_data).await {
+                Ok(_) => {
+                    debug!("Message sent to peer {} via transport layer", peer_id);
+                }
+                Err(e) => {
+                    warn!("Failed to send message to peer {}: {}", peer_id, e);
+                    return Err(P2PError::Network(crate::error::NetworkError::ProtocolError(format!("Message send failed: {e}").into())));
+                }
             }
-            Err(e) => {
-                warn!("Failed to send message to peer {}: {}", peer_id, e);
-                return Err(P2PError::Network(crate::error::NetworkError::ProtocolError(format!("Message send failed: {e}").into())));
-            }
+            Ok(())
         }
-        Ok(())
+        #[cfg(not(feature = "ant-quic"))]
+        {
+            warn!("Cannot send message to peer {} - ant-quic transport not available", peer_id);
+            Err(P2PError::Transport(crate::error::TransportError::SetupFailed("ant-quic feature not enabled".into())))
+        }
     }
     
     /// Create a protocol message wrapper
@@ -1448,6 +1487,7 @@ impl P2PNode {
 }
 
 /// Create a protocol message wrapper (static version for background tasks)
+#[allow(dead_code)]
 fn create_protocol_message_static(protocol: &str, data: Vec<u8>) -> Result<Vec<u8>> {
     use serde_json::json;
     
@@ -2242,6 +2282,7 @@ async fn handle_mcp_message_standalone(
 
 
 /// Helper function to handle protocol message creation
+#[cfg(feature = "ant-quic")]
 fn handle_protocol_message_creation(
     protocol: &str, 
     data: Vec<u8>
@@ -2256,6 +2297,7 @@ fn handle_protocol_message_creation(
 }
 
 /// Helper function to handle message send result
+#[cfg(feature = "ant-quic")]
 async fn handle_message_send_result(
     result: Result<()>,
     peer_id: &PeerId

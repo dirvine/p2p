@@ -12,6 +12,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 
 //! Network module
+
+#![allow(dead_code)] // Temporary during ant-quic migration
 //!
 //! This module provides core networking functionality for the P2P Foundation.
 //! It handles peer connections, network events, and node lifecycle management.
@@ -21,7 +23,7 @@ use crate::mcp::{MCPServer, MCPServerConfig, Tool, MCPCallContext, MCP_PROTOCOL}
 use crate::dht::{DHT, DHTConfig as DHTConfigInner};
 use crate::production::{ProductionConfig, ResourceManager, ResourceMetrics};
 use crate::bootstrap::{BootstrapManager, ContactEntry, QualityMetrics};
-use crate::transport::{TransportManager, QuicTransport, TcpTransport, TransportSelection, TransportOptions};
+use crate::transport::ant_quic_adapter::P2PNetworkNode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -306,8 +308,8 @@ pub struct P2PNode {
     /// Bootstrap cache manager for peer discovery
     bootstrap_manager: Option<Arc<RwLock<BootstrapManager>>>,
     
-    /// Transport manager for real network connections
-    transport_manager: Arc<TransportManager>,
+    /// Native ant-quic P2P network node
+    network_node: Option<Arc<P2PNetworkNode>>,
 }
 
 impl P2PNode {
@@ -387,30 +389,8 @@ impl P2PNode {
             }
         };
         
-        // Initialize transport manager with QUIC preferred and TCP fallback
-        let transport_options = TransportOptions::default();
-        let mut transport_manager = TransportManager::new(
-            TransportSelection::default(), // Prefer QUIC with TCP fallback
-            transport_options
-        );
-        
-        // Add QUIC transport (preferred)
-        match QuicTransport::new(true) { // Enable 0-RTT
-            Ok(quic_transport) => {
-                transport_manager.register_transport(Arc::new(quic_transport));
-                info!("Registered QUIC transport");
-            }
-            Err(e) => {
-                warn!("Failed to create QUIC transport: {}, continuing without QUIC", e);
-            }
-        }
-        
-        // Add TCP transport (fallback)
-        let tcp_transport = TcpTransport::new(false); // Don't require TLS for now
-        transport_manager.register_transport(Arc::new(tcp_transport));
-        info!("Registered TCP transport");
-        
-        let transport_manager = Arc::new(transport_manager);
+        // Native ant-quic network node will be initialized during start()
+        let network_node = None;
         
         let node = Self {
             config,
@@ -424,7 +404,7 @@ impl P2PNode {
             dht,
             resource_manager,
             bootstrap_manager,
-            transport_manager,
+            network_node,
         };
         
         info!("Created P2P node with peer ID: {}", node.peer_id);
@@ -545,44 +525,61 @@ impl P2PNode {
     
     /// Start network listeners on configured addresses
     async fn start_network_listeners(&self) -> Result<()> {
-        info!("Starting network listeners...");
+        info!("Starting native ant-quic network listeners...");
         
-        // Get available transports from transport manager
-        let transport_manager = &self.transport_manager;
+        // Initialize the ant-quic network node
+        let bind_addr = self.config.listen_addr;
+        let network_node = P2PNetworkNode::new(bind_addr).await
+            .map_err(|e| P2PError::Network(NetworkError::ProtocolError(format!("Failed to create P2P network node: {}", e).into())))?;
         
-        // Listen on each configured address
-        for multiaddr in &self.config.listen_addrs {
-            // Convert Multiaddr to SocketAddr for transport layer
-            if let Some(socket_addr) = self.multiaddr_to_socketaddr(multiaddr) {
-                // Start listeners for each registered transport
-                // For now, we'll use the default transport (QUIC preferred, TCP fallback)
-                if let Err(e) = self.start_listener_on_address(socket_addr).await {
-                    warn!("Failed to start listener on {}: {}", socket_addr, e);
-                } else {
-                    info!("Started listener on {}", socket_addr);
-                }
-            } else {
-                warn!("Could not parse address for listening: {}", multiaddr);
-            }
+        info!("Created P2P network node on {}", bind_addr);
+        
+        // Update our listen addresses with the actual bound address
+        {
+            let mut listen_addrs = self.listen_addrs.write().await;
+            listen_addrs.clear();
+            listen_addrs.push(network_node.local_address());
         }
         
-        // If no specific addresses configured, listen on default addresses
-        if self.config.listen_addrs.is_empty() {
-            // Listen on IPv4 and IPv6 default addresses
-            let default_addrs = vec![
-                "0.0.0.0:9000".parse::<std::net::SocketAddr>().unwrap(),
-                "[::]:9000".parse::<std::net::SocketAddr>().unwrap(),
-            ];
-            
-            for addr in default_addrs {
-                if let Err(e) = self.start_listener_on_address(addr).await {
-                    warn!("Failed to start default listener on {}: {}", addr, e);
-                } else {
-                    info!("Started default listener on {}", addr);
+        // Store network node for later use (we'll need this for connections)
+        // For now, we'll start a connection acceptance loop
+        let network_node_arc = Arc::new(network_node);
+        let event_tx = self.event_tx.clone();
+        let peers = self.peers.clone();
+        
+        // Start connection acceptance loop in background
+        let node_clone = network_node_arc.clone();
+        tokio::spawn(async move {
+            loop {
+                match node_clone.accept_connection().await {
+                    Ok((peer_id, addr)) => {
+                        info!("Accepted connection from peer: {} at {}", peer_id, addr);
+                        
+                        // Add peer to our registry
+                        {
+                            let mut peers_guard = peers.write().await;
+                            peers_guard.insert(peer_id.clone(), PeerInfo {
+                                peer_id: peer_id.clone(),
+                                multiaddr: format!("/ip4/{}/udp/{}/quic", addr.ip(), addr.port()),
+                                connection_status: ConnectionStatus::Connected,
+                                last_seen: SystemTime::now(),
+                                reputation: 100,
+                                connection_start: Instant::now(),
+                            });
+                        }
+                        
+                        // Send connection event
+                        let _ = event_tx.send(P2PEvent::PeerConnected(peer_id));
+                    }
+                    Err(e) => {
+                        warn!("Failed to accept connection: {}", e);
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    }
                 }
             }
-        }
+        });
         
+        info!("Network listeners started successfully");
         Ok(())
     }
     

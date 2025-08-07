@@ -1,0 +1,29 @@
+# Claude local project configuration
+# Only project-specific files should be here
+
+# Keep these directories (project-specific)
+/plans/
+/tasks/
+/specs/
+/steering/
+/todos/
+/reports/
+/archive/
+/archived/
+
+# Ignore any accidentally added global files
+/agents/
+/commands/
+/hooks/
+/orchestrator/
+/state/
+/events/
+/enhancements/
+
+# Ignore settings and scripts
+settings.local.json
+*.sh
+*.py
+
+# Keep the README
+!README.md

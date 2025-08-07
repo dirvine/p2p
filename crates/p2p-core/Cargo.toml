@@ -51,7 +51,7 @@ parking_lot = "0.12"
 flate2 = "1.0"
 
 # Using ant-quic for advanced NAT traversal and PQC support
-ant-quic.workspace = true
+# ant-quic.workspace = true # Temporarily disabled
 # four-word-networking.workspace = true # Temporarily disabled
 rustls.workspace = true  # May still be needed for other TLS operations
 log.workspace = true
@@ -118,7 +118,7 @@ quickcheck_macros = "1.0"
 approx = "0.5"
 
 [features]
-default = ["dht", "mcp", "four-word-addresses", "ant-quic"]
+default = ["dht", "mcp"] # Temporarily reduced feature set
 # Feature flags for different capabilities
 dht = []
 mcp = []

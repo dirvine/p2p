@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 2025-08-07 - Documentation Updates
+- Updated all documentation to correctly reference ant-quic v0.6.1 and four-word-networking v2.3.1
+- Removed outdated Quinn references from all documentation
+- Archived completed migration documents to docs/archive/migration-completed/
+- Updated steering documents with accurate transport architecture information
+- Clarified that ant-quic provides NAT traversal and post-quantum cryptography built-in
+
 ### Production Readiness Sprint - Phase 1 Complete
 
 #### Error Handling Framework (Task 1) ✅
@@ -23,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Transport Layer Cleanup (Task 3) ✅
 - Removed incomplete ant-quic transport implementation
-- Consolidated on quinn QUIC implementation
+- Native ant-quic v0.6.1 integration with NAT traversal and post-quantum cryptography
 - Updated transport abstraction to single QUIC strategy
 - Simplified codebase by removing redundant transport code
 

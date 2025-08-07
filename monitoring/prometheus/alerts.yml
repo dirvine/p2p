@@ -1,0 +1,118 @@
+groups:
+  - name: p2p_network_alerts
+    rules:
+      # High-priority alerts
+      - alert: P2PNetworkDown
+        expr: p2p_healthy_components == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: network
+        annotations:
+          summary: "P2P network is completely down"
+          description: "All P2P network components are unhealthy for more than 1 minute"
+          runbook_url: "https://docs.p2p.example.com/runbooks/network-down"
+
+      - alert: P2PHighErrorRate
+        expr: (1 - p2p_dht_success_rate) > 0.01 or (1 - p2p_storage_success_rate) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          component: operations
+        annotations:
+          summary: "P2P network has high error rate"
+          description: "Error rate is above 1% for {{ $labels.component }} operations"
+          runbook_url: "https://docs.p2p.example.com/runbooks/high-error-rate"
+
+      - alert: P2PHighLatency
+        expr: p2p_average_response_time_ms > 500
+        for: 5m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "P2P network has high latency"
+          description: "Average response time is {{ $value }}ms (>500ms threshold)"
+          runbook_url: "https://docs.p2p.example.com/runbooks/high-latency"
+
+      - alert: P2PLowPeerCount
+        expr: p2p_active_peers < 10
+        for: 10m
+        labels:
+          severity: warning
+          component: network
+        annotations:
+          summary: "P2P network has low peer count"
+          description: "Only {{ $value }} peers connected (minimum 10 expected)"
+          runbook_url: "https://docs.p2p.example.com/runbooks/low-peer-count"
+
+      # Resource alerts
+      - alert: P2PHighMemoryUsage
+        expr: (p2p_system_memory_total_bytes - p2p_system_memory_available_bytes) / p2p_system_memory_total_bytes > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "P2P node has high memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }} (>80% threshold)"
+          runbook_url: "https://docs.p2p.example.com/runbooks/high-memory-usage"
+
+      - alert: P2PComponentUnhealthy
+        expr: p2p_unhealthy_components > 0
+        for: 2m
+        labels:
+          severity: warning
+          component: health
+        annotations:
+          summary: "P2P has unhealthy components"
+          description: "{{ $value }} components are unhealthy"
+          runbook_url: "https://docs.p2p.example.com/runbooks/unhealthy-components"
+
+      # Performance degradation alerts
+      - alert: P2PLowThroughput
+        expr: p2p_operations_per_second < 1
+        for: 15m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "P2P network has low throughput"
+          description: "Operations per second is {{ $value }} (<1 ops/sec threshold)"
+          runbook_url: "https://docs.p2p.example.com/runbooks/low-throughput"
+
+      # Health check alerts
+      - alert: P2PHealthCheckLatency
+        expr: p2p_health_check_latency_ms > 1000
+        for: 3m
+        labels:
+          severity: warning
+          component: health
+        annotations:
+          summary: "P2P health check has high latency"
+          description: "Health check for {{ $labels.component }} took {{ $value }}ms (>1000ms)"
+          runbook_url: "https://docs.p2p.example.com/runbooks/health-check-latency"
+
+  - name: p2p_business_alerts
+    rules:
+      # Business metric alerts
+      - alert: P2PNetworkNotGrowing
+        expr: p2p_network_growth_rate <= 0
+        for: 1h
+        labels:
+          severity: info
+          component: business
+        annotations:
+          summary: "P2P network is not growing"
+          description: "Network growth rate has been {{ $value }} peers/hour for the last hour"
+
+      - alert: P2PDataTransferStalled
+        expr: rate(p2p_total_data_stored_bytes[10m]) == 0 and rate(p2p_total_data_retrieved_bytes[10m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+          component: business
+        annotations:
+          summary: "P2P data transfer has stalled"
+          description: "No data has been stored or retrieved for 30 minutes"
+          runbook_url: "https://docs.p2p.example.com/runbooks/data-transfer-stalled"

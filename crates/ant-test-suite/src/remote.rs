@@ -18,9 +18,7 @@
 
 use anyhow::{Context, Result};
 use crate::config::{RemoteNodeConfig, TestConfig};
-use std::process::Command;
-use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// Remote node manager for SSH-based deployment
 pub struct RemoteNodeManager {

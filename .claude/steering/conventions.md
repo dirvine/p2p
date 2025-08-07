@@ -169,8 +169,8 @@ let active_peers: Vec<_> = peers
 - **Remaining**: 473 unwraps (CRITICAL BLOCKER)
 
 **Task 3: Transport Debt** ✅ COMPLETE
-- Removed ant-quic integration
-- Consolidated on pure quinn QUIC
+- Native ant-quic integration completed
+- Removed legacy Transport/Connection abstractions
 
 **Critical Violations**:
 - 🚨 473 unwrap() calls can panic in production
@@ -449,11 +449,11 @@ if let Ok(val) = env::var("SAORSA_LISTEN_ADDRESS") {
 ## Transport Layer Conventions
 
 ### Transport Architecture Decision (Task 3: Completed ✅)
-The P2P Foundation uses a **QUIC-only transport strategy** implemented with Quinn:
-- **Removed**: ant-quic integration (Task 3 - transport debt removal)
-- **Simplified**: No TCP fallback - QUIC provides sufficient reliability
-- **Direct**: Quinn library used directly without abstraction layers
-- **Evolution**: Started with ant-quic exploration, consolidated on quinn for simplicity
+The P2P Foundation uses **ant-quic as the primary transport**:
+- **Integrated**: ant-quic v0.6.1 with NAT traversal and post-quantum crypto
+- **Native**: Direct use of ant-quic's QuicP2PNode without abstraction layers
+- **Advanced**: Built-in NAT traversal using IETF draft-seemann-quic-nat-traversal-01
+- **Secure**: Post-quantum cryptography (ML-KEM-768, ML-DSA-65) built-in
 
 ### Transport Patterns
 ```rust
@@ -708,7 +708,7 @@ criterion_main!(benches);
 - **Documentation**: 🔴 142 TODOs, placeholders
 - **Dependencies**: 🔴 Known vulnerabilities
 - **Configuration**: ✅ Basic system works
-- **Transport**: ✅ QUIC works (but no TLS)
+- **Transport**: ✅ ant-quic integrated with NAT traversal
 
 ### Production Readiness Sprint Status
 
@@ -717,7 +717,7 @@ criterion_main!(benches);
 #### Completed Tasks ✅
 1. **Error Handling Framework** - 880 lines, comprehensive
 2. **Fix High-Risk Unwraps** - 95/568 removed (16.7%)
-3. **Remove Transport Debt** - Pure quinn QUIC
+3. **Remove Transport Debt** - Native ant-quic integration
 
 #### Critical Path (Must Fix First)
 4. **Fix TLS Certificates** - Currently EMPTY

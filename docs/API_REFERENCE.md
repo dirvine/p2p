@@ -519,3 +519,119 @@ For migrating from earlier versions, see [MIGRATION.md](MIGRATION.md).
 - GitHub Issues: https://github.com/yourusername/p2p-foundation/issues
 - Documentation: https://docs.p2p-foundation.org
 - Community Forum: https://forum.p2p-foundation.org
+## Business Metrics API
+
+### BusinessMetricsCollector
+
+The `BusinessMetricsCollector` provides thread-safe collection of business-critical P2P network metrics.
+
+```rust
+use saorsa_core::health::business_metrics::BusinessMetricsCollector;
+
+// Create collector
+let collector = BusinessMetricsCollector::new();
+
+// Record peer events
+collector.record_peer_connected()?;
+collector.record_peer_disconnected()?;
+
+// Record data operations
+collector.record_data_stored(1024, true, 50)?; // bytes, success, latency_ms
+collector.record_data_retrieved(512, true, 30)?;
+
+// Get current metrics
+let metrics = collector.get_metrics()?;
+println\!("Active peers: {}", metrics.active_peers);
+println\!("Success rate: {}", metrics.dht_success_rate);
+
+// Export to Prometheus format
+let prometheus = collector.to_prometheus()?;
+```
+
+#### Methods
+
+##### `record_peer_connected() -> Result<()>`
+Records a new peer connection, incrementing the active peer count.
+
+##### `record_peer_disconnected() -> Result<()>`
+Records a peer disconnection, decrementing the active peer count.
+
+##### `record_data_stored(bytes: u64, success: bool, latency_ms: u64) -> Result<()>`
+Records a data storage operation with size, success status, and latency.
+Updates storage success rate and average response times.
+
+##### `record_data_retrieved(bytes: u64, success: bool, latency_ms: u64) -> Result<()>`
+Records a data retrieval operation with size, success status, and latency.
+Updates DHT success rate and average response times.
+
+##### `get_metrics() -> Result<BusinessMetrics>`
+Returns current snapshot of all business metrics including:
+- `active_peers`: Number of connected peers
+- `total_data_stored/retrieved`: Cumulative data transfer
+- `dht_success_rate/storage_success_rate`: Success rates (0.0-1.0)
+- `operations_per_second`: Recent operation rate
+- `average_response_time_ms`: Average latency
+
+##### `to_prometheus() -> Result<String>`
+Exports metrics in Prometheus text format for monitoring integration.
+
+### BusinessMetrics
+
+Core business metrics structure containing:
+
+```rust
+pub struct BusinessMetrics {
+    pub active_peers: u64,
+    pub total_data_stored: u64, 
+    pub total_data_retrieved: u64,
+    pub operations_per_second: f64,
+    pub dht_success_rate: f64,
+    pub storage_success_rate: f64,
+    pub network_growth_rate: f64,
+    pub average_response_time_ms: f64,
+    pub timestamp: u64,
+}
+```
+
+## Enhanced Health System
+
+The health system now includes business metrics integration:
+
+### PrometheusExporter
+
+##### `export_with_business_metrics(&self, business_metrics: &BusinessMetricsCollector) -> Result<String>`
+Combines standard health metrics with business metrics for comprehensive monitoring.
+
+```rust
+use saorsa_core::health::{PrometheusExporter, business_metrics::BusinessMetricsCollector};
+
+let health_manager = Arc::new(HealthManager::new("1.0.0".to_string()));
+let business_collector = BusinessMetricsCollector::new();
+let exporter = PrometheusExporter::new(health_manager);
+
+// Export combined metrics
+let metrics = exporter.export_with_business_metrics(&business_collector).await?;
+```
+
+## Error Codes Reference
+
+| Error Code | Description | Recovery Action |
+|------------|-------------|-----------------|
+| `P2PError::Network(ConnectionFailed)` | Network connection failed | Check connectivity, retry |
+| `P2PError::Storage(NotFound)` | Data not found in DHT | Verify hash, check replication |
+| `P2PError::Identity(InvalidSignature)` | Cryptographic signature invalid | Verify keys, regenerate identity |
+| `P2PError::Internal(message)` | Internal system error | Check logs, restart if needed |
+
+## Rate Limits
+
+- DHT operations: 1000/minute per peer
+- Storage operations: 100MB/minute per peer  
+- Health checks: 4/minute
+- Metrics scraping: 6/minute
+
+## Authentication
+
+P2P operations use cryptographic identity verification:
+- Ed25519 signatures for all operations
+- ML-KEM/ML-DSA for quantum resistance
+- Three-word addresses for human readability

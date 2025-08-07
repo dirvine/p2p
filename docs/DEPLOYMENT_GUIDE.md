@@ -674,3 +674,240 @@ find "$BACKUP_DIR" -name "p2p-node-*.tar.gz" -mtime +30 -delete
 - Community Forum: https://forum.p2p-foundation.org
 - GitHub Issues: https://github.com/yourusername/p2p-foundation/issues
 - Commercial Support: support@p2p-foundation.org
+## Production Monitoring Setup
+
+### Metrics and Health Endpoints
+
+The P2P node automatically exposes monitoring endpoints:
+
+```bash
+# Health check
+curl http://localhost:8080/health
+
+# Prometheus metrics  
+curl http://localhost:8080/metrics
+
+# Debug information
+curl http://localhost:8080/debug/vars
+```
+
+### Prometheus Configuration
+
+Create `/etc/prometheus/prometheus.yml`:
+
+```yaml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "/etc/prometheus/alert_rules.yml"
+
+scrape_configs:
+  - job_name: 'p2p-nodes'
+    static_configs:
+      - targets: ['localhost:8080']
+    scrape_interval: 10s
+    metrics_path: '/metrics'
+    
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['localhost:9093']
+```
+
+### Alerting Rules
+
+Deploy the provided alerting rules:
+
+```bash
+# Copy alerting rules
+sudo cp monitoring/prometheus/alerts.yml /etc/prometheus/alert_rules.yml
+
+# Restart Prometheus
+sudo systemctl reload prometheus
+```
+
+Key alerts configured:
+- P2PNetworkDown: Critical network failure
+- P2PHighErrorRate: >1% operation failure rate  
+- P2PHighLatency: >500ms average response time
+- P2PLowPeerCount: <10 connected peers
+- P2PHighMemoryUsage: >80% memory utilization
+
+### Grafana Dashboard
+
+1. **Import Dashboard**: Use the provided JSON dashboard configuration:
+   ```bash
+   # Import the main overview dashboard
+   curl -X POST \
+     -H "Content-Type: application/json" \
+     -d @monitoring/grafana/dashboards/p2p-overview.json \
+     http://admin:admin@localhost:3000/api/dashboards/db
+   ```
+
+2. **Dashboard Panels**:
+   - Network Health Status
+   - Active Peers Timeline  
+   - System Resource Usage
+   - Operation Performance Metrics
+   - Success Rate Trends
+   - Data Transfer Rates
+
+### Log Management
+
+Configure structured logging:
+
+```bash
+# Set log level via environment
+export RUST_LOG=p2p_core=info,saorsa=debug
+
+# Or in systemd service file
+echo "Environment=RUST_LOG=p2p_core=info" >> /etc/systemd/system/p2p-node.service
+
+# Restart service
+sudo systemctl daemon-reload
+sudo systemctl restart p2p-node
+```
+
+### Backup and Recovery
+
+#### Automated Backups
+
+```bash
+#\!/bin/bash
+# /usr/local/bin/p2p-backup.sh
+
+BACKUP_DIR="/var/backups/p2p"
+DATA_DIR="/var/lib/p2p"
+DATE=$(date +%Y%m%d_%H%M%S)
+
+mkdir -p "$BACKUP_DIR"
+
+# Stop service temporarily
+systemctl stop p2p-node
+
+# Create backup
+tar -czf "$BACKUP_DIR/p2p_backup_$DATE.tar.gz" -C "$DATA_DIR" .
+
+# Restart service
+systemctl start p2p-node
+
+# Clean old backups (keep 30 days)
+find "$BACKUP_DIR" -name "p2p_backup_*.tar.gz" -mtime +30 -delete
+
+echo "Backup completed: $BACKUP_DIR/p2p_backup_$DATE.tar.gz"
+```
+
+Schedule with cron:
+```bash
+# Add to crontab
+0 2 * * * /usr/local/bin/p2p-backup.sh
+```
+
+#### Recovery Process
+
+```bash
+# Stop service
+sudo systemctl stop p2p-node
+
+# Backup current data (safety)
+sudo mv /var/lib/p2p /var/lib/p2p.backup.$(date +%s)
+
+# Restore from backup
+sudo mkdir -p /var/lib/p2p
+sudo tar -xzf /var/backups/p2p/p2p_backup_YYYYMMDD_HHMMSS.tar.gz -C /var/lib/p2p
+
+# Fix permissions
+sudo chown -R p2p:p2p /var/lib/p2p
+
+# Start service
+sudo systemctl start p2p-node
+
+# Verify health
+curl http://localhost:8080/health
+```
+
+## Production Checklist
+
+Before deploying to production:
+
+### Security
+- [ ] Firewall configured (ports 8000, 8001 only)
+- [ ] TLS certificates installed and valid
+- [ ] System hardening applied
+- [ ] Non-root user configured
+- [ ] Log rotation enabled
+
+### Monitoring  
+- [ ] Health endpoints responding
+- [ ] Prometheus scraping metrics
+- [ ] Grafana dashboard imported
+- [ ] Alerts configured and tested
+- [ ] PagerDuty/Slack notifications working
+- [ ] Runbooks accessible to team
+
+### Operations
+- [ ] Backup system configured and tested
+- [ ] Service auto-start enabled
+- [ ] Log monitoring configured
+- [ ] Capacity planning completed
+- [ ] Disaster recovery plan documented
+
+### Performance
+- [ ] Load testing completed
+- [ ] Resource limits configured
+- [ ] Network tuning applied
+- [ ] Storage optimization verified
+
+### Compliance
+- [ ] Data retention policies configured
+- [ ] Privacy requirements met
+- [ ] Audit logging enabled
+- [ ] Documentation up to date
+
+## Troubleshooting Deployment
+
+### Service Won't Start
+
+1. **Check systemd status**:
+   ```bash
+   systemctl status p2p-node
+   journalctl -u p2p-node -f
+   ```
+
+2. **Verify configuration**:
+   ```bash
+   p2p-node --validate-config
+   ```
+
+3. **Check permissions**:
+   ```bash
+   ls -la /var/lib/p2p
+   ls -la /etc/p2p/config.toml
+   ```
+
+### Port Binding Issues
+
+```bash
+# Check what's using the port
+sudo netstat -tulpn | grep :8000
+sudo lsof -i :8000
+
+# Kill conflicting process if needed
+sudo fuser -k 8000/tcp
+```
+
+### Memory/Disk Issues
+
+```bash
+# Check disk space
+df -h
+du -sh /var/lib/p2p/*
+
+# Check memory usage
+free -h
+ps aux | grep p2p-node
+```
+
+For additional troubleshooting, see [TROUBLESHOOTING_GUIDE.md](TROUBLESHOOTING_GUIDE.md).

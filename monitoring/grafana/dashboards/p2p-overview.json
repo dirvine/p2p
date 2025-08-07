@@ -1,0 +1,142 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "P2P Network Overview",
+    "tags": ["p2p", "saorsa", "network"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Network Health Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "p2p_healthy_components",
+            "legendFormat": "Healthy Components"
+          },
+          {
+            "expr": "p2p_unhealthy_components", 
+            "legendFormat": "Unhealthy Components"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 1},
+                {"color": "green", "value": 5}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Active Peers",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "p2p_active_peers",
+            "legendFormat": "Connected Peers"
+          }
+        ],
+        "yAxes": [
+          {"min": 0, "label": "Count"},
+          {"show": false}
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "System Resources",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "(p2p_system_memory_total_bytes - p2p_system_memory_available_bytes) / p2p_system_memory_total_bytes * 100",
+            "legendFormat": "Memory Usage %"
+          },
+          {
+            "expr": "p2p_runtime_threads",
+            "legendFormat": "Thread Count"
+          }
+        ],
+        "yAxes": [
+          {"min": 0, "max": 100, "unit": "percent"},
+          {"show": false}
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Network Operations",
+        "type": "graph", 
+        "targets": [
+          {
+            "expr": "p2p_operations_per_second",
+            "legendFormat": "Operations/sec"
+          },
+          {
+            "expr": "p2p_average_response_time_ms",
+            "legendFormat": "Avg Response Time (ms)"
+          }
+        ],
+        "yAxes": [
+          {"min": 0, "label": "Rate"},
+          {"min": 0, "label": "Latency (ms)"}
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 5,
+        "title": "Success Rates",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "p2p_dht_success_rate * 100",
+            "legendFormat": "DHT Success Rate %"
+          },
+          {
+            "expr": "p2p_storage_success_rate * 100", 
+            "legendFormat": "Storage Success Rate %"
+          }
+        ],
+        "yAxes": [
+          {"min": 0, "max": 100, "unit": "percent"},
+          {"show": false}
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 6,
+        "title": "Data Transfer",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(p2p_total_data_stored_bytes[5m])",
+            "legendFormat": "Data Stored Rate (bytes/sec)"
+          },
+          {
+            "expr": "rate(p2p_total_data_retrieved_bytes[5m])",
+            "legendFormat": "Data Retrieved Rate (bytes/sec)"
+          }
+        ],
+        "yAxes": [
+          {"min": 0, "unit": "bytes", "label": "Transfer Rate"},
+          {"show": false}
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24}
+      }
+    ]
+  }
+}

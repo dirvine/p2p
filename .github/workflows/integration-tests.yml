@@ -53,7 +53,9 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential pkg-config libssl-dev
+        sudo apt-get install -y build-essential pkg-config libssl-dev \
+          libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+          librsvg2-dev libglib2.0-dev
         
     - name: Build project
       run: cargo build --release --all-features
@@ -127,7 +129,9 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential pkg-config libssl-dev
+        sudo apt-get install -y build-essential pkg-config libssl-dev \
+          libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+          librsvg2-dev libglib2.0-dev
         
     - name: Build project with all features
       run: cargo build --release --all-features
