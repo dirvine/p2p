@@ -22,6 +22,12 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Checkout four-word-networking dependency
+      uses: actions/checkout@v4
+      with:
+        repository: dirvine/four-word-networking
+        path: ../four-word-networking
+    
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
     
