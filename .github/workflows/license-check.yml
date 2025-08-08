@@ -44,33 +44,11 @@ jobs:
       - name: Install cargo-deny
         run: cargo install cargo-deny
       
-      - name: Create deny.toml if not exists
+      - name: Check deny.toml exists
         run: |
           if [ ! -f "deny.toml" ]; then
-            cat > deny.toml << 'EOF'
-          [licenses]
-          unlicensed = "deny"
-          allow = [
-            "MIT",
-            "Apache-2.0",
-            "Apache-2.0 WITH LLVM-exception",
-            "BSD-2-Clause",
-            "BSD-3-Clause",
-            "ISC",
-            "Unicode-DFS-2016",
-            "CC0-1.0",
-            "AGPL-3.0",
-            "MPL-2.0",
-          ]
-          copyleft = "warn"
-          
-          [[licenses.exceptions]]
-          name = "ring"
-          allow = ["LicenseRef-ring"]
-          
-          [bans]
-          multiple-versions = "warn"
-          EOF
+            echo "❌ deny.toml file not found"
+            exit 1
           fi
       
       - name: Check licenses
