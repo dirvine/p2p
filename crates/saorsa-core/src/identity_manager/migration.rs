@@ -235,7 +235,7 @@ mod tests {
 
         // Create a plaintext identity file
         let identity = Identity {
-            id: UserId::new(),
+            id: UserId::from_bytes([1u8; 32]),
             four_word_address: "test.word.address.here".to_string(),
             state: crate::identity_manager::IdentityState::Active,
             display_name: Some("Test User".to_string()),

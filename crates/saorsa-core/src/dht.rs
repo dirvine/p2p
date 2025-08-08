@@ -43,6 +43,26 @@ pub mod ipv6_identity;
 // Enhanced storage with K=8 replication
 pub mod enhanced_storage;
 
+// New DHT v2 components
+#[allow(unused)]
+pub mod content_addressing;
+#[allow(unused)]
+pub mod core_engine;
+#[allow(unused)]
+pub mod reed_solomon;
+#[allow(unused)]
+pub mod witness;
+#[allow(unused)]
+pub mod network_integration;
+
+// Test modules
+#[cfg(test)]
+mod content_addressing_test;
+#[cfg(test)]
+mod core_engine_test;
+#[cfg(test)]
+mod reed_solomon_test;
+
 /// DHT configuration parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DHTConfig {

@@ -157,7 +157,7 @@ pub fn count_leading_zero_bits(bytes: &[u8]) -> u32 {
         if *byte == 0 {
             count += 8;
         } else {
-            count += byte.leading_zeros() as u32;
+            count += byte.leading_zeros();
             break;
         }
     }
