@@ -26,7 +26,6 @@
 pub mod quic;
 
 // Native ant-quic integration with advanced NAT traversal and PQC support
-#[cfg(feature = "ant-quic")]
 pub mod ant_quic_adapter;
 
 // Tests for old QuicTransport - removed during ant-quic migration

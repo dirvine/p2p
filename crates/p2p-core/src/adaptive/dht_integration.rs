@@ -202,11 +202,37 @@ impl AdaptiveDHT {
                 
                 NodeDescriptor {
                     id: node_id,
-                    // TODO: Get real key from node - for now use a dummy placeholder key
-                    public_key: ed25519_dalek::VerifyingKey::from_bytes(&[
-                        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-                        17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32
-                    ]).unwrap_or_else(|_| ed25519_dalek::VerifyingKey::from_bytes(&[0u8; 32]).unwrap()),
+                    // TODO: Get real key from node - for now use a deterministic dummy key
+                    // This is a known valid ed25519 public key (the generator point)
+                    public_key: {
+                        // Try to use a placeholder key first
+                        let placeholder = [
+                            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+                            17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32
+                        ];
+                        
+                        // Use the ed25519 base point as fallback (always valid)
+                        const ED25519_BASEPOINT_BYTES: [u8; 32] = [
+                            0x58, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
+                            0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
+                            0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
+                            0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
+                        ];
+                        
+                        ed25519_dalek::VerifyingKey::from_bytes(&placeholder)
+                            .unwrap_or_else(|_| {
+                                // Fall back to the known valid base point
+                                ed25519_dalek::VerifyingKey::from_bytes(&ED25519_BASEPOINT_BYTES)
+                                    .ok()
+                                    .unwrap_or_else(|| {
+                                        // If even the base point fails, something is seriously wrong
+                                        // Create a verifying key from the generator point another way
+                                        use ed25519_dalek::SigningKey;
+                                        let signing_key = SigningKey::from_bytes(&[1u8; 32]);
+                                        signing_key.verifying_key()
+                                    })
+                            })
+                    },
                     addresses: node.addresses.iter().map(|a| a.to_string()).collect(),
                     hyperbolic: None,
                     som_position: None,

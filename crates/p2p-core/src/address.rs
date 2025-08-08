@@ -23,9 +23,8 @@ use std::fmt::{self, Display};
 use serde::{Deserialize, Serialize};
 use anyhow::{anyhow, Result};
 
-// Temporarily disabled to fix CI build
-// #[cfg(feature = "four-word-addresses")]
-// use four_word_networking::FourWordEncoder;
+#[cfg(feature = "four-word-addresses")]
+use four_word_networking::FourWordEncoder;
 
 /// Network address that can be represented as IP:port or four-word format
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -87,28 +86,33 @@ impl NetworkAddress {
         self.four_words = Self::encode_four_words(&self.socket_addr);
     }
 
-    /// Encode a SocketAddr to four-word format (temporarily disabled)
-    // #[cfg(feature = "four-word-addresses")]
-    fn encode_four_words(_addr: &SocketAddr) -> Option<String> {
-        // Temporarily disabled to fix CI build
-        // let encoder = FourWordEncoder::new();
-        // match encoder.encode(*addr) {
-        //     Ok(encoding) => Some(encoding.to_string()),
-        //     Err(e) => {
-        //         log::warn!("Failed to encode address {addr}: {e}");
-        //         None
-        //     }
-        // }
-        None
+    /// Encode a SocketAddr to four-word format using four-word-networking
+    #[cfg(feature = "four-word-addresses")]
+    fn encode_four_words(addr: &SocketAddr) -> Option<String> {
+        let encoder = FourWordEncoder::new();
+        match encoder.encode(*addr) {
+            Ok(encoding) => Some(encoding.to_string()),
+            Err(e) => {
+                log::warn!("Failed to encode address {addr}: {e}");
+                None
+            }
+        }
     }
+    #[cfg(not(feature = "four-word-addresses"))]
+    fn encode_four_words(_addr: &SocketAddr) -> Option<String> { None }
 
 
 
 
-    /// Decode four-word format to NetworkAddress (temporarily disabled)
-    pub fn from_four_words(_words: &str) -> Result<Self> {
-        Err(anyhow!("Four-word addresses temporarily disabled"))
+    /// Decode four-word format to NetworkAddress using four-word-networking
+    #[cfg(feature = "four-word-addresses")]
+    pub fn from_four_words(words: &str) -> Result<Self> {
+        let encoder = FourWordEncoder::new();
+        let socket_addr = encoder.decode(words)?;
+        Ok(Self::new(socket_addr))
     }
+    #[cfg(not(feature = "four-word-addresses"))]
+    pub fn from_four_words(_words: &str) -> Result<Self> { Err(anyhow!("four-word addresses disabled")) }
 
     /// Check if this is an IPv4 address
     pub fn is_ipv4(&self) -> bool {

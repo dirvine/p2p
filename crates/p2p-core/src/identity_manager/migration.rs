@@ -133,7 +133,11 @@ impl IdentityMigrator {
         device_password: &SecureString,
     ) -> Result<bool> {
         // Backup the original file
-        let backup_path = self.backup_path.join(path.file_name().unwrap());
+        let file_name = path.file_name()
+            .ok_or_else(|| P2PError::Storage(StorageError::Database(
+                "Invalid file path: no filename".into()
+            )))?;
+        let backup_path = self.backup_path.join(file_name);
         fs::copy(path, &backup_path)
             .map_err(|e| P2PError::Storage(StorageError::Database(
                 format!("Failed to backup file: {}", e).into()

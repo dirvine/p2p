@@ -10,6 +10,13 @@ repository.workspace = true
 description = "A diagnostic chat application for the P2P Foundation network"
 keywords = ["p2p", "chat", "diagnostics", "networking", "tauri"]
 categories = ["network-programming", "command-line-utilities"]
+include = [
+    "src/**/*",
+    "Cargo.toml",
+    "README.md",
+    "SPECIFICATION.md",
+    "DESIGN.md",
+]
 
 # For crates.io publishing
 [package.metadata.tauri]

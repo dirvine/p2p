@@ -35,28 +35,13 @@ impl IdentityManager {
         }
     }
 
-    /// Create or load user identity - simplified placeholder
+    /// Create or load user identity using four-word-networking for the address
     pub async fn create_or_load_identity(&self, _passphrase: String) -> Result<UserIdentity> {
-        // Generate a mock four-word address for testing
-        use rand::{rngs::StdRng, Rng, SeedableRng};
-        let words = [
-            "apple",
-            "banana",
-            "cherry",
-            "date",
-            "elderberry",
-            "fig",
-            "grape",
-            "honeydew",
-        ];
-        let mut rng = StdRng::from_entropy();
-        let four_word_address = format!(
-            "{}-{}-{}-{}",
-            words[rng.gen_range(0..words.len())],
-            words[rng.gen_range(0..words.len())],
-            words[rng.gen_range(0..words.len())],
-            words[rng.gen_range(0..words.len())]
-        );
+        // Derive a stable local address for identity display; in production this should
+        // map to the node's public reachable address(es)
+        let default_socket: std::net::SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let net = saorsa_core::NetworkAddress::from(default_socket);
+        let four_word_address = net.four_words().unwrap_or("").to_string();
 
         let user_identity = UserIdentity {
             id: uuid::Uuid::new_v4().to_string(),
@@ -104,9 +89,10 @@ impl IdentityManager {
         Ok(user.clone())
     }
 
-    /// Lookup identity by four-word address - placeholder implementation
+    /// Lookup identity by four-word address (validate via decoder)
     pub async fn lookup_identity(&self, address: String) -> Result<UserIdentity> {
-        // Placeholder implementation
+        // Validate and normalize address using four-word decoder
+        let _sock = saorsa_core::NetworkAddress::from_four_words(&address)?;
         Ok(UserIdentity {
             id: format!("lookup-{}", address),
             four_word_address: address.clone(),

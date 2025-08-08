@@ -465,7 +465,8 @@ impl ChatManager {
         
         // Add to message index for pagination
         let timestamp = message.created_at.duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap().as_secs();
+            .map_err(|e| ChatError::InvalidOperation(format!("Invalid message timestamp: {}", e)))?
+            .as_secs();
         let index_key = keys::chat_index(&channel_id.0, timestamp);
         self.storage.store_encrypted(
             &index_key,

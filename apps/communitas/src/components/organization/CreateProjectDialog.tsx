@@ -15,6 +15,7 @@ import {
   Chip,
   Grid
 } from '@mui/material'
+import { invoke } from '@tauri-apps/api/core'
 
 interface CreateProjectDialogProps {
   open: boolean
@@ -45,7 +46,7 @@ const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
 
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     // Validate form
@@ -72,23 +73,37 @@ const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
       }
     }
 
+    // Validate member addresses via backend decode
+    const addresses = formData.member_addresses
+      .split(',')
+      .map(a => a.trim().toLowerCase())
+      .filter(a => a.length > 0)
+
+    const valid: string[] = []
+    const invalid: string[] = []
+    for (const addr of addresses) {
+      try {
+        await invoke<string>('four_word_decode_address', { words: addr })
+        valid.push(addr)
+      } catch {
+        invalid.push(addr)
+      }
+    }
+
+    if (invalid.length > 0) {
+      newErrors.member_addresses = `Invalid addresses: ${invalid.join(', ')}`
+    }
+
     setErrors(newErrors)
     
     if (Object.keys(newErrors).length === 0) {
-      // Parse member addresses
-      const memberAddresses = formData.member_addresses
-        .split(',')
-        .map(addr => addr.trim())
-        .filter(addr => addr.length > 0)
-        .filter(addr => /^[a-z]+\.[a-z]+\.[a-z]+\.[a-z]+$/i.test(addr)) // Basic four-word validation
-
       onSubmit({
         name: formData.name.trim(),
         description: formData.description.trim() || undefined,
         deadline: formData.deadline ? new Date(formData.deadline) : undefined,
         priority: formData.priority,
         initial_storage_gb: formData.initial_storage_gb,
-        initial_members: memberAddresses.length > 0 ? memberAddresses : undefined
+        initial_members: valid.length > 0 ? valid : undefined
       })
       handleClose()
     }
@@ -126,11 +141,8 @@ const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
       .filter(addr => addr.length > 0)
   }
 
-  const validAddresses = getMemberAddresses()
-    .filter(addr => /^[a-z]+\.[a-z]+\.[a-z]+\.[a-z]+$/i.test(addr))
-  
-  const invalidAddresses = getMemberAddresses()
-    .filter(addr => addr.length > 0 && !/^[a-z]+\.[a-z]+\.[a-z]+\.[a-z]+$/i.test(addr))
+  const validAddresses: string[] = []
+  const invalidAddresses: string[] = []
 
 
   return (

@@ -12,6 +12,7 @@ import {
   Switch,
   Chip
 } from '@mui/material'
+import { invoke } from '@tauri-apps/api/core'
 
 interface CreateGroupDialogProps {
   open: boolean
@@ -37,7 +38,7 @@ const CreateGroupDialog: React.FC<CreateGroupDialogProps> = ({
 
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     // Validate form
@@ -49,20 +50,34 @@ const CreateGroupDialog: React.FC<CreateGroupDialogProps> = ({
       newErrors.name = 'Group name must be at least 2 characters'
     }
 
+    // Validate member addresses via backend decode
+    const addresses = formData.member_addresses
+      .split(',')
+      .map(a => a.trim().toLowerCase())
+      .filter(a => a.length > 0)
+
+    const valid: string[] = []
+    const invalid: string[] = []
+    for (const addr of addresses) {
+      try {
+        await invoke<string>('four_word_decode_address', { words: addr })
+        valid.push(addr)
+      } catch {
+        invalid.push(addr)
+      }
+    }
+
+    if (invalid.length > 0) {
+      newErrors.member_addresses = `Invalid addresses: ${invalid.join(', ')}`
+    }
+
     setErrors(newErrors)
     
     if (Object.keys(newErrors).length === 0) {
-      // Parse member addresses
-      const memberAddresses = formData.member_addresses
-        .split(',')
-        .map(addr => addr.trim())
-        .filter(addr => addr.length > 0)
-        .filter(addr => /^[a-z]+\.[a-z]+\.[a-z]+\.[a-z]+$/i.test(addr)) // Basic four-word validation
-
       onSubmit({
         name: formData.name.trim(),
         description: formData.description.trim() || undefined,
-        initial_members: memberAddresses.length > 0 ? memberAddresses : undefined
+        initial_members: valid.length > 0 ? valid : undefined
       })
       handleClose()
     }
@@ -98,11 +113,8 @@ const CreateGroupDialog: React.FC<CreateGroupDialogProps> = ({
       .filter(addr => addr.length > 0)
   }
 
-  const validAddresses = getMemberAddresses()
-    .filter(addr => /^[a-z]+\.[a-z]+\.[a-z]+\.[a-z]+$/i.test(addr))
-  
-  const invalidAddresses = getMemberAddresses()
-    .filter(addr => addr.length > 0 && !/^[a-z]+\.[a-z]+\.[a-z]+\.[a-z]+$/i.test(addr))
+  const validAddresses: string[] = [] // Shown only after submit; live preview removed to avoid misleading regex
+  const invalidAddresses: string[] = []
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>

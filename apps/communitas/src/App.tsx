@@ -76,14 +76,25 @@ function App() {
   })
 
   useEffect(() => {
-    const mockHealth: NetworkHealth = {
-      status: 'Connected',
-      peer_count: 5,
-      nat_type: 'Full Cone',
-      bandwidth_kbps: 1500,
-      avg_latency_ms: 45,
+    let mounted = true
+    const fetchHealth = async () => {
+      try {
+        const res = await (await import('@tauri-apps/api/core')).invoke<any>('get_network_health')
+        if (!mounted) return
+        setNetworkHealth({
+          status: res.status === 'connected' ? 'Connected' : 'Disconnected',
+          peer_count: res.peer_count ?? 0,
+          nat_type: res.nat_type ?? 'Unknown',
+          bandwidth_kbps: res.bandwidth_kbps ?? 0,
+          avg_latency_ms: res.avg_latency_ms ?? 0,
+        })
+      } catch {
+        // keep default
+      }
     }
-    setNetworkHealth(mockHealth)
+    fetchHealth()
+    const id = setInterval(fetchHealth, 2000)
+    return () => { mounted = false; clearInterval(id) }
   }, [])
 
   const handleTabChange = (newValue: number) => {

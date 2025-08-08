@@ -50,9 +50,10 @@ base64.workspace = true
 parking_lot = "0.12"
 flate2 = "1.0"
 
-# Using ant-quic for advanced NAT traversal and PQC support
-# ant-quic.workspace = true # Temporarily disabled
-# four-word-networking.workspace = true # Temporarily disabled
+# Using ant-quic for advanced NAT traversal and PQC support (always enabled)
+ant-quic = { version = "0.6" }
+# Four-word networking for human-readable addresses
+four-word-networking = { version = "2.3", optional = false }
 rustls.workspace = true  # May still be needed for other TLS operations
 log.workspace = true
 
@@ -118,12 +119,12 @@ quickcheck_macros = "1.0"
 approx = "0.5"
 
 [features]
-default = ["dht", "mcp"] # Temporarily reduced feature set
+default = ["dht", "mcp", "ant-quic", "four-word-addresses"]
 # Feature flags for different capabilities
 dht = []
 mcp = []
 four-word-addresses = []
-ant-quic = []  # Enable ant-quic transport with NAT traversal and PQC
+ant-quic = []
 quantum-resistant = []
 threshold = []
 cli = ["clap", "warp", "mime_guess", "include_dir"]

@@ -14,6 +14,7 @@ import {
   Typography,
   Alert
 } from '@mui/material'
+import { invoke } from '@tauri-apps/api/core'
 
 interface InviteMemberDialogProps {
   open: boolean
@@ -40,23 +41,25 @@ const InviteMemberDialog: React.FC<InviteMemberDialogProps> = ({
 
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    // Validate form
     const newErrors: Record<string, string> = {}
-    
-    if (!formData.address.trim()) {
+    const address = formData.address.trim().toLowerCase()
+
+    if (!address) {
       newErrors.address = 'Member address is required'
-    } else if (!/^[a-z]+\.[a-z]+\.[a-z]+\.[a-z]+$/i.test(formData.address.trim())) {
-      newErrors.address = 'Please enter a valid four-word address (e.g., user.name.test.here)'
+    } else {
+      try {
+        await invoke<string>('four_word_decode_address', { words: address })
+      } catch (err) {
+        newErrors.address = 'Invalid four-word address'
+      }
     }
 
     setErrors(newErrors)
-    
     if (Object.keys(newErrors).length === 0) {
       onSubmit({
-        address: formData.address.trim().toLowerCase(),
+        address,
         role: formData.role,
         message: formData.message.trim() || undefined
       })

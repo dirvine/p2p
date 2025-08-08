@@ -318,7 +318,7 @@ impl EvictionStrategy for AdaptiveStrategy {
                 let score = frequency_score * recency_score / (size_penalty + 1.0);
                 (hash, score)
             })
-            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(hash, _)| *hash)
     }
     

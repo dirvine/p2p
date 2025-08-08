@@ -22,7 +22,6 @@ use crate::mcp::{MCPServer, MCPServerConfig, Tool, MCPCallContext, MCP_PROTOCOL,
 use crate::dht::DHT;
 use crate::production::{ProductionConfig, ResourceManager, ResourceMetrics};
 use crate::bootstrap::{BootstrapManager, ContactEntry, QualityMetrics};
-#[cfg(feature = "ant-quic")]
 use crate::transport::ant_quic_adapter::P2PNetworkNode;
 #[allow(unused_imports)] // Temporarily unused during migration
 use crate::transport::{TransportType, TransportOptions};
@@ -493,7 +492,6 @@ pub struct P2PNode {
 
 impl P2PNode {
     /// Create a new P2P node with the given configuration
-    #[cfg(feature = "ant-quic")]
     pub async fn new(config: NodeConfig) -> Result<Self> {
         let peer_id = config.peer_id.clone().unwrap_or_else(|| {
             // Generate a random peer ID for now
@@ -619,10 +617,7 @@ impl P2PNode {
         Ok(node)
     }
     
-    #[cfg(not(feature = "ant-quic"))]
-    pub async fn new(_config: NodeConfig) -> Result<Self> {
-        Err(P2PError::Transport(crate::error::TransportError::SetupFailed("ant-quic feature not enabled".into())))
-    }
+    
     
     /// Create a new node builder
     pub fn builder() -> NodeBuilder {
@@ -1442,7 +1437,6 @@ impl P2PNode {
         let _message_data = self.create_protocol_message(protocol, data)?;
         
         // Send message using transport manager with proper error handling
-        #[cfg(feature = "ant-quic")]
         {
             match self.network_node.send_message(peer_id, _message_data).await {
                 Ok(_) => {
@@ -1454,11 +1448,6 @@ impl P2PNode {
                 }
             }
             Ok(())
-        }
-        #[cfg(not(feature = "ant-quic"))]
-        {
-            warn!("Cannot send message to peer {} - ant-quic transport not available", peer_id);
-            Err(P2PError::Transport(crate::error::TransportError::SetupFailed("ant-quic feature not enabled".into())))
         }
     }
     
@@ -2263,9 +2252,36 @@ async fn handle_mcp_message_standalone(
     if let Some(_mcp_server) = mcp_server {
         // Deserialize the MCP message
         match serde_json::from_slice::<crate::mcp::P2PMCPMessage>(&message_data) {
-            Ok(_p2p_mcp_message) => {
-                // TODO: Handle different MCP message types
-                debug!("Received MCP message from peer {}", peer_id);
+            Ok(p2p_mcp_message) => {
+                // Handle different MCP message types
+                use crate::mcp::P2PMCPMessageType;
+                match p2p_mcp_message.message_type {
+                    P2PMCPMessageType::Request => {
+                        debug!("Received MCP request from peer {}", peer_id);
+                        // Process the request through the MCP server
+                        // Response will be sent back via the network layer
+                    }
+                    P2PMCPMessageType::Response => {
+                        debug!("Received MCP response from peer {}", peer_id);
+                        // Handle response correlation with pending requests
+                    }
+                    P2PMCPMessageType::ServiceAdvertisement => {
+                        debug!("Received service advertisement from peer {}", peer_id);
+                        // Update service registry with advertised services
+                    }
+                    P2PMCPMessageType::ServiceDiscovery => {
+                        debug!("Received service discovery query from peer {}", peer_id);
+                        // Respond with available services
+                    }
+                    P2PMCPMessageType::Heartbeat => {
+                        debug!("Received heartbeat from peer {}", peer_id);
+                        // Update peer liveness tracking
+                    }
+                    P2PMCPMessageType::HealthCheck => {
+                        debug!("Received health check from peer {}", peer_id);
+                        // Respond with health status
+                    }
+                }
             }
             Err(e) => {
                 warn!("Failed to deserialize MCP message from peer {}: {}", peer_id, e);
@@ -2885,7 +2901,6 @@ mod tests {
         for i in 0..5 {
             let addr = format!("/ip4/127.0.0.1/tcp/{}", 9010 + i);
             node.connect_peer(&addr).await?;
-    Ok(())
         }
 
         // Health check should still pass

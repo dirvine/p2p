@@ -439,8 +439,14 @@ impl Connection for QuicConnection {
         Ok(ConnectionQuality {
             latency: Duration::from_millis(rtt as u64),
             throughput_mbps: throughput,
-            packet_loss: 0.0, // TODO: Calculate from stats
-            jitter: Duration::from_millis(1), // TODO: Calculate from RTT variance
+            packet_loss: if stats.udp_tx.datagrams > 0 {
+                (stats.path.lost_packets as f64 / stats.udp_tx.datagrams as f64).min(1.0) * 100.0
+            } else {
+                0.0
+            },
+            jitter: stats.path.rtt_variance.unwrap_or_else(|| {
+                Duration::from_millis((rtt * 0.1) as u64)
+            })
             connect_time: self.info.established_at.elapsed(),
         })
     }

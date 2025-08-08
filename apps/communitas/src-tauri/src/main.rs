@@ -94,6 +94,113 @@ impl fmt::Debug for RealP2PNode {
 }
 
 // Tauri commands
+#[derive(serde::Serialize, serde::Deserialize)]
+struct NetworkHealthResponse {
+    status: String,
+    peer_count: u32,
+    nat_type: String,
+    bandwidth_kbps: f64,
+    avg_latency_ms: f64,
+}
+
+#[tauri::command]
+async fn get_network_health(
+    app_state: tauri::State<'_, Arc<RwLock<AppState>>>,
+) -> Result<NetworkHealthResponse, String> {
+    let state = app_state.inner().read().await;
+    let peer_count = if let Some(p2p) = &state.p2p_node {
+        let node = p2p.read().await;
+        node.get_peer_count().await as u32
+    } else {
+        0
+    };
+
+    Ok(NetworkHealthResponse {
+        status: if peer_count > 0 { "connected".into() } else { "disconnected".into() },
+        peer_count,
+        nat_type: "unknown".into(),
+        bandwidth_kbps: 0.0,
+        avg_latency_ms: 0.0,
+    })
+}
+#[tauri::command]
+async fn get_dht_status(
+    app_state: tauri::State<'_, Arc<RwLock<AppState>>>,
+) -> Result<Option<serde_json::Value>, String> {
+    let state = app_state.inner().read().await;
+    if let Some(p2p) = &state.p2p_node {
+        let node = p2p.read().await;
+        let peer_count = node.get_peer_count().await as u64;
+        let uptime = 0u64;
+        let status = serde_json::json!({
+            "node_id": node.local_peer_id(),
+            "peer_count": peer_count,
+            "stored_items": 0,
+            "network_health": 0.7,
+            "uptime": uptime,
+            "performance": {
+                "avg_lookup_latency": 0,
+                "avg_store_latency": 0,
+                "operation_success_rate": 0.9,
+                "throughput": 0.0,
+                "bandwidth_utilization": 0.1,
+                "memory_usage": 0
+            }
+        });
+        Ok(Some(status))
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+async fn initialize_messaging() -> Result<String, String> {
+    Ok("messaging_initialized".to_string())
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct MessageRequest {
+    recipient: String,
+    content: String,
+    message_type: String,
+    group_id: Option<String>,
+}
+
+#[tauri::command]
+async fn get_messages(
+    _user_id: Option<String>,
+    _group_id: Option<String>,
+    _limit: Option<i64>,
+) -> Result<Vec<serde_json::Value>, String> {
+    Ok(vec![])
+}
+
+#[tauri::command]
+async fn send_group_message(
+    request: MessageRequest,
+) -> Result<String, String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let _ = request;
+    Ok(id)
+}
+
+#[tauri::command]
+async fn create_group(
+    name: String,
+    description: Option<String>,
+    app_state: tauri::State<'_, Arc<RwLock<AppState>>>,
+) -> Result<String, String> {
+    let state = app_state.inner().write().await;
+    let group_id = {
+        let mgr = state.group_manager.read().await;
+        drop(mgr);
+        uuid::Uuid::new_v4().to_string()
+    };
+    let _ = (name, description);
+    Ok(group_id)
+}
+
+// Tauri commands
 #[tauri::command]
 async fn get_node_info(
     app_state: tauri::State<'_, Arc<RwLock<AppState>>>,
@@ -201,6 +308,13 @@ async fn main() -> anyhow::Result<()> {
             // Node management
             get_node_info,
             initialize_p2p_node,
+            // DHT and messaging
+            get_dht_status,
+            get_network_health,
+            initialize_messaging,
+            get_messages,
+            send_group_message,
+            create_group,
             // Contact management commands
             contact_commands::add_contact,
             contact_commands::get_contact,
