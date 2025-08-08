@@ -1,5 +1,5 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE\!\!
-#\![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Prevents additional console window on Windows in release, DO NOT REMOVE!!
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -128,36 +128,36 @@ impl AppState {
 
 #[tauri::command]
 async fn initialize_identity_manager(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    info\!("IPC: Initializing identity manager");
+    info!("IPC: Initializing identity manager");
     
     match CommunidentityManager::new().await {
         Ok(manager) => {
             let mut identity_manager = state.identity_manager.lock().await;
             *identity_manager = Some(manager);
-            info\!("Identity manager initialized successfully");
+            info!("Identity manager initialized successfully");
             Ok("Identity manager initialized".to_string())
         },
         Err(e) => {
-            error\!("Failed to initialize identity manager: {}", e);
-            Err(format\!("Failed to initialize identity manager: {}", e))
+            error!("Failed to initialize identity manager: {}", e);
+            Err(format!("Failed to initialize identity manager: {}", e))
         }
     }
 }
 
 #[tauri::command]
 async fn get_or_create_identity(state: State<'_, Arc<AppState>>) -> Result<IdentityInfo, String> {
-    info\!("IPC: Getting or creating identity");
+    info!("IPC: Getting or creating identity");
     
     let mut identity_manager = state.identity_manager.lock().await;
     if let Some(ref mut manager) = *identity_manager {
         match manager.get_or_create_identity().await {
             Ok(identity) => {
-                info\!("Identity retrieved/created: {}", identity.four_word_address);
+                info!("Identity retrieved/created: {}", identity.four_word_address);
                 Ok(identity)
             },
             Err(e) => {
-                error\!("Failed to get/create identity: {}", e);
-                Err(format\!("Failed to get/create identity: {}", e))
+                error!("Failed to get/create identity: {}", e);
+                Err(format!("Failed to get/create identity: {}", e))
             }
         }
     } else {
@@ -170,18 +170,18 @@ async fn generate_new_identity(
     state: State<'_, Arc<AppState>>,
     params: IdentityGenerationParams,
 ) -> Result<IdentityInfo, String> {
-    info\!("IPC: Generating new identity");
+    info!("IPC: Generating new identity");
     
     let mut identity_manager = state.identity_manager.lock().await;
     if let Some(ref mut manager) = *identity_manager {
         match manager.generate_new_identity(params).await {
             Ok(identity) => {
-                info\!("New identity generated: {}", identity.four_word_address);
+                info!("New identity generated: {}", identity.four_word_address);
                 Ok(identity)
             },
             Err(e) => {
-                error\!("Failed to generate new identity: {}", e);
-                Err(format\!("Failed to generate new identity: {}", e))
+                error!("Failed to generate new identity: {}", e);
+                Err(format!("Failed to generate new identity: {}", e))
             }
         }
     } else {
@@ -191,15 +191,15 @@ async fn generate_new_identity(
 
 #[tauri::command]
 async fn get_storage_info(state: State<'_, Arc<AppState>>) -> Result<StorageBackendInfo, String> {
-    debug\!("IPC: Getting storage info");
+    debug!("IPC: Getting storage info");
     
     let identity_manager = state.identity_manager.lock().await;
     if let Some(ref manager) = *identity_manager {
         match manager.get_storage_info().await {
             Ok(info) => Ok(info),
             Err(e) => {
-                error\!("Failed to get storage info: {}", e);
-                Err(format\!("Failed to get storage info: {}", e))
+                error!("Failed to get storage info: {}", e);
+                Err(format!("Failed to get storage info: {}", e))
             }
         }
     } else {
@@ -211,7 +211,7 @@ async fn get_storage_info(state: State<'_, Arc<AppState>>) -> Result<StorageBack
 
 #[tauri::command]
 async fn initialize_dht(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    info\!("IPC: Initializing DHT");
+    info!("IPC: Initializing DHT");
     
     // First ensure we have an identity
     let identity_info = {
@@ -238,27 +238,27 @@ async fn initialize_dht(state: State<'_, Arc<AppState>>) -> Result<String, Strin
     match Dht::new(node_id, dht_config).await {
         Ok(dht_instance) => {
             if let Err(e) = dht_instance.start().await {
-                error\!("Failed to start DHT: {}", e);
-                return Err(format\!("Failed to start DHT: {}", e));
+                error!("Failed to start DHT: {}", e);
+                return Err(format!("Failed to start DHT: {}", e));
             }
             
             let dht_arc = Arc::new(dht_instance);
             let mut dht_lock = state.dht.write().await;
             *dht_lock = Some(dht_arc);
             
-            info\!("DHT initialized successfully");
+            info!("DHT initialized successfully");
             Ok("DHT initialized successfully".to_string())
         },
         Err(e) => {
-            error\!("Failed to create DHT: {}", e);
-            Err(format\!("Failed to create DHT: {}", e))
+            error!("Failed to create DHT: {}", e);
+            Err(format!("Failed to create DHT: {}", e))
         }
     }
 }
 
 #[tauri::command]
 async fn get_dht_status(state: State<'_, Arc<AppState>>) -> Result<Option<DhtStatus>, String> {
-    debug\!("IPC: Getting DHT status");
+    debug!("IPC: Getting DHT status");
     
     let dht_lock = state.dht.read().await;
     if let Some(ref dht) = *dht_lock {
@@ -273,7 +273,7 @@ async fn dht_store_content(
     state: State<'_, Arc<AppState>>,
     content: String,
 ) -> Result<String, String> {
-    info\!("IPC: Storing content in DHT (length: {})", content.len());
+    info!("IPC: Storing content in DHT (length: {})", content.len());
     
     let dht_lock = state.dht.read().await;
     if let Some(ref dht) = *dht_lock {
@@ -283,12 +283,12 @@ async fn dht_store_content(
         match dht.store(key.clone(), content_bytes).await {
             Ok(_) => {
                 let key_hex = key.to_hex();
-                info\!("Content stored successfully: {}", key_hex);
+                info!("Content stored successfully: {}", key_hex);
                 Ok(key_hex)
             },
             Err(e) => {
-                error\!("Failed to store content: {}", e);
-                Err(format\!("Failed to store content: {}", e))
+                error!("Failed to store content: {}", e);
+                Err(format!("Failed to store content: {}", e))
             }
         }
     } else {
@@ -301,13 +301,13 @@ async fn dht_get_content(
     state: State<'_, Arc<AppState>>,
     key_hex: String,
 ) -> Result<Option<String>, String> {
-    info\!("IPC: Retrieving content from DHT: {}", key_hex);
+    info!("IPC: Retrieving content from DHT: {}", key_hex);
     
     let dht_lock = state.dht.read().await;
     if let Some(ref dht) = *dht_lock {
         // Parse hex key
-        let key_bytes = hex::decode(&key_hex).map_err(|e| format\!("Invalid key format: {}", e))?;
-        if key_bytes.len() \!= 32 {
+        let key_bytes = hex::decode(&key_hex).map_err(|e| format!("Invalid key format: {}", e))?;
+        if key_bytes.len() != 32 {
             return Err("Key must be 32 bytes (64 hex characters)".to_string());
         }
         
@@ -319,19 +319,19 @@ async fn dht_get_content(
             Ok(Some(content_bytes)) => {
                 match String::from_utf8(content_bytes) {
                     Ok(content_string) => {
-                        info\!("Content retrieved successfully: {} bytes", content_string.len());
+                        info!("Content retrieved successfully: {} bytes", content_string.len());
                         Ok(Some(content_string))
                     },
                     Err(_) => Err("Content is not valid UTF-8".to_string()),
                 }
             },
             Ok(None) => {
-                info\!("Content not found: {}", key_hex);
+                info!("Content not found: {}", key_hex);
                 Ok(None)
             },
             Err(e) => {
-                error\!("Failed to retrieve content: {}", e);
-                Err(format\!("Failed to retrieve content: {}", e))
+                error!("Failed to retrieve content: {}", e);
+                Err(format!("Failed to retrieve content: {}", e))
             }
         }
     } else {
@@ -344,13 +344,13 @@ async fn dht_find_nodes(
     state: State<'_, Arc<AppState>>,
     target_hex: String,
 ) -> Result<Vec<String>, String> {
-    info\!("IPC: Finding nodes closest to: {}", target_hex);
+    info!("IPC: Finding nodes closest to: {}", target_hex);
     
     let dht_lock = state.dht.read().await;
     if let Some(ref dht) = *dht_lock {
         // Parse hex target
-        let target_bytes = hex::decode(&target_hex).map_err(|e| format\!("Invalid target format: {}", e))?;
-        if target_bytes.len() \!= 20 {
+        let target_bytes = hex::decode(&target_hex).map_err(|e| format!("Invalid target format: {}", e))?;
+        if target_bytes.len() != 20 {
             return Err("Target must be 20 bytes (40 hex characters)".to_string());
         }
         
@@ -363,12 +363,12 @@ async fn dht_find_nodes(
                 let node_hexes: Vec<String> = nodes.iter()
                     .map(|node| node.to_hex())
                     .collect();
-                info\!("Found {} nodes", node_hexes.len());
+                info!("Found {} nodes", node_hexes.len());
                 Ok(node_hexes)
             },
             Err(e) => {
-                error\!("Failed to find nodes: {}", e);
-                Err(format\!("Failed to find nodes: {}", e))
+                error!("Failed to find nodes: {}", e);
+                Err(format!("Failed to find nodes: {}", e))
             }
         }
     } else {
@@ -380,7 +380,7 @@ async fn dht_find_nodes(
 
 #[tauri::command]
 async fn initialize_messaging(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    info\!("IPC: Initializing messaging system");
+    info!("IPC: Initializing messaging system");
     
     // Ensure prerequisites are initialized
     let dht_lock = state.dht.read().await;
@@ -403,12 +403,12 @@ async fn initialize_messaging(state: State<'_, Arc<AppState>>) -> Result<String,
             let mut messaging_lock = state.messaging_system.write().await;
             *messaging_lock = Some(messaging);
             
-            info\!("Messaging system initialized successfully");
+            info!("Messaging system initialized successfully");
             Ok("Messaging system initialized".to_string())
         },
         Err(e) => {
-            error\!("Failed to initialize messaging system: {}", e);
-            Err(format\!("Failed to initialize messaging system: {}", e))
+            error!("Failed to initialize messaging system: {}", e);
+            Err(format!("Failed to initialize messaging system: {}", e))
         }
     }
 }
@@ -418,7 +418,7 @@ async fn send_message_to_user(
     state: State<'_, Arc<AppState>>,
     request: MessageRequest,
 ) -> Result<String, String> {
-    info\!("IPC: Sending message to user: {}", request.recipient);
+    info!("IPC: Sending message to user: {}", request.recipient);
     
     let messaging_lock = state.messaging_system.read().await;
     if let Some(ref messaging) = *messaging_lock {
@@ -427,12 +427,12 @@ async fn send_message_to_user(
         
         match messaging.send_message(recipient, content).await {
             Ok(message_id) => {
-                info\!("Message sent successfully: {}", message_id);
+                info!("Message sent successfully: {}", message_id);
                 Ok(message_id.to_string())
             },
             Err(e) => {
-                error\!("Failed to send message: {}", e);
-                Err(format\!("Failed to send message: {}", e))
+                error!("Failed to send message: {}", e);
+                Err(format!("Failed to send message: {}", e))
             }
         }
     } else {
@@ -445,24 +445,24 @@ async fn send_group_message(
     state: State<'_, Arc<AppState>>,
     request: MessageRequest,
 ) -> Result<String, String> {
-    info\!("IPC: Sending group message");
+    info!("IPC: Sending group message");
     
     let messaging_lock = state.messaging_system.read().await;
     if let Some(ref messaging) = *messaging_lock {
         let group_id = request.group_id
             .ok_or_else(|| "Group ID required for group messages".to_string())?;
         let group_id = GroupId(uuid::Uuid::parse_str(&group_id)
-            .map_err(|e| format\!("Invalid group ID: {}", e))?);
+            .map_err(|e| format!("Invalid group ID: {}", e))?);
         let content = request.content.into_bytes();
         
         match messaging.send_group_message(group_id, content).await {
             Ok(message_id) => {
-                info\!("Group message sent successfully: {}", message_id);
+                info!("Group message sent successfully: {}", message_id);
                 Ok(message_id.to_string())
             },
             Err(e) => {
-                error\!("Failed to send group message: {}", e);
-                Err(format\!("Failed to send group message: {}", e))
+                error!("Failed to send group message: {}", e);
+                Err(format!("Failed to send group message: {}", e))
             }
         }
     } else {
@@ -477,7 +477,7 @@ async fn get_messages(
     group_id: Option<String>,
     limit: Option<i64>,
 ) -> Result<Vec<MessageResponse>, String> {
-    debug\!("IPC: Getting messages");
+    debug!("IPC: Getting messages");
     
     let messaging_lock = state.messaging_system.read().await;
     if let Some(ref messaging) = *messaging_lock {
@@ -494,12 +494,12 @@ async fn get_messages(
                     .map(MessageResponse::from)
                     .collect();
                 
-                debug\!("Retrieved {} messages", responses.len());
+                debug!("Retrieved {} messages", responses.len());
                 Ok(responses)
             },
             Err(e) => {
-                error\!("Failed to get messages: {}", e);
-                Err(format\!("Failed to get messages: {}", e))
+                error!("Failed to get messages: {}", e);
+                Err(format!("Failed to get messages: {}", e))
             }
         }
     } else {
@@ -513,7 +513,7 @@ async fn create_group(
     name: String,
     description: Option<String>,
 ) -> Result<String, String> {
-    info\!("IPC: Creating group: {}", name);
+    info!("IPC: Creating group: {}", name);
     
     let messaging_lock = state.messaging_system.read().await;
     if let Some(ref messaging) = *messaging_lock {
@@ -522,7 +522,7 @@ async fn create_group(
             let identity_lock = state.identity_manager.lock().await;
             if let Some(ref manager) = *identity_lock {
                 let identity = manager.get_current_identity().await
-                    .map_err(|e| format\!("Failed to get current identity: {}", e))?;
+                    .map_err(|e| format!("Failed to get current identity: {}", e))?;
                 UserId::new(identity.four_word_address)
             } else {
                 return Err("Identity not available".to_string());
@@ -532,12 +532,12 @@ async fn create_group(
         // Create group via group manager
         match messaging.group_manager.create_group(name, current_user, description).await {
             Ok(group_id) => {
-                info\!("Group created successfully: {}", group_id.0);
+                info!("Group created successfully: {}", group_id.0);
                 Ok(group_id.0.to_string())
             },
             Err(e) => {
-                error\!("Failed to create group: {}", e);
-                Err(format\!("Failed to create group: {}", e))
+                error!("Failed to create group: {}", e);
+                Err(format!("Failed to create group: {}", e))
             }
         }
     } else {
@@ -547,21 +547,21 @@ async fn create_group(
 
 #[tauri::command]
 async fn get_messaging_stats(state: State<'_, Arc<AppState>>) -> Result<MessagingStats, String> {
-    debug\!("IPC: Getting messaging stats");
+    debug!("IPC: Getting messaging stats");
     
     let messaging_lock = state.messaging_system.read().await;
     if let Some(ref messaging) = *messaging_lock {
         let storage_stats = messaging.message_store.get_stats().await
-            .map_err(|e| format\!("Failed to get storage stats: {}", e))?;
+            .map_err(|e| format!("Failed to get storage stats: {}", e))?;
         
         let sync_stats = messaging.sync_manager.get_stats().await
-            .map_err(|e| format\!("Failed to get sync stats: {}", e))?;
+            .map_err(|e| format!("Failed to get sync stats: {}", e))?;
         
         Ok(MessagingStats {
             total_messages: storage_stats.total_messages,
             pending_messages: 0, // TODO: Get from messaging system
             groups: 0, // TODO: Get from group manager
-            sync_status: format\!("Syncing with {} peers", sync_stats.total_peers),
+            sync_status: format!("Syncing with {} peers", sync_stats.total_peers),
         })
     } else {
         Err("Messaging system not initialized".to_string())
@@ -572,10 +572,10 @@ async fn get_messaging_stats(state: State<'_, Arc<AppState>>) -> Result<Messagin
 
 #[tauri::command]
 async fn get_groups(state: State<'_, Arc<AppState>>) -> Result<Vec<GroupInfo>, String> {
-    info\!("IPC: Getting user groups");
+    info!("IPC: Getting user groups");
     
     // For now, return mock data until backend group listing is implemented
-    let mock_groups = vec\![
+    let mock_groups = vec![
         GroupInfo {
             id: "general".to_string(),
             name: "General".to_string(),
@@ -602,10 +602,10 @@ async fn get_group_members(
     state: State<'_, Arc<AppState>>,
     group_id: String,
 ) -> Result<Vec<UserPresenceInfo>, String> {
-    info\!("IPC: Getting group members for: {}", group_id);
+    info!("IPC: Getting group members for: {}", group_id);
     
     // Mock user presence data until P2P presence system is implemented
-    let mock_members = vec\![
+    let mock_members = vec![
         UserPresenceInfo {
             user_id: "alice".to_string(),
             display_name: "Alice Cooper".to_string(),
@@ -638,13 +638,13 @@ async fn update_user_presence(
     status: String,
     activity: Option<String>,
 ) -> Result<(), String> {
-    info\!("IPC: Updating user presence: {} - {:?}", status, activity);
+    info!("IPC: Updating user presence: {} - {:?}", status, activity);
     
     // In a real implementation, this would update the user's presence in the P2P network
     // For now, we just log the update
-    debug\!("User presence updated to: {}", status);
+    debug!("User presence updated to: {}", status);
     if let Some(activity) = activity {
-        debug\!("User activity: {}", activity);
+        debug!("User activity: {}", activity);
     }
     
     Ok(())
@@ -655,13 +655,13 @@ async fn join_group(
     state: State<'_, Arc<AppState>>,
     group_id: String,
 ) -> Result<(), String> {
-    info\!("IPC: Joining group: {}", group_id);
+    info!("IPC: Joining group: {}", group_id);
     
     let messaging_lock = state.messaging_system.read().await;
     if let Some(ref messaging) = *messaging_lock {
         // In a real implementation, this would join the group via the messaging system
         // For now, we just acknowledge the request
-        info\!("Successfully joined group: {}", group_id);
+        info!("Successfully joined group: {}", group_id);
         Ok(())
     } else {
         Err("Messaging system not initialized".to_string())
@@ -673,13 +673,13 @@ async fn leave_group(
     state: State<'_, Arc<AppState>>,
     group_id: String,
 ) -> Result<(), String> {
-    info\!("IPC: Leaving group: {}", group_id);
+    info!("IPC: Leaving group: {}", group_id);
     
     let messaging_lock = state.messaging_system.read().await;
     if let Some(ref messaging) = *messaging_lock {
         // In a real implementation, this would leave the group via the messaging system
         // For now, we just acknowledge the request
-        info\!("Successfully left group: {}", group_id);
+        info!("Successfully left group: {}", group_id);
         Ok(())
     } else {
         Err("Messaging system not initialized".to_string())
@@ -688,7 +688,7 @@ async fn leave_group(
 
 #[tauri::command]
 async fn get_unread_counts(state: State<'_, Arc<AppState>>) -> Result<HashMap<String, u32>, String> {
-    info\!("IPC: Getting unread message counts");
+    info!("IPC: Getting unread message counts");
     
     // Mock unread counts until message tracking is implemented
     let mut unread_counts = HashMap::new();
@@ -703,7 +703,7 @@ async fn get_unread_counts(state: State<'_, Arc<AppState>>) -> Result<HashMap<St
 
 #[tauri::command]
 async fn get_network_health() -> Result<NetworkHealthResponse, String> {
-    debug\!("IPC: Getting network health");
+    debug!("IPC: Getting network health");
     
     // Simplified network health response
     Ok(NetworkHealthResponse {
@@ -722,13 +722,13 @@ pub fn run() {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    info\!("Starting Communitas application with enhanced P2P group chat");
+    info!("Starting Communitas application with enhanced P2P group chat");
 
     let app_state = Arc::new(AppState::new());
 
     tauri::Builder::default()
         .manage(app_state)
-        .invoke_handler(tauri::generate_handler\![
+        .invoke_handler(tauri::generate_handler![
             // Identity commands
             initialize_identity_manager,
             get_or_create_identity,
@@ -758,10 +758,10 @@ pub fn run() {
             get_network_health,
         ])
         .setup(|_app| {
-            info\!("Tauri application setup complete with enhanced group chat features");
+            info!("Tauri application setup complete with enhanced group chat features");
             Ok(())
         })
-        .run(tauri::generate_context\!())
+        .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 

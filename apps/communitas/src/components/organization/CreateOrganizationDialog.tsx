@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import {
   Dialog,
   DialogTitle,
@@ -39,7 +40,7 @@ const CreateOrganizationDialog: React.FC<CreateOrganizationDialogProps> = ({
 
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     // Validate form
@@ -60,6 +61,9 @@ const CreateOrganizationDialog: React.FC<CreateOrganizationDialogProps> = ({
     setErrors(newErrors)
     
     if (Object.keys(newErrors).length === 0) {
+      try {
+        await invoke('create_organization', { name: formData.name.trim() })
+      } catch (_) {}
       onSubmit({
         name: formData.name.trim(),
         description: formData.description.trim() || undefined,

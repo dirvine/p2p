@@ -4,8 +4,7 @@ mod engine;
 mod metrics;
 
 pub use engine::DiagnosticsEngine;
-pub use metrics::{NetworkHealth, NetworkMetrics, StorageMetrics, PeerMetrics, NetworkStats};
-
+pub use metrics::{NetworkHealth, NetworkMetrics, NetworkStats, PeerMetrics, StorageMetrics};
 
 /// NAT type detected
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, Default)]

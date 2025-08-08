@@ -1,6 +1,6 @@
 //! Diagnostics engine implementation
 
-use super::{NetworkHealth, NetworkMetrics, StorageMetrics, PeerMetrics};
+use super::{NetworkHealth, NetworkMetrics, PeerMetrics, StorageMetrics};
 use crate::network::NetworkIntegration;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -42,24 +42,24 @@ impl DiagnosticsEngine {
             collecting: AtomicBool::new(false),
         }
     }
-    
+
     /// Start metrics collection
     pub fn start_collection(&self) {
         if self.collecting.swap(true, Ordering::SeqCst) {
             return; // Already collecting
         }
-        
+
         let network_metrics = self.network_metrics.clone();
         let _storage_metrics = self.storage_metrics.clone();
         let _peer_metrics = self.peer_metrics.clone();
         let network = self.network.clone();
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(100));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Update metrics
                 if let Ok(stats) = network.get_network_stats().await {
                     let mut metrics = network_metrics.write().await;
@@ -68,12 +68,12 @@ impl DiagnosticsEngine {
             }
         });
     }
-    
+
     /// Get current network health
     pub async fn get_network_health(&self) -> NetworkHealth {
         let network_metrics = self.network_metrics.read().await;
         let peer_metrics = self.peer_metrics.read().await;
-        
+
         NetworkHealth {
             status: if peer_metrics.connected_peers > 0 {
                 "Connected".to_string()

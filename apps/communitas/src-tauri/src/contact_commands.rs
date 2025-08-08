@@ -145,7 +145,9 @@ pub async fn get_contact_file_system_path(
 #[tauri::command]
 pub async fn generate_four_word_address() -> Result<String, String> {
     // Generate encoding for a typical local address using core encoder
-    let socket: SocketAddr = "127.0.0.1:9000".parse().unwrap_or_else(|_| "127.0.0.1:0".parse().unwrap());
+    let socket: SocketAddr = "127.0.0.1:9000"
+        .parse()
+        .unwrap_or_else(|_| "127.0.0.1:0".parse().unwrap());
     let net = saorsa_core::NetworkAddress::from(socket);
     Ok(net.four_words().unwrap_or("").to_string())
 }
@@ -175,6 +177,6 @@ pub async fn four_word_decode_address(words: String) -> Result<String, String> {
         Err(_) => match saorsa_core::NetworkAddress::from_str(&words) {
             Ok(net) => Ok(net.socket_addr().to_string()),
             Err(e) => Err(format!("Failed to decode: {}", e)),
-        }
+        },
     }
 }

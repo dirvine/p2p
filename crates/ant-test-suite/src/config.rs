@@ -26,16 +26,16 @@ use std::time::Duration;
 pub struct TestConfig {
     /// Network configuration
     pub network: NetworkConfig,
-    
+
     /// Remote node configurations
     pub remote_nodes: Vec<RemoteNodeConfig>,
-    
+
     /// Data verification settings
     pub verification: VerificationConfig,
-    
+
     /// Performance testing parameters
     pub performance: PerformanceConfig,
-    
+
     /// Logging and reporting settings
     pub reporting: ReportingConfig,
 }
@@ -45,19 +45,19 @@ pub struct TestConfig {
 pub struct NetworkConfig {
     /// Default local port for test nodes
     pub default_local_port: u16,
-    
+
     /// Bootstrap nodes for network discovery
     pub bootstrap_nodes: Vec<String>,
-    
+
     /// Connection timeout
     pub connection_timeout_secs: u64,
-    
+
     /// Keep-alive interval
     pub keep_alive_interval_secs: u64,
-    
+
     /// Enable IPv6 support
     pub enable_ipv6: bool,
-    
+
     /// Enable MCP server
     pub enable_mcp_server: bool,
 }
@@ -67,22 +67,22 @@ pub struct NetworkConfig {
 pub struct RemoteNodeConfig {
     /// Node identifier (e.g., "do" for Digital Ocean)
     pub id: String,
-    
+
     /// SSH connection string
     pub ssh_host: String,
-    
+
     /// SSH username
     pub ssh_user: String,
-    
+
     /// SSH key path (optional, uses default if not specified)
     pub ssh_key_path: Option<PathBuf>,
-    
+
     /// Remote port for the test node
     pub remote_port: u16,
-    
+
     /// Working directory on remote host
     pub working_dir: String,
-    
+
     /// Binary path on remote host
     pub binary_path: String,
 }
@@ -92,22 +92,22 @@ pub struct RemoteNodeConfig {
 pub struct VerificationConfig {
     /// Enable mandatory round-trip verification
     pub enable_round_trip: bool,
-    
+
     /// Enable cross-node consistency checks
     pub enable_cross_node: bool,
-    
+
     /// Enable hash verification for stored data
     pub enable_hash_verification: bool,
-    
+
     /// Enable signature verification
     pub enable_signature_verification: bool,
-    
+
     /// Verification timeout in seconds
     pub verification_timeout_secs: u64,
-    
+
     /// Number of verification retries
     pub verification_retries: u32,
-    
+
     /// Acceptable error rate (percentage)
     pub acceptable_error_rate: f64,
 }
@@ -117,13 +117,13 @@ pub struct VerificationConfig {
 pub struct PerformanceConfig {
     /// Default number of operations for stress tests
     pub default_operations: u32,
-    
+
     /// Default concurrency level
     pub default_concurrency: u32,
-    
+
     /// Maximum file size for testing (in bytes)
     pub max_file_size: u64,
-    
+
     /// Performance thresholds
     pub thresholds: PerformanceThresholds,
 }
@@ -133,16 +133,16 @@ pub struct PerformanceConfig {
 pub struct PerformanceThresholds {
     /// Maximum acceptable latency for local operations (milliseconds)
     pub max_local_latency_ms: u64,
-    
+
     /// Maximum acceptable latency for remote operations (milliseconds)
     pub max_remote_latency_ms: u64,
-    
+
     /// Minimum acceptable throughput (bytes per second)
     pub min_throughput_bps: u64,
-    
+
     /// Maximum acceptable memory usage (bytes)
     pub max_memory_usage: u64,
-    
+
     /// Maximum acceptable CPU usage (percentage)
     pub max_cpu_usage: f64,
 }
@@ -152,22 +152,22 @@ pub struct PerformanceThresholds {
 pub struct ReportingConfig {
     /// Default output directory for reports
     pub output_dir: PathBuf,
-    
+
     /// Enable real-time monitoring
     pub enable_real_time_monitoring: bool,
-    
+
     /// Monitoring check interval in seconds
     pub monitoring_interval_secs: u64,
-    
+
     /// Enable alert notifications
     pub enable_alerts: bool,
-    
+
     /// Alert webhook URL (optional)
     pub alert_webhook_url: Option<String>,
-    
+
     /// Maximum log file size (bytes)
     pub max_log_file_size: u64,
-    
+
     /// Number of log files to retain
     pub log_file_retention: u32,
 }
@@ -186,17 +186,15 @@ impl Default for TestConfig {
                 enable_ipv6: true,
                 enable_mcp_server: true,
             },
-            remote_nodes: vec![
-                RemoteNodeConfig {
-                    id: "do".to_string(),
-                    ssh_host: "do".to_string(),
-                    ssh_user: "root".to_string(),
-                    ssh_key_path: None,
-                    remote_port: 9001,
-                    working_dir: "/tmp/ant-test".to_string(),
-                    binary_path: "/tmp/ant-test/ant-test-node".to_string(),
-                },
-            ],
+            remote_nodes: vec![RemoteNodeConfig {
+                id: "do".to_string(),
+                ssh_host: "do".to_string(),
+                ssh_user: "root".to_string(),
+                ssh_key_path: None,
+                remote_port: 9001,
+                working_dir: "/tmp/ant-test".to_string(),
+                binary_path: "/tmp/ant-test/ant-test-node".to_string(),
+            }],
             verification: VerificationConfig {
                 enable_round_trip: true,
                 enable_cross_node: true,
@@ -213,9 +211,9 @@ impl Default for TestConfig {
                 thresholds: PerformanceThresholds {
                     max_local_latency_ms: 100,
                     max_remote_latency_ms: 1000,
-                    min_throughput_bps: 1024 * 1024, // 1MB/s
+                    min_throughput_bps: 1024 * 1024,      // 1MB/s
                     max_memory_usage: 1024 * 1024 * 1024, // 1GB
-                    max_cpu_usage: 80.0, // 80%
+                    max_cpu_usage: 80.0,                  // 80%
                 },
             },
             reporting: ReportingConfig {
@@ -260,28 +258,27 @@ impl TestConfig {
         let expanded_path = shellexpand::tilde(path);
         let content = std::fs::read_to_string(expanded_path.as_ref())
             .with_context(|| format!("Failed to read config file: {}", path))?;
-        
+
         let config: TestConfig = toml::from_str(&content)
             .with_context(|| format!("Failed to parse config file: {}", path))?;
-        
+
         Ok(config)
     }
 
     /// Save configuration to file
     pub fn save_to_file(&self, path: &str) -> Result<()> {
         let expanded_path = shellexpand::tilde(path);
-        let content = toml::to_string_pretty(self)
-            .context("Failed to serialize configuration")?;
-        
+        let content = toml::to_string_pretty(self).context("Failed to serialize configuration")?;
+
         // Create parent directory if it doesn't exist
         if let Some(parent) = std::path::Path::new(expanded_path.as_ref()).parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("Failed to create config directory: {:?}", parent))?;
         }
-        
+
         std::fs::write(expanded_path.as_ref(), content)
             .with_context(|| format!("Failed to write config file: {}", path))?;
-        
+
         Ok(())
     }
 
@@ -329,8 +326,11 @@ mod tests {
         let config = TestConfig::default();
         let serialized = toml::to_string(&config).unwrap();
         let deserialized: TestConfig = toml::from_str(&serialized).unwrap();
-        
-        assert_eq!(config.network.default_local_port, deserialized.network.default_local_port);
+
+        assert_eq!(
+            config.network.default_local_port,
+            deserialized.network.default_local_port
+        );
     }
 
     #[test]
@@ -338,13 +338,16 @@ mod tests {
         let config = TestConfig::default();
         let temp_file = NamedTempFile::new().unwrap();
         let temp_path = temp_file.path().to_str().unwrap();
-        
+
         // Save config
         config.save_to_file(temp_path).unwrap();
-        
+
         // Load config
         let loaded_config = TestConfig::load_from_file(temp_path).unwrap();
-        
-        assert_eq!(config.network.default_local_port, loaded_config.network.default_local_port);
+
+        assert_eq!(
+            config.network.default_local_port,
+            loaded_config.network.default_local_port
+        );
     }
 }

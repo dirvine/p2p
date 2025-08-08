@@ -16,14 +16,14 @@
 //! Tests threshold groups, key generation, signing ceremonies, member management,
 //! key rotation, hierarchical permissions, and Byzantine fault tolerance.
 
-use anyhow::Result;
 use crate::tests::SubsystemTest;
-use crate::utils::{TestContext, VerificationResult, DataVerifier, TestDataGenerator};
-use std::time::{Duration, SystemTime};
+use crate::utils::{DataVerifier, TestContext, TestDataGenerator, VerificationResult};
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::time::{Duration, SystemTime};
 use tracing::{info, warn};
-use serde::{Serialize, Deserialize};
-use sha2::{Sha256, Digest};
 
 /// Threshold subsystem test implementation
 pub struct ThresholdTests {
@@ -50,7 +50,10 @@ impl ThresholdTests {
     }
 
     /// Test comprehensive threshold operations
-    async fn test_threshold_operations(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_threshold_operations(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing comprehensive threshold operations");
@@ -71,7 +74,10 @@ impl ThresholdTests {
         let rotation_results = self.test_key_rotation(ctx).await?;
         results.extend(rotation_results);
 
-        ctx.log_info(&format!("Threshold operations completed. Results: {}", results.len()));
+        ctx.log_info(&format!(
+            "Threshold operations completed. Results: {}",
+            results.len()
+        ));
         Ok(results)
     }
 
@@ -88,26 +94,38 @@ impl ThresholdTests {
             ("small_group", 2, 3, "Simple 2-of-3 threshold group"),
             ("medium_group", 3, 5, "Standard 3-of-5 threshold group"),
             ("large_group", 7, 10, "Enterprise 7-of-10 threshold group"),
-            ("high_security", 5, 7, "High security 5-of-7 threshold group"),
+            (
+                "high_security",
+                5,
+                7,
+                "High security 5-of-7 threshold group",
+            ),
             ("governance", 4, 6, "Governance 4-of-6 threshold group"),
         ];
 
         for (group_name, threshold, total_participants, description) in dkg_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[DKG] Starting ceremony for {}: {}-of-{} ({})", 
-                group_name, threshold, total_participants, description));
+            ctx.log_info(&format!(
+                "[DKG] Starting ceremony for {}: {}-of-{} ({})",
+                group_name, threshold, total_participants, description
+            ));
 
             // Select participants for this group
-            let selected_participants: Vec<_> = self.participants
+            let selected_participants: Vec<_> = self
+                .participants
                 .values()
                 .take(total_participants)
                 .map(|p| p.id.clone())
                 .collect();
 
             if selected_participants.len() < total_participants {
-                let error = format!("Insufficient participants for {}: need {}, have {}", 
-                    group_name, total_participants, selected_participants.len());
+                let error = format!(
+                    "Insufficient participants for {}: need {}, have {}",
+                    group_name,
+                    total_participants,
+                    selected_participants.len()
+                );
                 ctx.log_error(&error);
                 results.push(VerificationResult::failure(error, start_time.elapsed()));
                 continue;
@@ -142,7 +160,9 @@ impl ThresholdTests {
                     };
 
                     if let Some(ceremony) = self.ceremonies.get_mut(&ceremony_id) {
-                        ceremony.commitments.insert(participant_id.clone(), commitment);
+                        ceremony
+                            .commitments
+                            .insert(participant_id.clone(), commitment);
                     }
                 }
             }
@@ -161,11 +181,11 @@ impl ThresholdTests {
                         share_index: ceremony.shares.len() as u16 + 1,
                     };
 
-                    ceremony.shares.insert(participant_id.clone(), share.clone());
-                    self.key_shares.insert(
-                        format!("{}_{}", ceremony.group_id, participant_id), 
-                        share
-                    );
+                    ceremony
+                        .shares
+                        .insert(participant_id.clone(), share.clone());
+                    self.key_shares
+                        .insert(format!("{}_{}", ceremony.group_id, participant_id), share);
                 }
 
                 // Phase 3: Complete ceremony and generate group key
@@ -211,20 +231,44 @@ impl ThresholdTests {
                 let group_key_generated = ceremony.group_public_key.is_some();
                 let ceremony_completed = ceremony.state == "completed";
 
-                if commitments_complete && shares_complete && group_key_generated && ceremony_completed {
-                    ctx.log_info(&format!("✅ DKG ceremony PASSED: {} - all phases completed", group_name));
-                    results.push(VerificationResult::success(start_time.elapsed())
-                        .with_metadata("operation".to_string(), "dkg_ceremony".to_string())
-                        .with_metadata("group_name".to_string(), group_name.to_string())
-                        .with_metadata("threshold".to_string(), threshold.to_string())
-                        .with_metadata("participants".to_string(), total_participants.to_string())
-                        .with_metadata("commitments_collected".to_string(), ceremony.commitments.len().to_string())
-                        .with_metadata("shares_generated".to_string(), ceremony.shares.len().to_string())
-                        .with_metadata("ceremony_completed".to_string(), "true".to_string())
-                        .with_metadata("data_verified".to_string(), "true".to_string()));
+                if commitments_complete
+                    && shares_complete
+                    && group_key_generated
+                    && ceremony_completed
+                {
+                    ctx.log_info(&format!(
+                        "✅ DKG ceremony PASSED: {} - all phases completed",
+                        group_name
+                    ));
+                    results.push(
+                        VerificationResult::success(start_time.elapsed())
+                            .with_metadata("operation".to_string(), "dkg_ceremony".to_string())
+                            .with_metadata("group_name".to_string(), group_name.to_string())
+                            .with_metadata("threshold".to_string(), threshold.to_string())
+                            .with_metadata(
+                                "participants".to_string(),
+                                total_participants.to_string(),
+                            )
+                            .with_metadata(
+                                "commitments_collected".to_string(),
+                                ceremony.commitments.len().to_string(),
+                            )
+                            .with_metadata(
+                                "shares_generated".to_string(),
+                                ceremony.shares.len().to_string(),
+                            )
+                            .with_metadata("ceremony_completed".to_string(), "true".to_string())
+                            .with_metadata("data_verified".to_string(), "true".to_string()),
+                    );
                 } else {
-                    let error = format!("DKG ceremony failed for {}: commitments={}, shares={}, group_key={}, completed={}", 
-                        group_name, commitments_complete, shares_complete, group_key_generated, ceremony_completed);
+                    let error = format!(
+                        "DKG ceremony failed for {}: commitments={}, shares={}, group_key={}, completed={}",
+                        group_name,
+                        commitments_complete,
+                        shares_complete,
+                        group_key_generated,
+                        ceremony_completed
+                    );
                     ctx.log_error(&error);
                     results.push(VerificationResult::failure(error, start_time.elapsed()));
                 }
@@ -237,14 +281,46 @@ impl ThresholdTests {
     /// Create test participants with different roles and capabilities
     fn create_test_participants(&mut self) {
         let participants = vec![
-            ("leader_alice", "leader", vec!["sign", "add_members", "remove_members", "rotate_keys"]),
-            ("leader_bob", "leader", vec!["sign", "add_members", "remove_members", "rotate_keys"]),
-            ("member_charlie", "member", vec!["sign", "propose_operations", "vote"]),
-            ("member_diana", "member", vec!["sign", "propose_operations", "vote"]),
-            ("member_eve", "member", vec!["sign", "propose_operations", "vote"]),
-            ("member_frank", "member", vec!["sign", "propose_operations", "vote"]),
-            ("member_grace", "member", vec!["sign", "propose_operations", "vote"]),
-            ("member_henry", "member", vec!["sign", "propose_operations", "vote"]),
+            (
+                "leader_alice",
+                "leader",
+                vec!["sign", "add_members", "remove_members", "rotate_keys"],
+            ),
+            (
+                "leader_bob",
+                "leader",
+                vec!["sign", "add_members", "remove_members", "rotate_keys"],
+            ),
+            (
+                "member_charlie",
+                "member",
+                vec!["sign", "propose_operations", "vote"],
+            ),
+            (
+                "member_diana",
+                "member",
+                vec!["sign", "propose_operations", "vote"],
+            ),
+            (
+                "member_eve",
+                "member",
+                vec!["sign", "propose_operations", "vote"],
+            ),
+            (
+                "member_frank",
+                "member",
+                vec!["sign", "propose_operations", "vote"],
+            ),
+            (
+                "member_grace",
+                "member",
+                vec!["sign", "propose_operations", "vote"],
+            ),
+            (
+                "member_henry",
+                "member",
+                vec!["sign", "propose_operations", "vote"],
+            ),
             ("observer_ivan", "observer", vec!["observe"]),
             ("backup_jane", "backup", vec!["sign"]),
         ];
@@ -270,28 +346,60 @@ impl ThresholdTests {
                 created_at: SystemTime::now(),
                 last_active: SystemTime::now(),
             };
-            self.participants.insert(participant_id.to_string(), participant);
+            self.participants
+                .insert(participant_id.to_string(), participant);
         }
     }
 
     /// Test threshold group management operations
-    async fn test_group_management(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_group_management(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing threshold group management");
 
         let management_scenarios = vec![
-            ("add_member", "group_medium_group", "backup_jane", "Adding new member to existing group"),
-            ("remove_member", "group_medium_group", "member_eve", "Removing member from group"),
-            ("update_threshold", "group_small_group", "3", "Increasing threshold value"),
-            ("promote_member", "group_large_group", "member_charlie", "Promoting member to leader"),
-            ("suspend_member", "group_governance", "member_frank", "Temporarily suspending member"),
+            (
+                "add_member",
+                "group_medium_group",
+                "backup_jane",
+                "Adding new member to existing group",
+            ),
+            (
+                "remove_member",
+                "group_medium_group",
+                "member_eve",
+                "Removing member from group",
+            ),
+            (
+                "update_threshold",
+                "group_small_group",
+                "3",
+                "Increasing threshold value",
+            ),
+            (
+                "promote_member",
+                "group_large_group",
+                "member_charlie",
+                "Promoting member to leader",
+            ),
+            (
+                "suspend_member",
+                "group_governance",
+                "member_frank",
+                "Temporarily suspending member",
+            ),
         ];
 
         for (operation, group_id, target, description) in management_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[GROUP_MGMT] {} in {}: {}", operation, group_id, description));
+            ctx.log_info(&format!(
+                "[GROUP_MGMT] {} in {}: {}",
+                operation, group_id, description
+            ));
 
             if !self.groups.contains_key(group_id) {
                 let error = format!("Group {} not found for operation {}", group_id, operation);
@@ -309,7 +417,7 @@ impl ThresholdTests {
                             group.total_participants += 1;
                             group.version += 1;
                             group.last_updated = SystemTime::now();
-                            
+
                             // Add audit entry
                             group.audit_log.push(MockAuditEntry {
                                 timestamp: SystemTime::now(),
@@ -317,7 +425,9 @@ impl ThresholdTests {
                                 initiator: "leader_alice".to_string(),
                                 participants: vec![target.to_string()],
                                 result: "success".to_string(),
-                                metadata: [("new_member".to_string(), target.to_string())].into_iter().collect(),
+                                metadata: [("new_member".to_string(), target.to_string())]
+                                    .into_iter()
+                                    .collect(),
                             });
                             true
                         } else {
@@ -326,7 +436,7 @@ impl ThresholdTests {
                     } else {
                         false
                     }
-                },
+                }
                 "remove_member" => {
                     if let Some(group) = self.groups.get_mut(group_id) {
                         if let Some(pos) = group.participants.iter().position(|x| x == target) {
@@ -334,7 +444,7 @@ impl ThresholdTests {
                             group.total_participants -= 1;
                             group.version += 1;
                             group.last_updated = SystemTime::now();
-                            
+
                             // Add audit entry
                             group.audit_log.push(MockAuditEntry {
                                 timestamp: SystemTime::now(),
@@ -342,9 +452,11 @@ impl ThresholdTests {
                                 initiator: "leader_alice".to_string(),
                                 participants: vec![target.to_string()],
                                 result: "success".to_string(),
-                                metadata: [("removed_member".to_string(), target.to_string())].into_iter().collect(),
+                                metadata: [("removed_member".to_string(), target.to_string())]
+                                    .into_iter()
+                                    .collect(),
                             });
-                            
+
                             // Remove key shares for removed member
                             let share_key = format!("{}_{}", group_id, target);
                             self.key_shares.remove(&share_key);
@@ -355,15 +467,17 @@ impl ThresholdTests {
                     } else {
                         false
                     }
-                },
+                }
                 "update_threshold" => {
                     if let Some(group) = self.groups.get_mut(group_id) {
                         if let Ok(new_threshold) = target.parse::<u16>() {
-                            if (new_threshold as usize) <= group.total_participants && new_threshold > 0 {
+                            if (new_threshold as usize) <= group.total_participants
+                                && new_threshold > 0
+                            {
                                 group.threshold = new_threshold;
                                 group.version += 1;
                                 group.last_updated = SystemTime::now();
-                                
+
                                 // Add audit entry
                                 group.audit_log.push(MockAuditEntry {
                                     timestamp: SystemTime::now(),
@@ -371,7 +485,12 @@ impl ThresholdTests {
                                     initiator: "leader_alice".to_string(),
                                     participants: vec![],
                                     result: "success".to_string(),
-                                    metadata: [("new_threshold".to_string(), new_threshold.to_string())].into_iter().collect(),
+                                    metadata: [(
+                                        "new_threshold".to_string(),
+                                        new_threshold.to_string(),
+                                    )]
+                                    .into_iter()
+                                    .collect(),
                                 });
                                 true
                             } else {
@@ -383,7 +502,7 @@ impl ThresholdTests {
                     } else {
                         false
                     }
-                },
+                }
                 "promote_member" => {
                     if let Some(participant) = self.participants.get_mut(target) {
                         if participant.role == "member" {
@@ -401,7 +520,7 @@ impl ThresholdTests {
                     } else {
                         false
                     }
-                },
+                }
                 "suspend_member" => {
                     if let Some(participant) = self.participants.get_mut(target) {
                         if participant.status == "active" {
@@ -414,20 +533,28 @@ impl ThresholdTests {
                     } else {
                         false
                     }
-                },
+                }
                 _ => false,
             };
 
             if operation_successful {
-                ctx.log_info(&format!("✅ Group management PASSED: {} - {}", operation, description));
-                results.push(VerificationResult::success(start_time.elapsed())
-                    .with_metadata("operation".to_string(), "group_management".to_string())
-                    .with_metadata("management_operation".to_string(), operation.to_string())
-                    .with_metadata("group_id".to_string(), group_id.to_string())
-                    .with_metadata("target".to_string(), target.to_string())
-                    .with_metadata("operation_verified".to_string(), "true".to_string()));
+                ctx.log_info(&format!(
+                    "✅ Group management PASSED: {} - {}",
+                    operation, description
+                ));
+                results.push(
+                    VerificationResult::success(start_time.elapsed())
+                        .with_metadata("operation".to_string(), "group_management".to_string())
+                        .with_metadata("management_operation".to_string(), operation.to_string())
+                        .with_metadata("group_id".to_string(), group_id.to_string())
+                        .with_metadata("target".to_string(), target.to_string())
+                        .with_metadata("operation_verified".to_string(), "true".to_string()),
+                );
             } else {
-                let error = format!("Group management operation failed: {} - {}", operation, description);
+                let error = format!(
+                    "Group management operation failed: {} - {}",
+                    operation, description
+                );
                 ctx.log_error(&error);
                 results.push(VerificationResult::failure(error, start_time.elapsed()));
             }
@@ -443,31 +570,65 @@ impl ThresholdTests {
         ctx.log_info("Testing FROST threshold signing protocol");
 
         let signing_scenarios = vec![
-            ("simple_message", "group_small_group", "Hello, threshold world!", 2),
-            ("transaction", "group_medium_group", "Transfer 100 tokens to Alice", 3),
-            ("governance_vote", "group_governance", "Proposal: Increase block size to 2MB", 4),
-            ("emergency_action", "group_high_security", "Emergency: Pause all operations", 5),
-            ("document_signature", "group_large_group", "Contract signature for partnership agreement", 7),
+            (
+                "simple_message",
+                "group_small_group",
+                "Hello, threshold world!",
+                2,
+            ),
+            (
+                "transaction",
+                "group_medium_group",
+                "Transfer 100 tokens to Alice",
+                3,
+            ),
+            (
+                "governance_vote",
+                "group_governance",
+                "Proposal: Increase block size to 2MB",
+                4,
+            ),
+            (
+                "emergency_action",
+                "group_high_security",
+                "Emergency: Pause all operations",
+                5,
+            ),
+            (
+                "document_signature",
+                "group_large_group",
+                "Contract signature for partnership agreement",
+                7,
+            ),
         ];
 
         for (session_name, group_id, message, required_signers) in signing_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[FROST] Starting signing session: {} for group {}", session_name, group_id));
+            ctx.log_info(&format!(
+                "[FROST] Starting signing session: {} for group {}",
+                session_name, group_id
+            ));
 
             if !self.groups.contains_key(group_id) {
-                let error = format!("Group {} not found for signing session {}", group_id, session_name);
+                let error = format!(
+                    "Group {} not found for signing session {}",
+                    group_id, session_name
+                );
                 ctx.log_error(&error);
                 results.push(VerificationResult::failure(error, start_time.elapsed()));
                 continue;
             }
 
             let group = self.groups.get(group_id).unwrap();
-            
+
             // Check if we have enough participants
             if (group.participants.len() as u16) < required_signers {
-                let error = format!("Insufficient participants for signing: need {}, have {}", 
-                    required_signers, group.participants.len());
+                let error = format!(
+                    "Insufficient participants for signing: need {}, have {}",
+                    required_signers,
+                    group.participants.len()
+                );
                 ctx.log_error(&error);
                 results.push(VerificationResult::failure(error, start_time.elapsed()));
                 continue;
@@ -485,7 +646,12 @@ impl ThresholdTests {
                 },
                 threshold: group.threshold,
                 required_signers,
-                participants: group.participants.iter().take(required_signers as usize).cloned().collect(),
+                participants: group
+                    .participants
+                    .iter()
+                    .take(required_signers as usize)
+                    .cloned()
+                    .collect(),
                 commitments: HashMap::new(),
                 shares: HashMap::new(),
                 signature: None,
@@ -506,7 +672,9 @@ impl ThresholdTests {
                         binding_commitment: self.generator.generate_binary_data(32),
                         nonce: self.generator.generate_binary_data(32),
                     };
-                    session.commitments.insert(participant_id.clone(), commitment);
+                    session
+                        .commitments
+                        .insert(participant_id.clone(), commitment);
                 }
                 session.state = "collecting_shares".to_string();
             }
@@ -530,15 +698,15 @@ impl ThresholdTests {
 
             // Phase 3: Aggregate signature
             if let Some(session) = self.signing_sessions.get_mut(&session_id) {
-                if session.commitments.len() >= required_signers as usize && 
-                   session.shares.len() >= required_signers as usize {
-                    
+                if session.commitments.len() >= required_signers as usize
+                    && session.shares.len() >= required_signers as usize
+                {
                     // Simulate signature aggregation
                     let mut aggregated_sig = Vec::new();
                     for (participant_id, share) in &session.shares {
                         aggregated_sig.extend_from_slice(&share.share);
                     }
-                    
+
                     session.signature = Some(aggregated_sig);
                     session.state = "completed".to_string();
                     session.completed_at = Some(SystemTime::now());
@@ -552,7 +720,11 @@ impl ThresholdTests {
                 let signature_generated = session.signature.is_some();
                 let session_completed = session.state == "completed";
 
-                if commitments_complete && shares_complete && signature_generated && session_completed {
+                if commitments_complete
+                    && shares_complete
+                    && signature_generated
+                    && session_completed
+                {
                     // Verify signature integrity
                     let signature_valid = if let Some(ref signature) = session.signature {
                         !signature.is_empty() && signature.len() == (required_signers as usize * 32)
@@ -561,25 +733,48 @@ impl ThresholdTests {
                     };
 
                     if signature_valid {
-                        ctx.log_info(&format!("✅ FROST signing PASSED: {} - signature generated and verified", session_name));
-                        results.push(VerificationResult::success(start_time.elapsed())
-                            .with_metadata("operation".to_string(), "frost_signing".to_string())
-                            .with_metadata("session_name".to_string(), session_name.to_string())
-                            .with_metadata("group_id".to_string(), group_id.to_string())
-                            .with_metadata("message".to_string(), message.to_string())
-                            .with_metadata("required_signers".to_string(), required_signers.to_string())
-                            .with_metadata("commitments_collected".to_string(), session.commitments.len().to_string())
-                            .with_metadata("shares_collected".to_string(), session.shares.len().to_string())
-                            .with_metadata("signature_valid".to_string(), "true".to_string())
-                            .with_metadata("data_verified".to_string(), "true".to_string()));
+                        ctx.log_info(&format!(
+                            "✅ FROST signing PASSED: {} - signature generated and verified",
+                            session_name
+                        ));
+                        results.push(
+                            VerificationResult::success(start_time.elapsed())
+                                .with_metadata("operation".to_string(), "frost_signing".to_string())
+                                .with_metadata("session_name".to_string(), session_name.to_string())
+                                .with_metadata("group_id".to_string(), group_id.to_string())
+                                .with_metadata("message".to_string(), message.to_string())
+                                .with_metadata(
+                                    "required_signers".to_string(),
+                                    required_signers.to_string(),
+                                )
+                                .with_metadata(
+                                    "commitments_collected".to_string(),
+                                    session.commitments.len().to_string(),
+                                )
+                                .with_metadata(
+                                    "shares_collected".to_string(),
+                                    session.shares.len().to_string(),
+                                )
+                                .with_metadata("signature_valid".to_string(), "true".to_string())
+                                .with_metadata("data_verified".to_string(), "true".to_string()),
+                        );
                     } else {
-                        let error = format!("FROST signing signature verification failed for {}", session_name);
+                        let error = format!(
+                            "FROST signing signature verification failed for {}",
+                            session_name
+                        );
                         ctx.log_error(&error);
                         results.push(VerificationResult::failure(error, start_time.elapsed()));
                     }
                 } else {
-                    let error = format!("FROST signing failed for {}: commitments={}, shares={}, signature={}, completed={}", 
-                        session_name, commitments_complete, shares_complete, signature_generated, session_completed);
+                    let error = format!(
+                        "FROST signing failed for {}: commitments={}, shares={}, signature={}, completed={}",
+                        session_name,
+                        commitments_complete,
+                        shares_complete,
+                        signature_generated,
+                        session_completed
+                    );
                     ctx.log_error(&error);
                     results.push(VerificationResult::failure(error, start_time.elapsed()));
                 }
@@ -596,26 +791,52 @@ impl ThresholdTests {
         ctx.log_info("Testing key rotation and proactive security");
 
         let rotation_scenarios = vec![
-            ("scheduled_rotation", "group_medium_group", "periodic", "Scheduled monthly key rotation"),
-            ("security_refresh", "group_high_security", "proactive", "Proactive security refresh"),
-            ("compromise_response", "group_governance", "emergency", "Emergency rotation due to suspected compromise"),
-            ("member_change_rotation", "group_large_group", "membership", "Rotation after member changes"),
+            (
+                "scheduled_rotation",
+                "group_medium_group",
+                "periodic",
+                "Scheduled monthly key rotation",
+            ),
+            (
+                "security_refresh",
+                "group_high_security",
+                "proactive",
+                "Proactive security refresh",
+            ),
+            (
+                "compromise_response",
+                "group_governance",
+                "emergency",
+                "Emergency rotation due to suspected compromise",
+            ),
+            (
+                "member_change_rotation",
+                "group_large_group",
+                "membership",
+                "Rotation after member changes",
+            ),
         ];
 
         for (rotation_name, group_id, rotation_type, description) in rotation_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[KEY_ROTATION] {} for {}: {}", rotation_name, group_id, description));
+            ctx.log_info(&format!(
+                "[KEY_ROTATION] {} for {}: {}",
+                rotation_name, group_id, description
+            ));
 
             if !self.groups.contains_key(group_id) {
-                let error = format!("Group {} not found for key rotation {}", group_id, rotation_name);
+                let error = format!(
+                    "Group {} not found for key rotation {}",
+                    group_id, rotation_name
+                );
                 ctx.log_error(&error);
                 results.push(VerificationResult::failure(error, start_time.elapsed()));
                 continue;
             }
 
             let group = self.groups.get(group_id).unwrap().clone();
-            
+
             // Step 1: Initiate key rotation ceremony
             let rotation_ceremony = MockKeyRotationCeremony {
                 id: format!("rotation_{}", rotation_name),
@@ -639,7 +860,9 @@ impl ThresholdTests {
             for participant_id in &group.participants {
                 let share_key = format!("{}_{}", group_id, participant_id);
                 if let Some(old_share) = self.key_shares.get(&share_key) {
-                    rotation_data.old_shares.insert(participant_id.clone(), old_share.clone());
+                    rotation_data
+                        .old_shares
+                        .insert(participant_id.clone(), old_share.clone());
                 }
             }
             rotation_data.state = "generating_new_shares".to_string();
@@ -655,8 +878,10 @@ impl ThresholdTests {
                     share_index: rotation_data.new_shares.len() as u16 + 1,
                 };
 
-                rotation_data.new_shares.insert(participant_id.clone(), new_share.clone());
-                
+                rotation_data
+                    .new_shares
+                    .insert(participant_id.clone(), new_share.clone());
+
                 // Update stored key shares
                 let share_key = format!("{}_{}", group_id, participant_id);
                 self.key_shares.insert(share_key, new_share);
@@ -680,7 +905,9 @@ impl ThresholdTests {
                         hasher.finalize().to_vec()
                     },
                 };
-                rotation_data.refresh_commitments.insert(participant_id.clone(), commitment);
+                rotation_data
+                    .refresh_commitments
+                    .insert(participant_id.clone(), commitment);
             }
             rotation_data.state = "completed".to_string();
             rotation_data.completed_at = Some(SystemTime::now());
@@ -689,7 +916,7 @@ impl ThresholdTests {
             if let Some(group) = self.groups.get_mut(group_id) {
                 group.version = rotation_data.new_version;
                 group.last_updated = SystemTime::now();
-                
+
                 // Add audit entry
                 group.audit_log.push(MockAuditEntry {
                     timestamp: SystemTime::now(),
@@ -699,43 +926,85 @@ impl ThresholdTests {
                     result: "success".to_string(),
                     metadata: [
                         ("rotation_type".to_string(), rotation_type.to_string()),
-                        ("old_version".to_string(), rotation_data.old_version.to_string()),
-                        ("new_version".to_string(), rotation_data.new_version.to_string()),
-                    ].into_iter().collect(),
+                        (
+                            "old_version".to_string(),
+                            rotation_data.old_version.to_string(),
+                        ),
+                        (
+                            "new_version".to_string(),
+                            rotation_data.new_version.to_string(),
+                        ),
+                    ]
+                    .into_iter()
+                    .collect(),
                 });
             }
 
             // Verify key rotation completion and data integrity
             let old_shares_collected = rotation_data.old_shares.len() == group.participants.len();
             let new_shares_generated = rotation_data.new_shares.len() == group.participants.len();
-            let commitments_collected = rotation_data.refresh_commitments.len() == group.participants.len();
+            let commitments_collected =
+                rotation_data.refresh_commitments.len() == group.participants.len();
             let rotation_completed = rotation_data.state == "completed";
 
             // Verify new shares are different from old shares
-            let shares_refreshed = rotation_data.old_shares.iter().all(|(participant_id, old_share)| {
-                if let Some(new_share) = rotation_data.new_shares.get(participant_id) {
-                    old_share.share_data != new_share.share_data
-                } else {
-                    false
-                }
-            });
+            let shares_refreshed =
+                rotation_data
+                    .old_shares
+                    .iter()
+                    .all(|(participant_id, old_share)| {
+                        if let Some(new_share) = rotation_data.new_shares.get(participant_id) {
+                            old_share.share_data != new_share.share_data
+                        } else {
+                            false
+                        }
+                    });
 
-            if old_shares_collected && new_shares_generated && commitments_collected && rotation_completed && shares_refreshed {
-                ctx.log_info(&format!("✅ Key rotation PASSED: {} - all phases completed successfully", rotation_name));
-                results.push(VerificationResult::success(start_time.elapsed())
-                    .with_metadata("operation".to_string(), "key_rotation".to_string())
-                    .with_metadata("rotation_name".to_string(), rotation_name.to_string())
-                    .with_metadata("rotation_type".to_string(), rotation_type.to_string())
-                    .with_metadata("group_id".to_string(), group_id.to_string())
-                    .with_metadata("participants_count".to_string(), group.participants.len().to_string())
-                    .with_metadata("old_shares_collected".to_string(), rotation_data.old_shares.len().to_string())
-                    .with_metadata("new_shares_generated".to_string(), rotation_data.new_shares.len().to_string())
-                    .with_metadata("commitments_collected".to_string(), rotation_data.refresh_commitments.len().to_string())
-                    .with_metadata("shares_refreshed".to_string(), "true".to_string())
-                    .with_metadata("rotation_verified".to_string(), "true".to_string()));
+            if old_shares_collected
+                && new_shares_generated
+                && commitments_collected
+                && rotation_completed
+                && shares_refreshed
+            {
+                ctx.log_info(&format!(
+                    "✅ Key rotation PASSED: {} - all phases completed successfully",
+                    rotation_name
+                ));
+                results.push(
+                    VerificationResult::success(start_time.elapsed())
+                        .with_metadata("operation".to_string(), "key_rotation".to_string())
+                        .with_metadata("rotation_name".to_string(), rotation_name.to_string())
+                        .with_metadata("rotation_type".to_string(), rotation_type.to_string())
+                        .with_metadata("group_id".to_string(), group_id.to_string())
+                        .with_metadata(
+                            "participants_count".to_string(),
+                            group.participants.len().to_string(),
+                        )
+                        .with_metadata(
+                            "old_shares_collected".to_string(),
+                            rotation_data.old_shares.len().to_string(),
+                        )
+                        .with_metadata(
+                            "new_shares_generated".to_string(),
+                            rotation_data.new_shares.len().to_string(),
+                        )
+                        .with_metadata(
+                            "commitments_collected".to_string(),
+                            rotation_data.refresh_commitments.len().to_string(),
+                        )
+                        .with_metadata("shares_refreshed".to_string(), "true".to_string())
+                        .with_metadata("rotation_verified".to_string(), "true".to_string()),
+                );
             } else {
-                let error = format!("Key rotation failed for {}: old_shares={}, new_shares={}, commitments={}, completed={}, refreshed={}", 
-                    rotation_name, old_shares_collected, new_shares_generated, commitments_collected, rotation_completed, shares_refreshed);
+                let error = format!(
+                    "Key rotation failed for {}: old_shares={}, new_shares={}, commitments={}, completed={}, refreshed={}",
+                    rotation_name,
+                    old_shares_collected,
+                    new_shares_generated,
+                    commitments_collected,
+                    rotation_completed,
+                    shares_refreshed
+                );
                 ctx.log_error(&error);
                 results.push(VerificationResult::failure(error, start_time.elapsed()));
             }
@@ -745,7 +1014,10 @@ impl ThresholdTests {
     }
 
     /// Test hierarchical threshold groups and permissions
-    async fn test_hierarchical_groups(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_hierarchical_groups(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing hierarchical threshold groups");
@@ -753,16 +1025,45 @@ impl ThresholdTests {
         // Create parent-child group hierarchy
         let hierarchy_scenarios = vec![
             ("root_council", None, 3, 5, "Root governance council"),
-            ("finance_committee", Some("group_root_council"), 2, 3, "Finance committee under root council"),
-            ("audit_team", Some("group_finance_committee"), 2, 3, "Audit team under finance committee"),
-            ("tech_council", Some("group_root_council"), 4, 7, "Technical council under root council"),
-            ("security_team", Some("group_tech_council"), 3, 5, "Security team under tech council"),
+            (
+                "finance_committee",
+                Some("group_root_council"),
+                2,
+                3,
+                "Finance committee under root council",
+            ),
+            (
+                "audit_team",
+                Some("group_finance_committee"),
+                2,
+                3,
+                "Audit team under finance committee",
+            ),
+            (
+                "tech_council",
+                Some("group_root_council"),
+                4,
+                7,
+                "Technical council under root council",
+            ),
+            (
+                "security_team",
+                Some("group_tech_council"),
+                3,
+                5,
+                "Security team under tech council",
+            ),
         ];
 
-        for (group_name, parent_group, threshold, total_participants, description) in hierarchy_scenarios {
+        for (group_name, parent_group, threshold, total_participants, description) in
+            hierarchy_scenarios
+        {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[HIERARCHY] Creating hierarchical group: {} ({})", group_name, description));
+            ctx.log_info(&format!(
+                "[HIERARCHY] Creating hierarchical group: {} ({})",
+                group_name, description
+            ));
 
             // Determine hierarchy level
             let hierarchy_level = if parent_group.is_none() {
@@ -773,7 +1074,8 @@ impl ThresholdTests {
                     if let Some(parent) = self.groups.get(parent_id) {
                         parent.hierarchy_level + 1
                     } else {
-                        let error = format!("Parent group {} not found for {}", parent_id, group_name);
+                        let error =
+                            format!("Parent group {} not found for {}", parent_id, group_name);
                         ctx.log_error(&error);
                         results.push(VerificationResult::failure(error, start_time.elapsed()));
                         continue;
@@ -786,14 +1088,16 @@ impl ThresholdTests {
             // Select participants (leaders get preference for higher levels)
             let selected_participants: Vec<_> = if hierarchy_level == 1 {
                 // Root level: leaders only
-                self.participants.values()
+                self.participants
+                    .values()
                     .filter(|p| p.role == "leader")
                     .take(total_participants)
                     .map(|p| p.id.clone())
                     .collect()
             } else {
                 // Sub-levels: mix of leaders and members
-                self.participants.values()
+                self.participants
+                    .values()
                     .filter(|p| p.role == "leader" || p.role == "member")
                     .take(total_participants)
                     .map(|p| p.id.clone())
@@ -801,19 +1105,32 @@ impl ThresholdTests {
             };
 
             if selected_participants.len() < total_participants {
-                let error = format!("Insufficient participants for hierarchical group {}", group_name);
+                let error = format!(
+                    "Insufficient participants for hierarchical group {}",
+                    group_name
+                );
                 ctx.log_error(&error);
                 results.push(VerificationResult::failure(error, start_time.elapsed()));
                 continue;
             }
 
             // Create hierarchical group with inherited permissions
-            let mut permissions = vec!["sign".to_string(), "propose_operations".to_string(), "vote".to_string()];
-            
+            let mut permissions = vec![
+                "sign".to_string(),
+                "propose_operations".to_string(),
+                "vote".to_string(),
+            ];
+
             // Add hierarchy-specific permissions
             match hierarchy_level {
-                1 => permissions.extend(vec!["create_subgroups".to_string(), "global_governance".to_string()]),
-                2 => permissions.extend(vec!["delegate_authority".to_string(), "approve_budgets".to_string()]),
+                1 => permissions.extend(vec![
+                    "create_subgroups".to_string(),
+                    "global_governance".to_string(),
+                ]),
+                2 => permissions.extend(vec![
+                    "delegate_authority".to_string(),
+                    "approve_budgets".to_string(),
+                ]),
                 3 => permissions.extend(vec!["execute_operations".to_string()]),
                 _ => {}
             }
@@ -839,8 +1156,13 @@ impl ThresholdTests {
                     result: "success".to_string(),
                     metadata: [
                         ("hierarchy_level".to_string(), hierarchy_level.to_string()),
-                        ("parent_group".to_string(), parent_group.unwrap_or("none").to_string()),
-                    ].into_iter().collect(),
+                        (
+                            "parent_group".to_string(),
+                            parent_group.unwrap_or("none").to_string(),
+                        ),
+                    ]
+                    .into_iter()
+                    .collect(),
                 }],
                 created_at: SystemTime::now(),
                 last_updated: SystemTime::now(),
@@ -856,59 +1178,115 @@ impl ThresholdTests {
                     share_data: self.generator.generate_binary_data(32),
                     verification_key: self.generator.generate_binary_data(32),
                     threshold,
-                    share_index: selected_participants.iter().position(|p| p == participant_id).unwrap() as u16 + 1,
+                    share_index: selected_participants
+                        .iter()
+                        .position(|p| p == participant_id)
+                        .unwrap() as u16
+                        + 1,
                 };
 
-                self.key_shares.insert(
-                    format!("group_{}_{}", group_name, participant_id),
-                    share
-                );
+                self.key_shares
+                    .insert(format!("group_{}_{}", group_name, participant_id), share);
             }
 
-            ctx.log_info(&format!("✅ Hierarchical group PASSED: {} - level {} with {} participants", 
-                group_name, hierarchy_level, selected_participants.len()));
-            results.push(VerificationResult::success(start_time.elapsed())
-                .with_metadata("operation".to_string(), "hierarchical_group_creation".to_string())
-                .with_metadata("group_name".to_string(), group_name.to_string())
-                .with_metadata("hierarchy_level".to_string(), hierarchy_level.to_string())
-                .with_metadata("threshold".to_string(), threshold.to_string())
-                .with_metadata("participants".to_string(), total_participants.to_string())
-                .with_metadata("parent_group".to_string(), parent_group.unwrap_or("none").to_string())
-                .with_metadata("permissions_count".to_string(), self.groups.get(&format!("group_{}", group_name)).unwrap().permissions.len().to_string())
-                .with_metadata("hierarchy_verified".to_string(), "true".to_string()));
+            ctx.log_info(&format!(
+                "✅ Hierarchical group PASSED: {} - level {} with {} participants",
+                group_name,
+                hierarchy_level,
+                selected_participants.len()
+            ));
+            results.push(
+                VerificationResult::success(start_time.elapsed())
+                    .with_metadata(
+                        "operation".to_string(),
+                        "hierarchical_group_creation".to_string(),
+                    )
+                    .with_metadata("group_name".to_string(), group_name.to_string())
+                    .with_metadata("hierarchy_level".to_string(), hierarchy_level.to_string())
+                    .with_metadata("threshold".to_string(), threshold.to_string())
+                    .with_metadata("participants".to_string(), total_participants.to_string())
+                    .with_metadata(
+                        "parent_group".to_string(),
+                        parent_group.unwrap_or("none").to_string(),
+                    )
+                    .with_metadata(
+                        "permissions_count".to_string(),
+                        self.groups
+                            .get(&format!("group_{}", group_name))
+                            .unwrap()
+                            .permissions
+                            .len()
+                            .to_string(),
+                    )
+                    .with_metadata("hierarchy_verified".to_string(), "true".to_string()),
+            );
         }
 
         Ok(results)
     }
 
     /// Test Byzantine fault tolerance and malicious behavior detection
-    async fn test_byzantine_fault_tolerance(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_byzantine_fault_tolerance(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing Byzantine fault tolerance");
 
         let byzantine_scenarios = vec![
-            ("invalid_share", "group_medium_group", "member_charlie", "Participant provides invalid signing share"),
-            ("double_sign", "group_governance", "member_diana", "Participant attempts to sign twice in same session"),
-            ("commitment_mismatch", "group_high_security", "member_eve", "Participant's commitment doesn't match share"),
-            ("refuse_participate", "group_large_group", "member_frank", "Participant refuses to participate in ceremony"),
-            ("malformed_message", "group_small_group", "member_grace", "Participant sends malformed protocol messages"),
+            (
+                "invalid_share",
+                "group_medium_group",
+                "member_charlie",
+                "Participant provides invalid signing share",
+            ),
+            (
+                "double_sign",
+                "group_governance",
+                "member_diana",
+                "Participant attempts to sign twice in same session",
+            ),
+            (
+                "commitment_mismatch",
+                "group_high_security",
+                "member_eve",
+                "Participant's commitment doesn't match share",
+            ),
+            (
+                "refuse_participate",
+                "group_large_group",
+                "member_frank",
+                "Participant refuses to participate in ceremony",
+            ),
+            (
+                "malformed_message",
+                "group_small_group",
+                "member_grace",
+                "Participant sends malformed protocol messages",
+            ),
         ];
 
         for (attack_name, group_id, attacker_id, description) in byzantine_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[BYZANTINE] Testing {} by {} in {}: {}", attack_name, attacker_id, group_id, description));
+            ctx.log_info(&format!(
+                "[BYZANTINE] Testing {} by {} in {}: {}",
+                attack_name, attacker_id, group_id, description
+            ));
 
             if !self.groups.contains_key(group_id) {
-                let error = format!("Group {} not found for Byzantine test {}", group_id, attack_name);
+                let error = format!(
+                    "Group {} not found for Byzantine test {}",
+                    group_id, attack_name
+                );
                 ctx.log_error(&error);
                 results.push(VerificationResult::failure(error, start_time.elapsed()));
                 continue;
             }
 
             let group = self.groups.get(group_id).unwrap();
-            
+
             // Create signing session with Byzantine behavior
             let session = MockSigningSession {
                 id: format!("byzantine_{}", attack_name),
@@ -921,7 +1299,12 @@ impl ThresholdTests {
                 },
                 threshold: group.threshold,
                 required_signers: group.threshold,
-                participants: group.participants.iter().take(group.threshold as usize).cloned().collect(),
+                participants: group
+                    .participants
+                    .iter()
+                    .take(group.threshold as usize)
+                    .cloned()
+                    .collect(),
                 commitments: HashMap::new(),
                 shares: HashMap::new(),
                 signature: None,
@@ -944,7 +1327,9 @@ impl ThresholdTests {
                             binding_commitment: self.generator.generate_binary_data(32),
                             nonce: self.generator.generate_binary_data(32),
                         };
-                        session.commitments.insert(participant_id.clone(), commitment);
+                        session
+                            .commitments
+                            .insert(participant_id.clone(), commitment);
                     } else {
                         // Byzantine participant
                         let malicious_commitment = match attack_name {
@@ -956,7 +1341,7 @@ impl ThresholdTests {
                                     binding_commitment: vec![0; 32], // Invalid: all zeros
                                     nonce: vec![0; 32],
                                 }
-                            },
+                            }
                             "double_sign" => {
                                 // Provide valid commitment but will double-sign later
                                 MockSigningCommitment {
@@ -965,25 +1350,27 @@ impl ThresholdTests {
                                     binding_commitment: self.generator.generate_binary_data(32),
                                     nonce: self.generator.generate_binary_data(32),
                                 }
-                            },
+                            }
                             "refuse_participate" => {
                                 // Don't provide commitment (simulated by not adding to map)
                                 continue;
-                            },
+                            }
                             "malformed_message" => {
                                 // Provide malformed commitment
                                 MockSigningCommitment {
                                     participant_id: participant_id.clone(),
                                     hiding_commitment: vec![255; 16], // Wrong size
                                     binding_commitment: vec![],       // Empty
-                                    nonce: vec![1, 2, 3],            // Wrong size
+                                    nonce: vec![1, 2, 3],             // Wrong size
                                 }
-                            },
+                            }
                             _ => continue,
                         };
-                        
+
                         if attack_name != "refuse_participate" {
-                            session.commitments.insert(participant_id.clone(), malicious_commitment);
+                            session
+                                .commitments
+                                .insert(participant_id.clone(), malicious_commitment);
                         }
                     }
                 }
@@ -995,26 +1382,26 @@ impl ThresholdTests {
                     "invalid_share" | "commitment_mismatch" => {
                         // Check for invalid commitments (all zeros)
                         session.commitments.values().any(|commitment| {
-                            commitment.hiding_commitment.iter().all(|&b| b == 0) ||
-                            commitment.binding_commitment.iter().all(|&b| b == 0)
+                            commitment.hiding_commitment.iter().all(|&b| b == 0)
+                                || commitment.binding_commitment.iter().all(|&b| b == 0)
                         })
-                    },
+                    }
                     "refuse_participate" => {
                         // Check if we have insufficient commitments
                         session.commitments.len() < session.threshold as usize
-                    },
+                    }
                     "malformed_message" => {
                         // Check for malformed commitments
                         session.commitments.values().any(|commitment| {
-                            commitment.hiding_commitment.len() != 32 ||
-                            commitment.binding_commitment.is_empty() ||
-                            commitment.nonce.len() != 32
+                            commitment.hiding_commitment.len() != 32
+                                || commitment.binding_commitment.is_empty()
+                                || commitment.nonce.len() != 32
                         })
-                    },
+                    }
                     "double_sign" => {
                         // Would be detected during share phase (simulated as true)
                         true
-                    },
+                    }
                     _ => false,
                 }
             } else {
@@ -1032,8 +1419,9 @@ impl ThresholdTests {
                                 if session.commitments.len() >= session.threshold as usize {
                                     break;
                                 }
-                                if !session.participants.contains(backup_participant) && 
-                                   backup_participant != attacker_id {
+                                if !session.participants.contains(backup_participant)
+                                    && backup_participant != attacker_id
+                                {
                                     session.participants.push(backup_participant.clone());
                                     let commitment = MockSigningCommitment {
                                         participant_id: backup_participant.clone(),
@@ -1041,20 +1429,22 @@ impl ThresholdTests {
                                         binding_commitment: self.generator.generate_binary_data(32),
                                         nonce: self.generator.generate_binary_data(32),
                                     };
-                                    session.commitments.insert(backup_participant.clone(), commitment);
+                                    session
+                                        .commitments
+                                        .insert(backup_participant.clone(), commitment);
                                 }
                             }
                             session.commitments.len() >= session.threshold as usize
                         } else {
                             false
                         }
-                    },
+                    }
                     _ => {
                         // Exclude malicious participant and continue with honest subset
                         if let Some(session) = self.signing_sessions.get_mut(&session_id) {
                             session.commitments.remove(attacker_id);
                             session.participants.retain(|p| p != attacker_id);
-                            
+
                             // Check if we still have enough honest participants
                             let honest_count = session.commitments.len();
                             honest_count >= session.threshold as usize
@@ -1069,16 +1459,24 @@ impl ThresholdTests {
 
             if byzantine_detected && protocol_recovered {
                 ctx.log_info(&format!("✅ Byzantine fault tolerance PASSED: {} - attack detected and protocol recovered", attack_name));
-                results.push(VerificationResult::success(start_time.elapsed())
-                    .with_metadata("operation".to_string(), "byzantine_fault_tolerance".to_string())
-                    .with_metadata("attack_name".to_string(), attack_name.to_string())
-                    .with_metadata("attacker_id".to_string(), attacker_id.to_string())
-                    .with_metadata("group_id".to_string(), group_id.to_string())
-                    .with_metadata("byzantine_detected".to_string(), "true".to_string())
-                    .with_metadata("protocol_recovered".to_string(), "true".to_string())
-                    .with_metadata("fault_tolerance_verified".to_string(), "true".to_string()));
+                results.push(
+                    VerificationResult::success(start_time.elapsed())
+                        .with_metadata(
+                            "operation".to_string(),
+                            "byzantine_fault_tolerance".to_string(),
+                        )
+                        .with_metadata("attack_name".to_string(), attack_name.to_string())
+                        .with_metadata("attacker_id".to_string(), attacker_id.to_string())
+                        .with_metadata("group_id".to_string(), group_id.to_string())
+                        .with_metadata("byzantine_detected".to_string(), "true".to_string())
+                        .with_metadata("protocol_recovered".to_string(), "true".to_string())
+                        .with_metadata("fault_tolerance_verified".to_string(), "true".to_string()),
+                );
             } else if byzantine_detected && !protocol_recovered {
-                let error = format!("Byzantine attack {} detected but protocol failed to recover", attack_name);
+                let error = format!(
+                    "Byzantine attack {} detected but protocol failed to recover",
+                    attack_name
+                );
                 ctx.log_error(&error);
                 results.push(VerificationResult::failure(error, start_time.elapsed()));
             } else if !byzantine_detected {
@@ -1230,13 +1628,15 @@ struct MockAuditEntry {
 
 #[async_trait::async_trait]
 impl SubsystemTest for ThresholdTests {
-    fn name(&self) -> &str { "threshold" }
+    fn name(&self) -> &str {
+        "threshold"
+    }
 
     async fn test_basic_functionality(&self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
         let mut test_instance = self.clone();
-        
+
         ctx.log_info("Running comprehensive threshold cryptography functionality tests");
-        
+
         // Test threshold operations
         test_instance.test_threshold_operations(ctx).await
     }
@@ -1244,54 +1644,72 @@ impl SubsystemTest for ThresholdTests {
     async fn test_data_verification(&self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
         let mut test_instance = self.clone();
         let mut results = Vec::new();
-        
+
         ctx.log_info("Running threshold data verification tests");
-        
+
         // Test hierarchical groups
         let hierarchy_results = test_instance.test_hierarchical_groups(ctx).await?;
         results.extend(hierarchy_results);
-        
+
         // Test Byzantine fault tolerance
         let byzantine_results = test_instance.test_byzantine_fault_tolerance(ctx).await?;
         results.extend(byzantine_results);
-        
+
         Ok(results)
     }
 
     async fn test_cross_node(&self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
         let mut test_instance = self.clone();
         let mut results = Vec::new();
-        
+
         ctx.log_info("Running cross-node threshold tests");
-        
+
         // Test cross-node distributed key generation
         let cross_node_start = std::time::Instant::now();
-        
+
         // Create distributed groups across multiple nodes
         let distributed_groups = vec![
             ("cross_node_finance", 3, 5, vec!["node1", "node2", "node3"]),
-            ("cross_node_security", 4, 7, vec!["node1", "node2", "node3", "node4"]),
-            ("cross_node_governance", 5, 8, vec!["node1", "node2", "node3", "node4", "node5"]),
+            (
+                "cross_node_security",
+                4,
+                7,
+                vec!["node1", "node2", "node3", "node4"],
+            ),
+            (
+                "cross_node_governance",
+                5,
+                8,
+                vec!["node1", "node2", "node3", "node4", "node5"],
+            ),
         ];
-        
+
         for (group_name, threshold, total_participants, nodes) in distributed_groups {
             let group_start = std::time::Instant::now();
-            
-            ctx.log_info(&format!("[CROSS_NODE] Creating distributed group {} across {} nodes", group_name, nodes.len()));
-            
+
+            ctx.log_info(&format!(
+                "[CROSS_NODE] Creating distributed group {} across {} nodes",
+                group_name,
+                nodes.len()
+            ));
+
             // Simulate participants distributed across nodes
             let mut distributed_participants = Vec::new();
             for (i, node) in nodes.iter().enumerate() {
                 for j in 0..(total_participants / nodes.len()) {
-                    distributed_participants.push(format!("{}_{}_participant_{}", node, group_name, j));
+                    distributed_participants
+                        .push(format!("{}_{}_participant_{}", node, group_name, j));
                 }
             }
-            
+
             // Add remaining participants to balance
             while distributed_participants.len() < total_participants {
-                distributed_participants.push(format!("additional_participant_{}", distributed_participants.len()));
+                distributed_participants.push(format!(
+                    "additional_participant_{}",
+                    distributed_participants.len()
+                ));
             }
-            
+
             // Create distributed DKG ceremony
             let ceremony = MockDkgCeremony {
                 id: format!("cross_dkg_{}", group_name),
@@ -1306,10 +1724,12 @@ impl SubsystemTest for ThresholdTests {
                 started_at: SystemTime::now(),
                 completed_at: None,
             };
-            
+
             let ceremony_id = ceremony.id.clone();
-            test_instance.ceremonies.insert(ceremony_id.clone(), ceremony);
-            
+            test_instance
+                .ceremonies
+                .insert(ceremony_id.clone(), ceremony);
+
             // Simulate cross-node commitment collection
             if let Some(ceremony) = test_instance.ceremonies.get_mut(&ceremony_id) {
                 for participant_id in &distributed_participants {
@@ -1319,15 +1739,17 @@ impl SubsystemTest for ThresholdTests {
                         binding_commitment: test_instance.generator.generate_binary_data(32),
                         proof: test_instance.generator.generate_binary_data(64),
                     };
-                    ceremony.commitments.insert(participant_id.clone(), commitment);
+                    ceremony
+                        .commitments
+                        .insert(participant_id.clone(), commitment);
                 }
-                
+
                 // Complete cross-node ceremony
                 ceremony.state = "cross_node_completed".to_string();
                 ceremony.group_public_key = Some(test_instance.generator.generate_binary_data(32));
                 ceremony.completed_at = Some(SystemTime::now());
             }
-            
+
             // Create distributed threshold group
             let group = MockThresholdGroup {
                 id: format!("cross_group_{}", group_name),
@@ -1355,29 +1777,40 @@ impl SubsystemTest for ThresholdTests {
                     metadata: [
                         ("nodes_count".to_string(), nodes.len().to_string()),
                         ("cross_node_ceremony".to_string(), ceremony_id),
-                    ].into_iter().collect(),
+                    ]
+                    .into_iter()
+                    .collect(),
                 }],
                 created_at: SystemTime::now(),
                 last_updated: SystemTime::now(),
             };
-            
+
             test_instance.groups.insert(group.id.clone(), group);
-            
-            ctx.log_info(&format!("✅ Cross-node group creation PASSED: {} with {} participants across {} nodes", 
-                group_name, total_participants, nodes.len()));
-            results.push(VerificationResult::success(group_start.elapsed())
-                .with_metadata("operation".to_string(), "cross_node_group_creation".to_string())
-                .with_metadata("group_name".to_string(), group_name.to_string())
-                .with_metadata("nodes_count".to_string(), nodes.len().to_string())
-                .with_metadata("threshold".to_string(), threshold.to_string())
-                .with_metadata("participants".to_string(), total_participants.to_string()));
+
+            ctx.log_info(&format!(
+                "✅ Cross-node group creation PASSED: {} with {} participants across {} nodes",
+                group_name,
+                total_participants,
+                nodes.len()
+            ));
+            results.push(
+                VerificationResult::success(group_start.elapsed())
+                    .with_metadata(
+                        "operation".to_string(),
+                        "cross_node_group_creation".to_string(),
+                    )
+                    .with_metadata("group_name".to_string(), group_name.to_string())
+                    .with_metadata("nodes_count".to_string(), nodes.len().to_string())
+                    .with_metadata("threshold".to_string(), threshold.to_string())
+                    .with_metadata("participants".to_string(), total_participants.to_string()),
+            );
         }
-        
+
         // Test cross-node signing coordination
         let signing_start = std::time::Instant::now();
-        
+
         ctx.log_info("[CROSS_NODE] Testing distributed threshold signing");
-        
+
         let cross_signing_session = MockSigningSession {
             id: "cross_node_signing_test".to_string(),
             group_id: "cross_group_cross_node_finance".to_string(),
@@ -1401,10 +1834,12 @@ impl SubsystemTest for ThresholdTests {
             started_at: SystemTime::now(),
             completed_at: None,
         };
-        
+
         let session_id = cross_signing_session.id.clone();
-        test_instance.signing_sessions.insert(session_id.clone(), cross_signing_session);
-        
+        test_instance
+            .signing_sessions
+            .insert(session_id.clone(), cross_signing_session);
+
         // Simulate cross-node coordination for signing
         if let Some(session) = test_instance.signing_sessions.get_mut(&session_id) {
             // Collect commitments from different nodes
@@ -1417,7 +1852,7 @@ impl SubsystemTest for ThresholdTests {
                 };
                 session.commitments.insert(participant.clone(), commitment);
             }
-            
+
             // Collect shares from different nodes
             for participant in &session.participants {
                 let share = MockSigningShare {
@@ -1427,49 +1862,63 @@ impl SubsystemTest for ThresholdTests {
                 };
                 session.shares.insert(participant.clone(), share);
             }
-            
+
             // Complete cross-node signing
             session.signature = Some(test_instance.generator.generate_binary_data(64));
             session.state = "cross_node_completed".to_string();
             session.completed_at = Some(SystemTime::now());
         }
-        
+
         // Verify cross-node signing completion
         if let Some(session) = test_instance.signing_sessions.get(&session_id) {
             let cross_node_coordination = session.state == "cross_node_completed";
             let signature_generated = session.signature.is_some();
-            let all_nodes_participated = session.commitments.len() == 3 && session.shares.len() == 3;
-            
+            let all_nodes_participated =
+                session.commitments.len() == 3 && session.shares.len() == 3;
+
             if cross_node_coordination && signature_generated && all_nodes_participated {
                 ctx.log_info("✅ Cross-node threshold signing PASSED");
-                results.push(VerificationResult::success(signing_start.elapsed())
-                    .with_metadata("operation".to_string(), "cross_node_threshold_signing".to_string())
-                    .with_metadata("participants_count".to_string(), session.participants.len().to_string())
-                    .with_metadata("signature_generated".to_string(), "true".to_string())
-                    .with_metadata("cross_node_verified".to_string(), "true".to_string()));
+                results.push(
+                    VerificationResult::success(signing_start.elapsed())
+                        .with_metadata(
+                            "operation".to_string(),
+                            "cross_node_threshold_signing".to_string(),
+                        )
+                        .with_metadata(
+                            "participants_count".to_string(),
+                            session.participants.len().to_string(),
+                        )
+                        .with_metadata("signature_generated".to_string(), "true".to_string())
+                        .with_metadata("cross_node_verified".to_string(), "true".to_string()),
+                );
             } else {
-                let error = format!("Cross-node signing failed: coordination={}, signature={}, participation={}", 
-                    cross_node_coordination, signature_generated, all_nodes_participated);
+                let error = format!(
+                    "Cross-node signing failed: coordination={}, signature={}, participation={}",
+                    cross_node_coordination, signature_generated, all_nodes_participated
+                );
                 ctx.log_error(&error);
                 results.push(VerificationResult::failure(error, signing_start.elapsed()));
             }
         }
-        
+
         Ok(results)
     }
 
     async fn test_stress(&self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
         let mut test_instance = self.clone();
         let mut results = Vec::new();
-        
+
         ctx.log_info("Running threshold cryptography stress tests");
-        
+
         // Stress test 1: High-volume DKG ceremonies
         let start_time = std::time::Instant::now();
         let ceremony_count = 50;
-        
-        ctx.log_info(&format!("[STRESS] Creating {} DKG ceremonies rapidly", ceremony_count));
-        
+
+        ctx.log_info(&format!(
+            "[STRESS] Creating {} DKG ceremonies rapidly",
+            ceremony_count
+        ));
+
         for i in 0..ceremony_count {
             let ceremony = MockDkgCeremony {
                 id: format!("stress_dkg_{}", i),
@@ -1490,18 +1939,23 @@ impl SubsystemTest for ThresholdTests {
                 started_at: SystemTime::now(),
                 completed_at: Some(SystemTime::now()),
             };
-            
-            test_instance.ceremonies.insert(ceremony.id.clone(), ceremony);
-            
+
+            test_instance
+                .ceremonies
+                .insert(ceremony.id.clone(), ceremony);
+
             if i % 10 == 0 {
                 ctx.log_info(&format!("Created {} DKG ceremonies", i));
             }
         }
-        
+
         // Stress test 2: High-volume signing sessions
         let signing_count = 100;
-        ctx.log_info(&format!("[STRESS] Creating {} signing sessions rapidly", signing_count));
-        
+        ctx.log_info(&format!(
+            "[STRESS] Creating {} signing sessions rapidly",
+            signing_count
+        ));
+
         for i in 0..signing_count {
             let session = MockSigningSession {
                 id: format!("stress_signing_{}", i),
@@ -1526,48 +1980,76 @@ impl SubsystemTest for ThresholdTests {
                 started_at: SystemTime::now(),
                 completed_at: Some(SystemTime::now()),
             };
-            
-            test_instance.signing_sessions.insert(session.id.clone(), session);
-            
+
+            test_instance
+                .signing_sessions
+                .insert(session.id.clone(), session);
+
             if i % 20 == 0 {
                 ctx.log_info(&format!("Created {} signing sessions", i));
             }
         }
-        
+
         // Verify stress test results
-        let completed_ceremonies: Vec<_> = test_instance.ceremonies
+        let completed_ceremonies: Vec<_> = test_instance
+            .ceremonies
             .values()
             .filter(|c| c.id.starts_with("stress_dkg_"))
             .collect();
-        let completed_sessions: Vec<_> = test_instance.signing_sessions
+        let completed_sessions: Vec<_> = test_instance
+            .signing_sessions
             .values()
             .filter(|s| s.id.starts_with("stress_signing_"))
             .collect();
-        
-        if completed_ceremonies.len() == ceremony_count && completed_sessions.len() == signing_count {
-            ctx.log_info(&format!("✅ Threshold stress test PASSED: {} ceremonies + {} sessions in {:?}", 
-                ceremony_count, signing_count, start_time.elapsed()));
-            results.push(VerificationResult::success(start_time.elapsed())
-                .with_metadata("operation".to_string(), "threshold_stress_test".to_string())
-                .with_metadata("ceremonies_created".to_string(), ceremony_count.to_string())
-                .with_metadata("sessions_created".to_string(), signing_count.to_string())
-                .with_metadata("ceremonies_verified".to_string(), completed_ceremonies.len().to_string())
-                .with_metadata("sessions_verified".to_string(), completed_sessions.len().to_string())
-                .with_metadata("throughput_ops_per_sec".to_string(), 
-                    ((ceremony_count + signing_count) as f64 / start_time.elapsed().as_secs_f64()).to_string()));
+
+        if completed_ceremonies.len() == ceremony_count && completed_sessions.len() == signing_count
+        {
+            ctx.log_info(&format!(
+                "✅ Threshold stress test PASSED: {} ceremonies + {} sessions in {:?}",
+                ceremony_count,
+                signing_count,
+                start_time.elapsed()
+            ));
+            results.push(
+                VerificationResult::success(start_time.elapsed())
+                    .with_metadata("operation".to_string(), "threshold_stress_test".to_string())
+                    .with_metadata("ceremonies_created".to_string(), ceremony_count.to_string())
+                    .with_metadata("sessions_created".to_string(), signing_count.to_string())
+                    .with_metadata(
+                        "ceremonies_verified".to_string(),
+                        completed_ceremonies.len().to_string(),
+                    )
+                    .with_metadata(
+                        "sessions_verified".to_string(),
+                        completed_sessions.len().to_string(),
+                    )
+                    .with_metadata(
+                        "throughput_ops_per_sec".to_string(),
+                        ((ceremony_count + signing_count) as f64
+                            / start_time.elapsed().as_secs_f64())
+                        .to_string(),
+                    ),
+            );
         } else {
-            let error = format!("Stress test failed: expected {} ceremonies + {} sessions, got {} + {}", 
-                              ceremony_count, signing_count, completed_ceremonies.len(), completed_sessions.len());
+            let error = format!(
+                "Stress test failed: expected {} ceremonies + {} sessions, got {} + {}",
+                ceremony_count,
+                signing_count,
+                completed_ceremonies.len(),
+                completed_sessions.len()
+            );
             ctx.log_error(&error);
             results.push(VerificationResult::failure(error, start_time.elapsed()));
         }
-        
+
         Ok(results)
     }
 }
 
 impl Default for ThresholdTests {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Clone for ThresholdTests {

@@ -28,6 +28,7 @@ import {
 
 import { OrganizationHierarchy } from '../../types/organization'
 import { organizationService } from '../../services/organization/OrganizationService'
+import * as stores from '../../services/stores'
 import CreateOrganizationDialog from './CreateOrganizationDialog'
 import CreateGroupDialog from './CreateGroupDialog'
 import CreateProjectDialog from './CreateProjectDialog'
@@ -52,12 +53,13 @@ const OrganizationDashboard: React.FC<OrganizationDashboardProps> = ({
   const [inviteTarget, setInviteTarget] = useState<{ type: 'organization' | 'group' | 'project', id: string } | null>(null)
 
   useEffect(() => {
-    loadUserOrganizations()
+    bootstrap()
   }, [currentUserId])
 
-  const loadUserOrganizations = async () => {
+  const bootstrap = async () => {
     try {
       setLoading(true)
+      await stores.initLocalStores()
       const userOrgs = await organizationService.getUserOrganizations(currentUserId)
       
       const hierarchyPromises = userOrgs.map(org => 

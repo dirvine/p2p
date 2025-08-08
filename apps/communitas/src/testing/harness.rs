@@ -1,6 +1,6 @@
 //! Test harness implementation
 
-use super::{TestScenario, TestResult, TestMetrics};
+use super::{TestMetrics, TestResult, TestScenario};
 use anyhow::Result;
 use std::fmt;
 
@@ -41,12 +41,12 @@ impl TestHarness {
             test_nodes: Vec::new(),
         }
     }
-    
+
     /// Add a test scenario
     pub fn add_scenario(&mut self, scenario: Box<dyn TestScenario>) {
         self.scenarios.push(scenario);
     }
-    
+
     /// Spawn test nodes
     pub async fn spawn_nodes(&mut self, count: usize) -> Result<()> {
         for i in 0..count {
@@ -58,17 +58,17 @@ impl TestHarness {
         }
         Ok(())
     }
-    
+
     /// Run all scenarios
     pub async fn run_all(&mut self) -> Result<Vec<TestResult>> {
         let mut results = Vec::new();
-        
+
         for scenario in &mut self.scenarios {
             println!("Running scenario: {}", scenario.name());
-            
+
             // Setup
             scenario.setup()?;
-            
+
             // Execute
             let start = std::time::Instant::now();
             let result = match scenario.execute() {
@@ -81,15 +81,15 @@ impl TestHarness {
                     duration_ms: start.elapsed().as_millis() as u64,
                     error: Some(e.to_string()),
                     metrics: TestMetrics::default(),
-                }
+                },
             };
-            
+
             // Teardown
             let _ = scenario.teardown();
-            
+
             results.push(result);
         }
-        
+
         Ok(results)
     }
 }

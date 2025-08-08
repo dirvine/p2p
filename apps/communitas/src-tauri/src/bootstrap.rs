@@ -1,21 +1,12 @@
 //! Bootstrap Node Implementation for Communitas
-//! 
+//!
 //! This module provides the bootstrap node functionality using the p2p-core library.
 //! The bootstrap node serves as the initial entry point for new nodes joining the network.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{
-    net::SocketAddr,
-    path::PathBuf,
-    sync::Arc,
-    time::Duration,
-};
-use tokio::{
-    signal,
-    sync::RwLock,
-    time::interval,
-};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
+use tokio::{signal, sync::RwLock, time::interval};
 use tracing::{info, warn};
 
 /// Bootstrap node configuration
@@ -66,7 +57,8 @@ pub struct NodeStats {
 }
 
 /// Bootstrap node implementation
-#[derive(Debug)] pub struct BootstrapNode {
+#[derive(Debug)]
+pub struct BootstrapNode {
     config: BootstrapConfig,
     stats: Arc<RwLock<NodeStats>>,
 }
@@ -75,41 +67,41 @@ impl BootstrapNode {
     /// Create a new bootstrap node instance
     pub async fn new(config: BootstrapConfig) -> Result<Self> {
         info!("Initializing Communitas Bootstrap Node");
-        
+
         // Ensure data directories exist
         tokio::fs::create_dir_all(&config.data_dir)
             .await
             .context("Failed to create data directory")?;
-        
+
         tokio::fs::create_dir_all(&config.dht_storage_path)
             .await
             .context("Failed to create DHT storage directory")?;
-        
+
         let stats = Arc::new(RwLock::new(NodeStats::default()));
-        
-        Ok(Self {
-            config,
-            stats,
-        })
+
+        Ok(Self { config, stats })
     }
-    
+
     /// Start the bootstrap node
     pub async fn start(&self) -> Result<()> {
-        info!("Starting Communitas Bootstrap Node on {}", self.config.listen_address);
-        
+        info!(
+            "Starting Communitas Bootstrap Node on {}",
+            self.config.listen_address
+        );
+
         // Start statistics tracking
         let stats_task = self.start_stats_tracking();
-        
+
         // Start health check server if enabled
         let health_check_task = if self.config.enable_health_check {
             Some(self.start_health_check_server().await?)
         } else {
             None
         };
-        
+
         info!("Bootstrap node started successfully");
         info!("Public address: {}", self.config.public_address);
-        
+
         // Wait for shutdown signal
         tokio::select! {
             _ = signal::ctrl_c() => {
@@ -128,22 +120,22 @@ impl BootstrapNode {
                 warn!("Health check server ended unexpectedly");
             }
         }
-        
+
         self.shutdown().await?;
         Ok(())
     }
-    
+
     /// Start statistics tracking
     async fn start_stats_tracking(&self) -> Result<()> {
         let mut interval = interval(Duration::from_secs(60));
         let stats = Arc::clone(&self.stats);
-        
+
         loop {
             interval.tick().await;
-            
+
             let mut stats_guard = stats.write().await;
             stats_guard.uptime_seconds += 60;
-            
+
             // Log periodic status
             if stats_guard.uptime_seconds % 3600 == 0 {
                 info!(
@@ -155,26 +147,24 @@ impl BootstrapNode {
             }
         }
     }
-    
+
     /// Start health check HTTP server
     async fn start_health_check_server(&self) -> Result<tokio::task::JoinHandle<()>> {
         let stats = Arc::clone(&self.stats);
         let port = self.config.health_check_port;
-        
+
         let handle = tokio::spawn(async move {
             use warp::Filter;
-            
+
             // Health check endpoint
-            let health = warp::path("health")
-                .and(warp::get())
-                .map(|| {
-                    warp::reply::json(&serde_json::json!({
-                        "status": "healthy",
-                        "service": "communitas-bootstrap",
-                        "timestamp": chrono::Utc::now().to_rfc3339(),
-                    }))
-                });
-            
+            let health = warp::path("health").and(warp::get()).map(|| {
+                warp::reply::json(&serde_json::json!({
+                    "status": "healthy",
+                    "service": "communitas-bootstrap",
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                }))
+            });
+
             // Status endpoint with statistics
             let status = warp::path("status")
                 .and(warp::get())
@@ -189,25 +179,23 @@ impl BootstrapNode {
                     });
                     Ok::<_, std::convert::Infallible>(warp::reply::json(&response))
                 });
-            
+
             let routes = health.or(status);
-            
+
             info!("Starting health check server on port {}", port);
-            warp::serve(routes)
-                .run(([0, 0, 0, 0], port))
-                .await;
+            warp::serve(routes).run(([0, 0, 0, 0], port)).await;
         });
-        
+
         Ok(handle)
     }
-    
+
     /// Gracefully shutdown the bootstrap node
     pub async fn shutdown(&self) -> Result<()> {
         info!("Shutting down bootstrap node...");
         info!("Bootstrap node shutdown completed");
         Ok(())
     }
-    
+
     /// Get current node statistics
     pub async fn stats(&self) -> NodeStats {
         self.stats.read().await.clone()
@@ -220,9 +208,9 @@ pub async fn run_bootstrap_node(config: BootstrapConfig) -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter("info,p2p_core=debug")
         .init();
-    
+
     let bootstrap_node = BootstrapNode::new(config).await?;
     bootstrap_node.start().await?;
-    
+
     Ok(())
 }

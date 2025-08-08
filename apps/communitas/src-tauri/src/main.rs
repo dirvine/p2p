@@ -8,6 +8,7 @@ mod contacts;
 mod files;
 mod groups;
 mod identity;
+mod stores;
 
 use contact_commands::init_contact_manager;
 use contacts::ContactManager;
@@ -116,7 +117,11 @@ async fn get_network_health(
     };
 
     Ok(NetworkHealthResponse {
-        status: if peer_count > 0 { "connected".into() } else { "disconnected".into() },
+        status: if peer_count > 0 {
+            "connected".into()
+        } else {
+            "disconnected".into()
+        },
         peer_count,
         nat_type: "unknown".into(),
         bandwidth_kbps: 0.0,
@@ -176,9 +181,7 @@ async fn get_messages(
 }
 
 #[tauri::command]
-async fn send_group_message(
-    request: MessageRequest,
-) -> Result<String, String> {
+async fn send_group_message(request: MessageRequest) -> Result<String, String> {
     let id = uuid::Uuid::new_v4().to_string();
     let _ = request;
     Ok(id)
@@ -315,6 +318,17 @@ async fn main() -> anyhow::Result<()> {
             get_messages,
             send_group_message,
             create_group,
+            // Local stores for org/group/project/contact markdown files
+            stores::init_local_stores,
+            stores::get_metadata,
+            stores::create_organization,
+            stores::create_group_local,
+            stores::create_project,
+            stores::add_contact_local,
+            stores::list_markdown,
+            stores::read_markdown_file,
+            stores::write_markdown_file,
+            stores::create_markdown,
             // Contact management commands
             contact_commands::add_contact,
             contact_commands::get_contact,

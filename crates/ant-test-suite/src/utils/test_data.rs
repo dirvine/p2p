@@ -18,17 +18,19 @@
 //! and complex data structures.
 
 use anyhow::Result;
+use fake::{Fake, Faker};
 use saorsa_core::{
-    identity::manager::{UserProfile, UserPreferences, PrivacySettings, DiscoverabilitySettings, DefaultPermissions},
     chat::{ChannelId, MessageId},
-    projects::{ProjectId, DocumentId},
     discuss::{CategoryId, TopicId},
+    identity::manager::{
+        DefaultPermissions, DiscoverabilitySettings, PrivacySettings, UserPreferences, UserProfile,
+    },
+    projects::{DocumentId, ProjectId},
     quantum_crypto::types::{GroupId, ParticipantId},
 };
-use fake::{Fake, Faker};
 // Use basic fake generators that are available
-use rand::{Rng, RngCore, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -38,7 +40,7 @@ use uuid::Uuid;
 pub struct TestDataGenerator {
     /// Random number generator
     rng: StdRng,
-    
+
     /// Seed for reproducible tests
     seed: Option<u64>,
 }
@@ -69,21 +71,24 @@ impl TestDataGenerator {
         } else {
             None
         };
-        
+
         let mut custom_fields = HashMap::new();
-        
+
         // Add some random custom fields
         if self.rng.gen_bool(0.5) {
             custom_fields.insert(
                 "location".to_string(),
-                serde_json::Value::String(format!("City{}", self.rng.r#gen::<u16>()))
+                serde_json::Value::String(format!("City{}", self.rng.r#gen::<u16>())),
             );
         }
-        
+
         if self.rng.gen_bool(0.3) {
             custom_fields.insert(
                 "website".to_string(),
-                serde_json::Value::String(format!("https://{}.com", format!("user{}", self.rng.r#gen::<u16>())))
+                serde_json::Value::String(format!(
+                    "https://{}.com",
+                    format!("user{}", self.rng.r#gen::<u16>())
+                )),
             );
         }
 
@@ -117,7 +122,11 @@ impl TestDataGenerator {
     /// Generate realistic user preferences
     pub fn generate_user_preferences(&mut self) -> UserPreferences {
         UserPreferences {
-            theme: if self.rng.gen_bool(0.6) { "dark".to_string() } else { "light".to_string() },
+            theme: if self.rng.gen_bool(0.6) {
+                "dark".to_string()
+            } else {
+                "light".to_string()
+            },
             language: self.random_language(),
             notifications_enabled: self.rng.gen_bool(0.8),
             auto_accept_friends: self.rng.gen_bool(0.3),
@@ -147,12 +156,12 @@ impl TestDataGenerator {
             encrypted_messaging: self.rng.gen_bool(0.9),
             require_proof_of_humanity: self.rng.gen_bool(0.3),
             max_contact_request_age: Duration::from_secs(
-                self.rng.gen_range(86400..86400 * 90) // 1-90 days
+                self.rng.gen_range(86400..86400 * 90), // 1-90 days
             ),
             enable_forward_secrecy: self.rng.gen_bool(0.8),
             auto_rotate_keys: self.rng.gen_bool(0.7),
             key_rotation_interval: Duration::from_secs(
-                self.rng.gen_range(86400 * 30..86400 * 180) // 30-180 days
+                self.rng.gen_range(86400 * 30..86400 * 180), // 30-180 days
             ),
         }
     }
@@ -173,12 +182,19 @@ impl TestDataGenerator {
     pub fn generate_chat_message(&mut self) -> TestChatMessage {
         let message_types = ["text", "emoji", "code", "quote"];
         let message_type = message_types[self.rng.gen_range(0..message_types.len())];
-        
+
         let content = match message_type {
             "text" => format!("Test message {}", self.rng.r#gen::<u16>()),
             "emoji" => format!("😀 {} 🎉", format!("word{}", self.rng.r#gen::<u16>())),
-            "code" => format!("```rust\nfn main() {{ println!(\"{}!\"); }}\n```", format!("word{}", self.rng.r#gen::<u16>())),
-            "quote" => format!("> {}\n\n{}", format!("Test content {}", self.rng.r#gen::<u16>()), format!("Brief text {}", self.rng.r#gen::<u16>())),
+            "code" => format!(
+                "```rust\nfn main() {{ println!(\"{}!\"); }}\n```",
+                format!("word{}", self.rng.r#gen::<u16>())
+            ),
+            "quote" => format!(
+                "> {}\n\n{}",
+                format!("Test content {}", self.rng.r#gen::<u16>()),
+                format!("Brief text {}", self.rng.r#gen::<u16>())
+            ),
             _ => format!("Test content {}", self.rng.r#gen::<u16>()),
         };
 
@@ -212,12 +228,16 @@ impl TestDataGenerator {
             ("document", "txt", "text/plain"),
             ("archive", "zip", "application/zip"),
         ];
-        
+
         let (category, extension, mime_type) = file_types[self.rng.gen_range(0..file_types.len())];
-        let filename = format!("{}.{}", format!("word{}", self.rng.r#gen::<u16>()), extension);
+        let filename = format!(
+            "{}.{}",
+            format!("word{}", self.rng.r#gen::<u16>()),
+            extension
+        );
         let size = match category {
             "image" => self.rng.gen_range(1024..1024 * 1024 * 5), // 1KB - 5MB
-            "document" => self.rng.gen_range(1024..1024 * 1024), // 1KB - 1MB
+            "document" => self.rng.gen_range(1024..1024 * 1024),  // 1KB - 1MB
             "archive" => self.rng.gen_range(1024 * 10..1024 * 1024 * 50), // 10KB - 50MB
             _ => self.rng.gen_range(1024..1024 * 1024),
         };
@@ -235,7 +255,7 @@ impl TestDataGenerator {
     pub fn generate_project_document(&mut self) -> TestProjectDocument {
         let doc_types = ["markdown", "text", "code", "design", "specification"];
         let doc_type = doc_types[self.rng.gen_range(0..doc_types.len())];
-        
+
         let content = match doc_type {
             "markdown" => self.generate_markdown_content(),
             "code" => self.generate_code_content(),
@@ -292,8 +312,12 @@ impl TestDataGenerator {
             description: format!("Test bio for user {}", self.rng.r#gen::<u16>()),
             metadata: self.generate_metadata_map(),
             nested_data: TestNestedData {
-                numbers: (0..self.rng.gen_range(5..20)).map(|_| self.rng.r#gen::<f64>()).collect(),
-                flags: (0..self.rng.gen_range(3..10)).map(|_| self.rng.r#gen::<bool>()).collect(),
+                numbers: (0..self.rng.gen_range(5..20))
+                    .map(|_| self.rng.r#gen::<f64>())
+                    .collect(),
+                flags: (0..self.rng.gen_range(3..10))
+                    .map(|_| self.rng.r#gen::<bool>())
+                    .collect(),
                 timestamp: SystemTime::now(),
             },
             optional_field: if self.rng.gen_bool(0.6) {
@@ -308,7 +332,7 @@ impl TestDataGenerator {
     pub fn generate_threshold_group_data(&mut self) -> TestThresholdGroup {
         let participant_count = self.rng.gen_range(3..10);
         let threshold = self.rng.gen_range(2..participant_count + 1);
-        
+
         TestThresholdGroup {
             group_id: GroupId([0u8; 32]), // TODO: Generate random bytes
             threshold,
@@ -355,7 +379,7 @@ impl TestDataGenerator {
     fn generate_metadata_map(&mut self) -> HashMap<String, serde_json::Value> {
         let mut map = HashMap::new();
         let field_count = self.rng.gen_range(2..8);
-        
+
         for _ in 0..field_count {
             let key: String = format!("word{}", self.rng.r#gen::<u16>());
             let value = match self.rng.gen_range(0..4) {
@@ -366,7 +390,7 @@ impl TestDataGenerator {
             };
             map.insert(key, value);
         }
-        
+
         map
     }
 
@@ -514,7 +538,7 @@ mod tests {
     fn test_generate_user_profile() {
         let mut generator = TestDataGenerator::with_seed(12345);
         let profile = generator.generate_user_profile();
-        
+
         assert!(!profile.display_name.is_empty());
         assert!(!profile.user_id.is_empty());
         assert_eq!(profile.public_key.len(), 32);
@@ -524,7 +548,7 @@ mod tests {
     fn test_generate_chat_message() {
         let mut generator = TestDataGenerator::with_seed(12345);
         let message = generator.generate_chat_message();
-        
+
         assert!(!message.content.is_empty());
         assert!(!message.sender_id.is_empty());
     }
@@ -533,10 +557,10 @@ mod tests {
     fn test_reproducible_generation() {
         let mut gen1 = TestDataGenerator::with_seed(12345);
         let mut gen2 = TestDataGenerator::with_seed(12345);
-        
+
         let profile1 = gen1.generate_user_profile();
         let profile2 = gen2.generate_user_profile();
-        
+
         assert_eq!(profile1.display_name, profile2.display_name);
         assert_eq!(profile1.public_key, profile2.public_key);
     }

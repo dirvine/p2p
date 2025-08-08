@@ -17,14 +17,14 @@
 //! conflict resolution, branching, encryption, access control, and data integrity
 //! verification across distributed P2P nodes.
 
-use anyhow::Result;
 use crate::tests::SubsystemTest;
-use crate::utils::{TestContext, VerificationResult, DataVerifier, TestDataGenerator};
-use std::time::{Duration, SystemTime};
+use crate::utils::{DataVerifier, TestContext, TestDataGenerator, VerificationResult};
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::time::{Duration, SystemTime};
 use tracing::{info, warn};
-use serde::{Serialize, Deserialize};
-use sha2::{Sha256, Digest};
 
 /// Storage subsystem test implementation
 pub struct StorageTests {
@@ -45,7 +45,10 @@ impl StorageTests {
     }
 
     /// Test comprehensive storage operations with encryption
-    async fn test_storage_operations(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_storage_operations(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing storage operations with encryption");
@@ -66,7 +69,10 @@ impl StorageTests {
         let access_results = self.test_access_control(ctx).await?;
         results.extend(access_results);
 
-        ctx.log_info(&format!("Storage operations completed. Results: {}", results.len()));
+        ctx.log_info(&format!(
+            "Storage operations completed. Results: {}",
+            results.len()
+        ));
         Ok(results)
     }
 
@@ -77,17 +83,37 @@ impl StorageTests {
         ctx.log_info("Testing basic storage operations");
 
         let storage_scenarios = vec![
-            ("text_document", b"Hello, world! This is a test document.".to_vec(), "text/plain"),
-            ("json_data", br#"{"name":"test","value":42,"array":[1,2,3]}"#.to_vec(), "application/json"),
-            ("binary_data", vec![0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF], "application/octet-stream"),
-            ("large_text", "Lorem ipsum dolor sit amet. ".repeat(100).into_bytes(), "text/plain"),
+            (
+                "text_document",
+                b"Hello, world! This is a test document.".to_vec(),
+                "text/plain",
+            ),
+            (
+                "json_data",
+                br#"{"name":"test","value":42,"array":[1,2,3]}"#.to_vec(),
+                "application/json",
+            ),
+            (
+                "binary_data",
+                vec![0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF],
+                "application/octet-stream",
+            ),
+            (
+                "large_text",
+                "Lorem ipsum dolor sit amet. ".repeat(100).into_bytes(),
+                "text/plain",
+            ),
             ("empty_file", vec![], "application/octet-stream"),
         ];
 
         for (name, data, mime_type) in storage_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[STORAGE] Testing {} ({} bytes)", name, data.len()));
+            ctx.log_info(&format!(
+                "[STORAGE] Testing {} ({} bytes)",
+                name,
+                data.len()
+            ));
 
             // Create mock document
             let document = MockDocument {
@@ -101,7 +127,11 @@ impl StorageTests {
                 modified_at: SystemTime::now(),
                 version: 1,
                 encrypted: false,
-                chunks: if data.len() > 1024 { Some(self.chunk_data(&data)) } else { None },
+                chunks: if data.len() > 1024 {
+                    Some(self.chunk_data(&data))
+                } else {
+                    None
+                },
             };
 
             // Store document
@@ -112,12 +142,14 @@ impl StorageTests {
             if let Some(stored_doc) = self.documents.get(&doc_id) {
                 if stored_doc.content == data && stored_doc.hash == self.calculate_hash(&data) {
                     ctx.log_info(&format!("✅ Storage verification PASSED for {}", name));
-                    results.push(VerificationResult::success(start_time.elapsed())
-                        .with_metadata("operation".to_string(), "basic_storage".to_string())
-                        .with_metadata("document_type".to_string(), name.to_string())
-                        .with_metadata("size_bytes".to_string(), data.len().to_string())
-                        .with_metadata("data_verified".to_string(), "true".to_string())
-                        .with_metadata("mime_type".to_string(), mime_type.to_string()));
+                    results.push(
+                        VerificationResult::success(start_time.elapsed())
+                            .with_metadata("operation".to_string(), "basic_storage".to_string())
+                            .with_metadata("document_type".to_string(), name.to_string())
+                            .with_metadata("size_bytes".to_string(), data.len().to_string())
+                            .with_metadata("data_verified".to_string(), "true".to_string())
+                            .with_metadata("mime_type".to_string(), mime_type.to_string()),
+                    );
                 } else {
                     let error = format!("Data corruption detected for {}", name);
                     ctx.log_error(&error);
@@ -130,22 +162,38 @@ impl StorageTests {
     }
 
     /// Test encrypted storage operations
-    async fn test_encrypted_storage(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_encrypted_storage(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing encrypted storage operations");
 
         let encryption_scenarios = vec![
-            ("confidential_doc", b"This is confidential information".to_vec()),
-            ("financial_data", b"Revenue: $1,000,000, Expenses: $750,000".to_vec()),
-            ("user_profiles", br#"{"users":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}"#.to_vec()),
+            (
+                "confidential_doc",
+                b"This is confidential information".to_vec(),
+            ),
+            (
+                "financial_data",
+                b"Revenue: $1,000,000, Expenses: $750,000".to_vec(),
+            ),
+            (
+                "user_profiles",
+                br#"{"users":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}"#.to_vec(),
+            ),
             ("sensitive_keys", self.generator.generate_binary_data(256)),
         ];
 
         for (name, data) in encryption_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[ENCRYPTION] Testing {} ({} bytes)", name, data.len()));
+            ctx.log_info(&format!(
+                "[ENCRYPTION] Testing {} ({} bytes)",
+                name,
+                data.len()
+            ));
 
             // Mock encryption process
             let encrypted_data = self.mock_encrypt(&data)?;
@@ -175,13 +223,18 @@ impl StorageTests {
 
                 if decrypted_data == data && decrypted_hash == original_hash {
                     ctx.log_info(&format!("✅ Encryption verification PASSED for {}", name));
-                    results.push(VerificationResult::success(start_time.elapsed())
-                        .with_metadata("operation".to_string(), "encrypted_storage".to_string())
-                        .with_metadata("document_type".to_string(), name.to_string())
-                        .with_metadata("original_size".to_string(), data.len().to_string())
-                        .with_metadata("encrypted_size".to_string(), encrypted_data.len().to_string())
-                        .with_metadata("encryption_verified".to_string(), "true".to_string())
-                        .with_metadata("data_integrity".to_string(), "verified".to_string()));
+                    results.push(
+                        VerificationResult::success(start_time.elapsed())
+                            .with_metadata("operation".to_string(), "encrypted_storage".to_string())
+                            .with_metadata("document_type".to_string(), name.to_string())
+                            .with_metadata("original_size".to_string(), data.len().to_string())
+                            .with_metadata(
+                                "encrypted_size".to_string(),
+                                encrypted_data.len().to_string(),
+                            )
+                            .with_metadata("encryption_verified".to_string(), "true".to_string())
+                            .with_metadata("data_integrity".to_string(), "verified".to_string()),
+                    );
                 } else {
                     let error = format!("Encryption/decryption failed for {}", name);
                     ctx.log_error(&error);
@@ -200,9 +253,9 @@ impl StorageTests {
         ctx.log_info("Testing file chunking for large files");
 
         let chunking_scenarios = vec![
-            ("small_file", 512),     // 512 bytes
-            ("medium_file", 64 * 1024), // 64KB  
-            ("large_file", 1024 * 1024), // 1MB
+            ("small_file", 512),             // 512 bytes
+            ("medium_file", 64 * 1024),      // 64KB
+            ("large_file", 1024 * 1024),     // 1MB
             ("huge_file", 10 * 1024 * 1024), // 10MB
         ];
 
@@ -228,13 +281,15 @@ impl StorageTests {
             // Verify data integrity
             if reconstructed_data == data && reconstructed_hash == original_hash {
                 ctx.log_info(&format!("✅ Chunking verification PASSED for {}", name));
-                results.push(VerificationResult::success(start_time.elapsed())
-                    .with_metadata("operation".to_string(), "file_chunking".to_string())
-                    .with_metadata("file_type".to_string(), name.to_string())
-                    .with_metadata("original_size".to_string(), size.to_string())
-                    .with_metadata("chunk_count".to_string(), chunk_count.to_string())
-                    .with_metadata("data_verified".to_string(), "true".to_string())
-                    .with_metadata("hash_verified".to_string(), "true".to_string()));
+                results.push(
+                    VerificationResult::success(start_time.elapsed())
+                        .with_metadata("operation".to_string(), "file_chunking".to_string())
+                        .with_metadata("file_type".to_string(), name.to_string())
+                        .with_metadata("original_size".to_string(), size.to_string())
+                        .with_metadata("chunk_count".to_string(), chunk_count.to_string())
+                        .with_metadata("data_verified".to_string(), "true".to_string())
+                        .with_metadata("hash_verified".to_string(), "true".to_string()),
+                );
             } else {
                 let error = format!("Chunking verification failed for {}", name);
                 ctx.log_error(&error);
@@ -264,23 +319,33 @@ impl StorageTests {
         for (doc_name, access_level, user_type, should_allow) in access_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[ACCESS] Testing {} access by {} to {}", user_type, access_level, doc_name));
+            ctx.log_info(&format!(
+                "[ACCESS] Testing {} access by {} to {}",
+                user_type, access_level, doc_name
+            ));
 
             // Mock access control check
             let access_granted = self.check_access_permission(access_level, user_type);
 
             if access_granted == should_allow {
-                ctx.log_info(&format!("✅ Access control PASSED: {} access to {}", user_type, doc_name));
-                results.push(VerificationResult::success(start_time.elapsed())
-                    .with_metadata("operation".to_string(), "access_control".to_string())
-                    .with_metadata("document".to_string(), doc_name.to_string())
-                    .with_metadata("access_level".to_string(), access_level.to_string())
-                    .with_metadata("user_type".to_string(), user_type.to_string())
-                    .with_metadata("expected_result".to_string(), should_allow.to_string())
-                    .with_metadata("actual_result".to_string(), access_granted.to_string()));
+                ctx.log_info(&format!(
+                    "✅ Access control PASSED: {} access to {}",
+                    user_type, doc_name
+                ));
+                results.push(
+                    VerificationResult::success(start_time.elapsed())
+                        .with_metadata("operation".to_string(), "access_control".to_string())
+                        .with_metadata("document".to_string(), doc_name.to_string())
+                        .with_metadata("access_level".to_string(), access_level.to_string())
+                        .with_metadata("user_type".to_string(), user_type.to_string())
+                        .with_metadata("expected_result".to_string(), should_allow.to_string())
+                        .with_metadata("actual_result".to_string(), access_granted.to_string()),
+                );
             } else {
-                let error = format!("Access control failed: {} access to {} (expected {}, got {})", 
-                                   user_type, doc_name, should_allow, access_granted);
+                let error = format!(
+                    "Access control failed: {} access to {} (expected {}, got {})",
+                    user_type, doc_name, should_allow, access_granted
+                );
                 ctx.log_error(&error);
                 results.push(VerificationResult::failure(error, start_time.elapsed()));
             }
@@ -311,12 +376,18 @@ impl StorageTests {
         let history_results = self.test_history_operations(ctx).await?;
         results.extend(history_results);
 
-        ctx.log_info(&format!("Version control tests completed. Results: {}", results.len()));
+        ctx.log_info(&format!(
+            "Version control tests completed. Results: {}",
+            results.len()
+        ));
         Ok(results)
     }
 
     /// Test document versioning with git-like commits
-    async fn test_document_versioning(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_document_versioning(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing document versioning");
@@ -326,11 +397,14 @@ impl StorageTests {
         let repository = MockRepository {
             id: repo_id.clone(),
             name: "Test Repository".to_string(),
-            branches: HashMap::from([("main".to_string(), MockBranch {
-                name: "main".to_string(),
-                commits: Vec::new(),
-                head: None,
-            })]),
+            branches: HashMap::from([(
+                "main".to_string(),
+                MockBranch {
+                    name: "main".to_string(),
+                    commits: Vec::new(),
+                    head: None,
+                },
+            )]),
             tags: HashMap::new(),
             created_at: SystemTime::now(),
         };
@@ -340,15 +414,28 @@ impl StorageTests {
         // Test version creation sequence
         let version_scenarios = vec![
             ("Initial commit", "Hello, World!"),
-            ("Add documentation", "Hello, World!\n\n# Documentation\nThis is a test file."),
-            ("Fix typos", "Hello, World!\n\n# Documentation\nThis is a test file with corrections."),
-            ("Add features", "Hello, World!\n\n# Documentation\nThis is a test file with corrections.\n\n## Features\n- Feature 1\n- Feature 2"),
+            (
+                "Add documentation",
+                "Hello, World!\n\n# Documentation\nThis is a test file.",
+            ),
+            (
+                "Fix typos",
+                "Hello, World!\n\n# Documentation\nThis is a test file with corrections.",
+            ),
+            (
+                "Add features",
+                "Hello, World!\n\n# Documentation\nThis is a test file with corrections.\n\n## Features\n- Feature 1\n- Feature 2",
+            ),
         ];
 
         for (i, (commit_message, content)) in version_scenarios.iter().enumerate() {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[VERSION] Creating version {}: {}", i + 1, commit_message));
+            ctx.log_info(&format!(
+                "[VERSION] Creating version {}: {}",
+                i + 1,
+                commit_message
+            ));
 
             // Create commit
             let commit = MockCommit {
@@ -358,7 +445,11 @@ impl StorageTests {
                 timestamp: SystemTime::now(),
                 content: content.as_bytes().to_vec(),
                 content_hash: self.calculate_hash(content.as_bytes()),
-                parent: if i > 0 { Some(format!("commit_{}", i)) } else { None },
+                parent: if i > 0 {
+                    Some(format!("commit_{}", i))
+                } else {
+                    None
+                },
                 changes: self.calculate_changes(i, content.as_bytes()),
             };
 
@@ -372,12 +463,23 @@ impl StorageTests {
                     let stored_hash = self.calculate_hash(&commit.content);
                     if stored_hash == commit.content_hash {
                         ctx.log_info(&format!("✅ Version {} created successfully", i + 1));
-                        results.push(VerificationResult::success(start_time.elapsed())
-                            .with_metadata("operation".to_string(), "version_creation".to_string())
-                            .with_metadata("version_number".to_string(), (i + 1).to_string())
-                            .with_metadata("commit_message".to_string(), commit_message.to_string())
-                            .with_metadata("content_size".to_string(), content.len().to_string())
-                            .with_metadata("data_verified".to_string(), "true".to_string()));
+                        results.push(
+                            VerificationResult::success(start_time.elapsed())
+                                .with_metadata(
+                                    "operation".to_string(),
+                                    "version_creation".to_string(),
+                                )
+                                .with_metadata("version_number".to_string(), (i + 1).to_string())
+                                .with_metadata(
+                                    "commit_message".to_string(),
+                                    commit_message.to_string(),
+                                )
+                                .with_metadata(
+                                    "content_size".to_string(),
+                                    content.len().to_string(),
+                                )
+                                .with_metadata("data_verified".to_string(), "true".to_string()),
+                        );
                     } else {
                         let error = format!("Version {} data corruption detected", i + 1);
                         ctx.log_error(&error);
@@ -391,7 +493,10 @@ impl StorageTests {
     }
 
     /// Test branching operations
-    async fn test_branching_operations(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_branching_operations(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing branching operations");
@@ -417,7 +522,9 @@ impl StorageTests {
 
             // Create branch from main
             if let Some(repo) = self.repositories.get_mut(&repo_id) {
-                let main_head = repo.branches.get("main")
+                let main_head = repo
+                    .branches
+                    .get("main")
                     .and_then(|b| b.head.clone())
                     .unwrap_or_else(|| "commit_1".to_string());
 
@@ -445,12 +552,20 @@ impl StorageTests {
                     branch.commits.push(branch_commit.clone());
                     branch.head = Some(branch_commit.id.clone());
 
-                    ctx.log_info(&format!("✅ Branch {} created with commit {}", branch_name, branch_commit.id));
-                    results.push(VerificationResult::success(start_time.elapsed())
-                        .with_metadata("operation".to_string(), "branch_creation".to_string())
-                        .with_metadata("branch_name".to_string(), branch_name.to_string())
-                        .with_metadata("commit_id".to_string(), branch_commit.id)
-                        .with_metadata("parent_commit".to_string(), branch_commit.parent.unwrap_or_default()));
+                    ctx.log_info(&format!(
+                        "✅ Branch {} created with commit {}",
+                        branch_name, branch_commit.id
+                    ));
+                    results.push(
+                        VerificationResult::success(start_time.elapsed())
+                            .with_metadata("operation".to_string(), "branch_creation".to_string())
+                            .with_metadata("branch_name".to_string(), branch_name.to_string())
+                            .with_metadata("commit_id".to_string(), branch_commit.id)
+                            .with_metadata(
+                                "parent_commit".to_string(),
+                                branch_commit.parent.unwrap_or_default(),
+                            ),
+                    );
                 }
             }
         }
@@ -459,7 +574,10 @@ impl StorageTests {
     }
 
     /// Test conflict resolution
-    async fn test_conflict_resolution(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_conflict_resolution(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing merge conflict resolution");
@@ -475,7 +593,10 @@ impl StorageTests {
         for (branch_name, conflict_line, new_content) in conflict_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[CONFLICT] Simulating conflict in {}", branch_name));
+            ctx.log_info(&format!(
+                "[CONFLICT] Simulating conflict in {}",
+                branch_name
+            ));
 
             // Create conflicting commit
             let conflict_commit = MockCommit {
@@ -498,11 +619,22 @@ impl StorageTests {
                 let resolution_successful = self.resolve_conflicts(&conflicts_detected);
                 if resolution_successful {
                     ctx.log_info(&format!("✅ Conflicts resolved for {}", branch_name));
-                    results.push(VerificationResult::success(start_time.elapsed())
-                        .with_metadata("operation".to_string(), "conflict_resolution".to_string())
-                        .with_metadata("branch_name".to_string(), branch_name.to_string())
-                        .with_metadata("conflicts_detected".to_string(), conflicts_detected.len().to_string())
-                        .with_metadata("resolution_status".to_string(), "successful".to_string()));
+                    results.push(
+                        VerificationResult::success(start_time.elapsed())
+                            .with_metadata(
+                                "operation".to_string(),
+                                "conflict_resolution".to_string(),
+                            )
+                            .with_metadata("branch_name".to_string(), branch_name.to_string())
+                            .with_metadata(
+                                "conflicts_detected".to_string(),
+                                conflicts_detected.len().to_string(),
+                            )
+                            .with_metadata(
+                                "resolution_status".to_string(),
+                                "successful".to_string(),
+                            ),
+                    );
                 } else {
                     let error = format!("Failed to resolve conflicts for {}", branch_name);
                     ctx.log_error(&error);
@@ -515,7 +647,10 @@ impl StorageTests {
     }
 
     /// Test history operations and rollback
-    async fn test_history_operations(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_history_operations(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing history operations and rollback");
@@ -539,31 +674,74 @@ impl StorageTests {
                         "get_commit_history" => {
                             let history = self.get_commit_history(&repo_id, "main");
                             if history.len() == target_version {
-                                ctx.log_info(&format!("✅ History retrieved: {} commits", history.len()));
-                                results.push(VerificationResult::success(start_time.elapsed())
-                                    .with_metadata("operation".to_string(), "get_history".to_string())
-                                    .with_metadata("commit_count".to_string(), history.len().to_string())
-                                    .with_metadata("history_verified".to_string(), "true".to_string()));
+                                ctx.log_info(&format!(
+                                    "✅ History retrieved: {} commits",
+                                    history.len()
+                                ));
+                                results.push(
+                                    VerificationResult::success(start_time.elapsed())
+                                        .with_metadata(
+                                            "operation".to_string(),
+                                            "get_history".to_string(),
+                                        )
+                                        .with_metadata(
+                                            "commit_count".to_string(),
+                                            history.len().to_string(),
+                                        )
+                                        .with_metadata(
+                                            "history_verified".to_string(),
+                                            "true".to_string(),
+                                        ),
+                                );
                             }
                         }
                         "rollback_to_version_2" => {
-                            let rollback_successful = self.rollback_to_version(&repo_id, "main", target_version);
+                            let rollback_successful =
+                                self.rollback_to_version(&repo_id, "main", target_version);
                             if rollback_successful {
-                                ctx.log_info(&format!("✅ Rollback to version {} successful", target_version));
-                                results.push(VerificationResult::success(start_time.elapsed())
-                                    .with_metadata("operation".to_string(), "rollback".to_string())
-                                    .with_metadata("target_version".to_string(), target_version.to_string())
-                                    .with_metadata("rollback_successful".to_string(), "true".to_string()));
+                                ctx.log_info(&format!(
+                                    "✅ Rollback to version {} successful",
+                                    target_version
+                                ));
+                                results.push(
+                                    VerificationResult::success(start_time.elapsed())
+                                        .with_metadata(
+                                            "operation".to_string(),
+                                            "rollback".to_string(),
+                                        )
+                                        .with_metadata(
+                                            "target_version".to_string(),
+                                            target_version.to_string(),
+                                        )
+                                        .with_metadata(
+                                            "rollback_successful".to_string(),
+                                            "true".to_string(),
+                                        ),
+                                );
                             }
                         }
                         "compare_versions" => {
                             let diff = self.compare_versions(&repo_id, "main", 1, 2);
                             if !diff.is_empty() {
-                                ctx.log_info(&format!("✅ Version comparison completed: {} changes", diff.len()));
-                                results.push(VerificationResult::success(start_time.elapsed())
-                                    .with_metadata("operation".to_string(), "version_compare".to_string())
-                                    .with_metadata("changes_found".to_string(), diff.len().to_string())
-                                    .with_metadata("comparison_successful".to_string(), "true".to_string()));
+                                ctx.log_info(&format!(
+                                    "✅ Version comparison completed: {} changes",
+                                    diff.len()
+                                ));
+                                results.push(
+                                    VerificationResult::success(start_time.elapsed())
+                                        .with_metadata(
+                                            "operation".to_string(),
+                                            "version_compare".to_string(),
+                                        )
+                                        .with_metadata(
+                                            "changes_found".to_string(),
+                                            diff.len().to_string(),
+                                        )
+                                        .with_metadata(
+                                            "comparison_successful".to_string(),
+                                            "true".to_string(),
+                                        ),
+                                );
                             }
                         }
                         _ => {}
@@ -585,7 +763,9 @@ impl StorageTests {
 
     fn chunk_data(&self, data: &[u8]) -> Vec<Vec<u8>> {
         const CHUNK_SIZE: usize = 64 * 1024; // 64KB chunks
-        data.chunks(CHUNK_SIZE).map(|chunk| chunk.to_vec()).collect()
+        data.chunks(CHUNK_SIZE)
+            .map(|chunk| chunk.to_vec())
+            .collect()
     }
 
     fn mock_encrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
@@ -642,7 +822,13 @@ impl StorageTests {
         true
     }
 
-    fn compare_versions(&self, _repo_id: &str, _branch_name: &str, _v1: usize, _v2: usize) -> Vec<String> {
+    fn compare_versions(
+        &self,
+        _repo_id: &str,
+        _branch_name: &str,
+        _v1: usize,
+        _v2: usize,
+    ) -> Vec<String> {
         // Mock version comparison
         vec![
             "+ Added documentation section".to_string(),
@@ -694,7 +880,7 @@ struct MockCommit {
     content: Vec<u8>,
     content_hash: Vec<u8>,
     parent: Option<String>, // parent commit_id
-    changes: Vec<String>, // list of changes
+    changes: Vec<String>,   // list of changes
 }
 
 #[async_trait::async_trait]
@@ -755,15 +941,22 @@ impl SubsystemTest for StorageTests {
                     chunks: None,
                 };
 
-                test_instance.documents.insert(document.id.clone(), document);
+                test_instance
+                    .documents
+                    .insert(document.id.clone(), document);
             }
         }
 
         // Verify synchronization across nodes
         let mut sync_verified = true;
         for doc_name in ["shared_doc_1", "shared_doc_2", "version_doc"] {
-            let node_docs: Vec<_> = nodes.iter()
-                .filter_map(|node| test_instance.documents.get(&format!("{}_{}", node, doc_name)))
+            let node_docs: Vec<_> = nodes
+                .iter()
+                .filter_map(|node| {
+                    test_instance
+                        .documents
+                        .get(&format!("{}_{}", node, doc_name))
+                })
                 .collect();
 
             if node_docs.len() != nodes.len() {
@@ -781,11 +974,13 @@ impl SubsystemTest for StorageTests {
 
         if sync_verified {
             ctx.log_info("✅ Cross-node storage synchronization verified");
-            results.push(VerificationResult::success(sync_start.elapsed())
-                .with_metadata("operation".to_string(), "cross_node_sync".to_string())
-                .with_metadata("nodes_tested".to_string(), nodes.len().to_string())
-                .with_metadata("documents_synced".to_string(), "3".to_string())
-                .with_metadata("sync_verified".to_string(), "true".to_string()));
+            results.push(
+                VerificationResult::success(sync_start.elapsed())
+                    .with_metadata("operation".to_string(), "cross_node_sync".to_string())
+                    .with_metadata("nodes_tested".to_string(), nodes.len().to_string())
+                    .with_metadata("documents_synced".to_string(), "3".to_string())
+                    .with_metadata("sync_verified".to_string(), "true".to_string()),
+            );
         } else {
             let error = "Cross-node synchronization verification failed".to_string();
             ctx.log_error(&error);
@@ -823,7 +1018,9 @@ impl SubsystemTest for StorageTests {
                 chunks: None,
             };
 
-            test_instance.documents.insert(document.id.clone(), document);
+            test_instance
+                .documents
+                .insert(document.id.clone(), document);
 
             if i % 100 == 0 {
                 ctx.log_info(&format!("Created {} documents", i));
@@ -833,17 +1030,26 @@ impl SubsystemTest for StorageTests {
         // Verify all documents were stored correctly
         let stored_count = test_instance.documents.len();
         if stored_count >= document_count {
-            ctx.log_info(&format!("✅ Storage stress test PASSED: {} documents in {:?}", 
-                                 document_count, start_time.elapsed()));
-            results.push(VerificationResult::success(start_time.elapsed())
-                .with_metadata("operation".to_string(), "storage_stress_test".to_string())
-                .with_metadata("documents_created".to_string(), document_count.to_string())
-                .with_metadata("documents_verified".to_string(), stored_count.to_string())
-                .with_metadata("throughput_docs_per_sec".to_string(), 
-                             (document_count as f64 / start_time.elapsed().as_secs_f64()).to_string()));
+            ctx.log_info(&format!(
+                "✅ Storage stress test PASSED: {} documents in {:?}",
+                document_count,
+                start_time.elapsed()
+            ));
+            results.push(
+                VerificationResult::success(start_time.elapsed())
+                    .with_metadata("operation".to_string(), "storage_stress_test".to_string())
+                    .with_metadata("documents_created".to_string(), document_count.to_string())
+                    .with_metadata("documents_verified".to_string(), stored_count.to_string())
+                    .with_metadata(
+                        "throughput_docs_per_sec".to_string(),
+                        (document_count as f64 / start_time.elapsed().as_secs_f64()).to_string(),
+                    ),
+            );
         } else {
-            let error = format!("Stress test failed: expected {} documents, stored {}", 
-                               document_count, stored_count);
+            let error = format!(
+                "Stress test failed: expected {} documents, stored {}",
+                document_count, stored_count
+            );
             ctx.log_error(&error);
             results.push(VerificationResult::failure(error, start_time.elapsed()));
         }

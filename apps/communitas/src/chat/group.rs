@@ -54,17 +54,21 @@ impl Group {
             settings: GroupSettings::default(),
         }
     }
-    
+
     /// Add a participant
     pub fn add_participant(&mut self, identity: Identity) -> Result<(), super::ChatError> {
         if self.participants.len() >= self.settings.max_participants {
             return Err(super::ChatError::GroupSizeLimitExceeded);
         }
-        
-        if !self.participants.iter().any(|p| p.four_word_address == identity.four_word_address) {
+
+        if !self
+            .participants
+            .iter()
+            .any(|p| p.four_word_address == identity.four_word_address)
+        {
             self.participants.push(identity);
         }
-        
+
         Ok(())
     }
 }

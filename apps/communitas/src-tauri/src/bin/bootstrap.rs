@@ -1,12 +1,12 @@
 //! Standalone Bootstrap Node Binary for Communitas
-//! 
+//!
 //! This binary runs the bootstrap node in production environments.
 
 use anyhow::Result;
 use clap::{Arg, Command};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use tracing::{info, error};
+use tracing::{error, info};
 
 use communitas_tauri::bootstrap::{run_bootstrap_node, BootstrapConfig};
 
@@ -20,33 +20,33 @@ async fn main() -> Result<()> {
                 .long("listen")
                 .short('l')
                 .help("Listen address (e.g., 0.0.0.0:8888)")
-                .default_value("0.0.0.0:8888")
+                .default_value("0.0.0.0:8888"),
         )
         .arg(
             Arg::new("public-address")
                 .long("public-address")
                 .short('p')
                 .help("Public address for other nodes")
-                .default_value("bootstrap.communitas.app:8888")
+                .default_value("bootstrap.communitas.app:8888"),
         )
         .arg(
             Arg::new("data-dir")
                 .long("data-dir")
                 .short('d')
                 .help("Data storage directory")
-                .default_value("/var/lib/saorsa")
+                .default_value("/var/lib/saorsa"),
         )
         .arg(
             Arg::new("max-connections")
                 .long("max-connections")
                 .help("Maximum concurrent connections")
-                .default_value("1000")
+                .default_value("1000"),
         )
         .arg(
             Arg::new("health-port")
                 .long("health-port")
                 .help("Health check server port")
-                .default_value("8888")
+                .default_value("8888"),
         )
         .get_matches();
 
@@ -58,29 +58,21 @@ async fn main() -> Result<()> {
     info!("Starting Communitas Bootstrap Node v2.0.0");
 
     // Build configuration from CLI arguments
-    let listen_address: SocketAddr = matches
-        .get_one::<String>("listen")
-        .unwrap()
-        .parse()?;
+    let listen_address: SocketAddr = matches.get_one::<String>("listen").unwrap().parse()?;
 
     let public_address = matches
         .get_one::<String>("public-address")
         .unwrap()
         .to_string();
 
-    let data_dir = PathBuf::from(
-        matches.get_one::<String>("data-dir").unwrap()
-    );
+    let data_dir = PathBuf::from(matches.get_one::<String>("data-dir").unwrap());
 
     let max_connections: usize = matches
         .get_one::<String>("max-connections")
         .unwrap()
         .parse()?;
 
-    let health_check_port: u16 = matches
-        .get_one::<String>("health-port")
-        .unwrap()
-        .parse()?;
+    let health_check_port: u16 = matches.get_one::<String>("health-port").unwrap().parse()?;
 
     let config = BootstrapConfig {
         listen_address,

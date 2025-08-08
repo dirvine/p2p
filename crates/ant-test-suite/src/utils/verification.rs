@@ -17,7 +17,7 @@
 //! all storage and communication operations in the P2P network.
 
 use anyhow::{Context, Result};
-use saorsa_core::{Key, Record, PeerId};
+use saorsa_core::{Key, PeerId, Record};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -30,16 +30,16 @@ use tracing::{debug, error, info, warn};
 pub struct VerificationResult {
     /// Whether verification passed
     pub success: bool,
-    
+
     /// Error message if verification failed
     pub error: Option<String>,
-    
+
     /// Time taken for verification
     pub duration: Duration,
-    
+
     /// Additional metadata about the verification
     pub metadata: HashMap<String, String>,
-    
+
     /// Timestamp when verification was performed
     pub timestamp: SystemTime,
 }
@@ -76,10 +76,10 @@ impl VerificationResult {
 pub struct DataVerifier {
     /// Enable strict verification mode (zero tolerance for corruption)
     strict_mode: bool,
-    
+
     /// Verification timeout
     timeout: Duration,
-    
+
     /// Number of retry attempts
     retries: u32,
 }
@@ -105,30 +105,28 @@ impl DataVerifier {
         T: PartialEq + Debug + Clone,
     {
         let start = Instant::now();
-        
+
         // Store the data
-        let key = store_fn(data)
-            .context("Failed to store data for round-trip verification")?;
-        
+        let key = store_fn(data).context("Failed to store data for round-trip verification")?;
+
         // Read back the data
-        let retrieved = read_fn(&key)
-            .context("Failed to read data for round-trip verification")?;
-        
+        let retrieved = read_fn(&key).context("Failed to read data for round-trip verification")?;
+
         // Verify exact match
         let success = *data == retrieved;
         let duration = start.elapsed();
-        
+
         if success {
             debug!("Round-trip verification passed in {:?}", duration);
             Ok(VerificationResult::success(duration))
         } else {
             let error = format!("Round-trip verification failed: data mismatch");
             error!("{}", error);
-            
+
             if self.strict_mode {
                 return Err(anyhow::anyhow!(error));
             }
-            
+
             Ok(VerificationResult::failure(error, duration))
         }
     }
@@ -145,14 +143,13 @@ impl DataVerifier {
         T: PartialEq + Debug + Clone,
     {
         let start = Instant::now();
-        
+
         // Store on local node
-        let key = local_store_fn(data)
-            .context("Failed to store data on local node")?;
-        
+        let key = local_store_fn(data).context("Failed to store data on local node")?;
+
         // Wait for DHT propagation
         tokio::time::sleep(Duration::from_secs(2)).await;
-        
+
         // Read from remote node with retries
         let mut last_error = None;
         for attempt in 0..=self.retries {
@@ -160,36 +157,49 @@ impl DataVerifier {
                 Ok(retrieved) => {
                     let success = *data == retrieved;
                     let duration = start.elapsed();
-                    
+
                     if success {
-                        debug!("Cross-node verification passed in {:?} (attempt {})", duration, attempt + 1);
+                        debug!(
+                            "Cross-node verification passed in {:?} (attempt {})",
+                            duration,
+                            attempt + 1
+                        );
                         return Ok(VerificationResult::success(duration)
                             .with_metadata("attempts".to_string(), (attempt + 1).to_string()));
                     } else {
-                        let error = format!("Cross-node verification failed: data mismatch on attempt {}", attempt + 1);
+                        let error = format!(
+                            "Cross-node verification failed: data mismatch on attempt {}",
+                            attempt + 1
+                        );
                         error!("{}", error);
-                        
+
                         if self.strict_mode {
                             return Err(anyhow::anyhow!(error));
                         }
-                        
+
                         return Ok(VerificationResult::failure(error, duration));
                     }
                 }
                 Err(e) => {
                     last_error = Some(e);
                     if attempt < self.retries {
-                        warn!("Cross-node read attempt {} failed, retrying...", attempt + 1);
+                        warn!(
+                            "Cross-node read attempt {} failed, retrying...",
+                            attempt + 1
+                        );
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                 }
             }
         }
-        
-        let error = format!("Cross-node verification failed after {} attempts: {:?}", 
-                          self.retries + 1, last_error);
+
+        let error = format!(
+            "Cross-node verification failed after {} attempts: {:?}",
+            self.retries + 1,
+            last_error
+        );
         error!("{}", error);
-        
+
         if self.strict_mode {
             Err(anyhow::anyhow!(error))
         } else {
@@ -209,11 +219,11 @@ impl DataVerifier {
         T: Debug,
     {
         let start = Instant::now();
-        
+
         let computed_hash = hash_fn(data);
         let success = computed_hash == expected_hash;
         let duration = start.elapsed();
-        
+
         if success {
             debug!("Hash verification passed in {:?}", duration);
             Ok(VerificationResult::success(duration))
@@ -224,7 +234,7 @@ impl DataVerifier {
                 hex::encode(&computed_hash)
             );
             error!("{}", error);
-            
+
             if self.strict_mode {
                 Err(anyhow::anyhow!(error))
             } else {
@@ -248,9 +258,9 @@ impl DataVerifier {
         let mut successful = 0;
         let mut failed = 0;
         let mut errors = Vec::new();
-        
+
         info!("Starting bulk verification of {} items", total_items);
-        
+
         for (i, (original, key)) in items.into_iter().enumerate() {
             match read_fn(&key) {
                 Ok(retrieved) => {
@@ -260,7 +270,7 @@ impl DataVerifier {
                         failed += 1;
                         let error = format!("Item {} data mismatch", i);
                         errors.push(error);
-                        
+
                         if self.strict_mode {
                             return Err(anyhow::anyhow!("Bulk verification failed on item {}", i));
                         }
@@ -270,27 +280,34 @@ impl DataVerifier {
                     failed += 1;
                     let error = format!("Item {} read failed: {:?}", i, e);
                     errors.push(error);
-                    
+
                     if self.strict_mode {
-                        return Err(anyhow::anyhow!("Bulk verification failed on item {}: {:?}", i, e));
+                        return Err(anyhow::anyhow!(
+                            "Bulk verification failed on item {}: {:?}",
+                            i,
+                            e
+                        ));
                     }
                 }
             }
-            
+
             // Progress reporting for large batches
             if i % 100 == 0 && i > 0 {
                 debug!("Bulk verification progress: {}/{} items", i, total_items);
             }
         }
-        
+
         let duration = start.elapsed();
         let success_rate = successful as f64 / total_items as f64;
-        
+
         info!(
             "Bulk verification completed: {}/{} successful ({:.1}%) in {:?}",
-            successful, total_items, success_rate * 100.0, duration
+            successful,
+            total_items,
+            success_rate * 100.0,
+            duration
         );
-        
+
         Ok(BulkVerificationResult {
             total_items,
             successful,
@@ -310,19 +327,19 @@ impl DataVerifier {
         public_key: &[u8],
     ) -> Result<VerificationResult> {
         let start = Instant::now();
-        
+
         // TODO: Implement actual signature verification using ant-core crypto
         // This is a placeholder implementation
         let success = signature.len() == 64 && public_key.len() == 32;
         let duration = start.elapsed();
-        
+
         if success {
             debug!("Signature verification passed in {:?}", duration);
             Ok(VerificationResult::success(duration))
         } else {
             let error = "Signature verification failed".to_string();
             error!("{}", error);
-            
+
             if self.strict_mode {
                 Err(anyhow::anyhow!(error))
             } else {
@@ -383,7 +400,7 @@ impl VerificationStats {
         self.total_duration += result.duration;
         self.average_duration = self.total_duration / self.total_verifications as u32;
         self.last_verification = Some(SystemTime::now());
-        
+
         if result.success {
             self.successful_verifications += 1;
         } else {
@@ -417,12 +434,12 @@ mod tests {
     #[tokio::test]
     async fn test_verification_result() {
         let duration = Duration::from_millis(100);
-        
+
         let success = VerificationResult::success(duration);
         assert!(success.success);
         assert!(success.error.is_none());
         assert_eq!(success.duration, duration);
-        
+
         let failure = VerificationResult::failure("test error".to_string(), duration);
         assert!(!failure.success);
         assert!(failure.error.is_some());
@@ -433,7 +450,7 @@ mod tests {
         let data = b"test data";
         let hash1 = DataVerifier::compute_content_hash(data);
         let hash2 = DataVerifier::compute_content_hash(data);
-        
+
         assert_eq!(hash1, hash2);
         assert_eq!(hash1.len(), 32); // SHA256 hash length
     }
@@ -441,13 +458,14 @@ mod tests {
     #[test]
     fn test_verification_stats() {
         let mut stats = VerificationStats::default();
-        
+
         let success_result = VerificationResult::success(Duration::from_millis(100));
-        let failure_result = VerificationResult::failure("error".to_string(), Duration::from_millis(50));
-        
+        let failure_result =
+            VerificationResult::failure("error".to_string(), Duration::from_millis(50));
+
         stats.add_result(&success_result);
         stats.add_result(&failure_result);
-        
+
         assert_eq!(stats.total_verifications, 2);
         assert_eq!(stats.successful_verifications, 1);
         assert_eq!(stats.failed_verifications, 1);

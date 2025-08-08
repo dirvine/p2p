@@ -16,14 +16,14 @@
 //! Tests file storage, group management, member addition/removal, document access control,
 //! collaboration features, version control, approval workflows, and team dynamics.
 
-use anyhow::Result;
 use crate::tests::SubsystemTest;
-use crate::utils::{TestContext, VerificationResult, DataVerifier, TestDataGenerator};
-use std::time::{Duration, SystemTime};
+use crate::utils::{DataVerifier, TestContext, TestDataGenerator, VerificationResult};
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::time::{Duration, SystemTime};
 use tracing::{info, warn};
-use serde::{Serialize, Deserialize};
-use sha2::{Sha256, Digest};
 
 /// Projects subsystem test implementation
 pub struct ProjectsTests {
@@ -50,7 +50,10 @@ impl ProjectsTests {
     }
 
     /// Test comprehensive project management operations
-    async fn test_project_management(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_project_management(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing comprehensive project management operations");
@@ -71,12 +74,18 @@ impl ProjectsTests {
         let access_results = self.test_document_access_control(ctx).await?;
         results.extend(access_results);
 
-        ctx.log_info(&format!("Project management operations completed. Results: {}", results.len()));
+        ctx.log_info(&format!(
+            "Project management operations completed. Results: {}",
+            results.len()
+        ));
         Ok(results)
     }
 
     /// Test project creation with different configurations
-    async fn test_project_creation(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_project_creation(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing project creation");
@@ -85,16 +94,29 @@ impl ProjectsTests {
         self.create_test_users();
 
         let project_types = vec![
-            ("engineering_project", "Software Development", "high_security", 5),
+            (
+                "engineering_project",
+                "Software Development",
+                "high_security",
+                5,
+            ),
             ("marketing_project", "Marketing Campaign", "standard", 3),
-            ("research_project", "Research Initiative", "collaborative", 10),
+            (
+                "research_project",
+                "Research Initiative",
+                "collaborative",
+                10,
+            ),
             ("design_project", "UI/UX Design", "creative", 7),
         ];
 
         for (project_name, description, security_level, max_members) in project_types {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[PROJECT] Creating {} with {} security", project_name, security_level));
+            ctx.log_info(&format!(
+                "[PROJECT] Creating {} with {} security",
+                project_name, security_level
+            ));
 
             // Create project with owner
             let project = MockProject {
@@ -110,7 +132,11 @@ impl ProjectsTests {
                     version_control: true,
                     encryption_enabled: security_level != "standard",
                     access_logging: true,
-                    retention_days: if security_level == "high_security" { 365 } else { 90 },
+                    retention_days: if security_level == "high_security" {
+                        365
+                    } else {
+                        90
+                    },
                 },
                 metadata: MockProjectMetadata {
                     total_documents: 0,
@@ -144,12 +170,14 @@ impl ProjectsTests {
             self.groups.insert(owner_group.id.clone(), owner_group);
 
             ctx.log_info(&format!("✅ Project creation PASSED: {}", project_name));
-            results.push(VerificationResult::success(start_time.elapsed())
-                .with_metadata("operation".to_string(), "project_creation".to_string())
-                .with_metadata("project_name".to_string(), project_name.to_string())
-                .with_metadata("security_level".to_string(), security_level.to_string())
-                .with_metadata("max_members".to_string(), max_members.to_string())
-                .with_metadata("project_id".to_string(), project_id));
+            results.push(
+                VerificationResult::success(start_time.elapsed())
+                    .with_metadata("operation".to_string(), "project_creation".to_string())
+                    .with_metadata("project_name".to_string(), project_name.to_string())
+                    .with_metadata("security_level".to_string(), security_level.to_string())
+                    .with_metadata("max_members".to_string(), max_members.to_string())
+                    .with_metadata("project_id".to_string(), project_id),
+            );
         }
 
         Ok(results)
@@ -162,17 +190,48 @@ impl ProjectsTests {
         ctx.log_info("Testing file storage and retrieval operations");
 
         let test_files = vec![
-            ("requirements.md", "text/markdown", b"# Project Requirements\n\nThis document outlines the project requirements.".to_vec(), "engineering_project"),
-            ("design_mockup.png", "image/png", self.generator.generate_binary_data(1024 * 500), "design_project"), // 500KB image
-            ("presentation.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", self.generator.generate_binary_data(1024 * 1024 * 2), "marketing_project"), // 2MB presentation
-            ("research_data.csv", "text/csv", b"Name,Age,Location\nAlice,30,NYC\nBob,25,SF\nCharlie,35,LA".to_vec(), "research_project"),
-            ("video_demo.mp4", "video/mp4", self.generator.generate_binary_data(1024 * 1024 * 10), "engineering_project"), // 10MB video
+            (
+                "requirements.md",
+                "text/markdown",
+                b"# Project Requirements\n\nThis document outlines the project requirements."
+                    .to_vec(),
+                "engineering_project",
+            ),
+            (
+                "design_mockup.png",
+                "image/png",
+                self.generator.generate_binary_data(1024 * 500),
+                "design_project",
+            ), // 500KB image
+            (
+                "presentation.pptx",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                self.generator.generate_binary_data(1024 * 1024 * 2),
+                "marketing_project",
+            ), // 2MB presentation
+            (
+                "research_data.csv",
+                "text/csv",
+                b"Name,Age,Location\nAlice,30,NYC\nBob,25,SF\nCharlie,35,LA".to_vec(),
+                "research_project",
+            ),
+            (
+                "video_demo.mp4",
+                "video/mp4",
+                self.generator.generate_binary_data(1024 * 1024 * 10),
+                "engineering_project",
+            ), // 10MB video
         ];
 
         for (filename, content_type, content, project_name) in test_files {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[STORAGE] Storing {} ({} bytes) in {}", filename, content.len(), project_name));
+            ctx.log_info(&format!(
+                "[STORAGE] Storing {} ({} bytes) in {}",
+                filename,
+                content.len(),
+                project_name
+            ));
 
             let project_id = format!("proj_{}", project_name);
 
@@ -220,14 +279,19 @@ impl ProjectsTests {
             if let Some(stored_doc) = self.documents.get(&doc_id) {
                 let stored_hash = self.calculate_hash(&stored_doc.content);
                 if stored_doc.content == content && stored_hash == stored_doc.content_hash {
-                    ctx.log_info(&format!("✅ File storage PASSED: {} - data integrity verified", filename));
-                    results.push(VerificationResult::success(start_time.elapsed())
-                        .with_metadata("operation".to_string(), "file_storage".to_string())
-                        .with_metadata("filename".to_string(), filename.to_string())
-                        .with_metadata("content_type".to_string(), content_type.to_string())
-                        .with_metadata("size_bytes".to_string(), content.len().to_string())
-                        .with_metadata("data_verified".to_string(), "true".to_string())
-                        .with_metadata("document_id".to_string(), doc_id));
+                    ctx.log_info(&format!(
+                        "✅ File storage PASSED: {} - data integrity verified",
+                        filename
+                    ));
+                    results.push(
+                        VerificationResult::success(start_time.elapsed())
+                            .with_metadata("operation".to_string(), "file_storage".to_string())
+                            .with_metadata("filename".to_string(), filename.to_string())
+                            .with_metadata("content_type".to_string(), content_type.to_string())
+                            .with_metadata("size_bytes".to_string(), content.len().to_string())
+                            .with_metadata("data_verified".to_string(), "true".to_string())
+                            .with_metadata("document_id".to_string(), doc_id),
+                    );
                 } else {
                     let error = format!("File storage data corruption detected for {}", filename);
                     ctx.log_error(&error);
@@ -240,24 +304,55 @@ impl ProjectsTests {
     }
 
     /// Test group management: adding/removing members and checking access
-    async fn test_group_management(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_group_management(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing group management and member operations");
 
         // Test scenarios for group management
         let group_operations = vec![
-            ("add_developer", "engineering_project", "developer_user", vec!["read", "write"]),
-            ("add_designer", "design_project", "designer_user", vec!["read", "write", "upload"]),
-            ("add_manager", "marketing_project", "manager_user", vec!["read", "write", "approve_documents"]),
-            ("add_researcher", "research_project", "researcher_user", vec!["read", "write", "analyze"]),
-            ("add_viewer", "engineering_project", "viewer_user", vec!["read"]),
+            (
+                "add_developer",
+                "engineering_project",
+                "developer_user",
+                vec!["read", "write"],
+            ),
+            (
+                "add_designer",
+                "design_project",
+                "designer_user",
+                vec!["read", "write", "upload"],
+            ),
+            (
+                "add_manager",
+                "marketing_project",
+                "manager_user",
+                vec!["read", "write", "approve_documents"],
+            ),
+            (
+                "add_researcher",
+                "research_project",
+                "researcher_user",
+                vec!["read", "write", "analyze"],
+            ),
+            (
+                "add_viewer",
+                "engineering_project",
+                "viewer_user",
+                vec!["read"],
+            ),
         ];
 
         for (operation, project_name, user_id, permissions) in group_operations {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[GROUP-ADD] Adding {} to {} with permissions: {:?}", user_id, project_name, permissions));
+            ctx.log_info(&format!(
+                "[GROUP-ADD] Adding {} to {} with permissions: {:?}",
+                user_id, project_name, permissions
+            ));
 
             let project_id = format!("proj_{}", project_name);
 
@@ -283,15 +378,24 @@ impl ProjectsTests {
 
             // Verify group was created and user has access
             if let Some(stored_group) = self.groups.get(&group_id) {
-                if stored_group.members.contains(&user_id.to_string()) &&
-                   stored_group.permissions.len() == permissions.len() {
-                    ctx.log_info(&format!("✅ Group management PASSED: Added {} to {}", user_id, project_name));
-                    results.push(VerificationResult::success(start_time.elapsed())
-                        .with_metadata("operation".to_string(), "add_member".to_string())
-                        .with_metadata("user_id".to_string(), user_id.to_string())
-                        .with_metadata("project_name".to_string(), project_name.to_string())
-                        .with_metadata("permissions_count".to_string(), permissions.len().to_string())
-                        .with_metadata("group_id".to_string(), group_id));
+                if stored_group.members.contains(&user_id.to_string())
+                    && stored_group.permissions.len() == permissions.len()
+                {
+                    ctx.log_info(&format!(
+                        "✅ Group management PASSED: Added {} to {}",
+                        user_id, project_name
+                    ));
+                    results.push(
+                        VerificationResult::success(start_time.elapsed())
+                            .with_metadata("operation".to_string(), "add_member".to_string())
+                            .with_metadata("user_id".to_string(), user_id.to_string())
+                            .with_metadata("project_name".to_string(), project_name.to_string())
+                            .with_metadata(
+                                "permissions_count".to_string(),
+                                permissions.len().to_string(),
+                            )
+                            .with_metadata("group_id".to_string(), group_id),
+                    );
                 } else {
                     let error = format!("Group creation verification failed for {}", user_id);
                     ctx.log_error(&error);
@@ -309,7 +413,10 @@ impl ProjectsTests {
         for (operation, project_name, user_id) in removal_operations {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[GROUP-REMOVE] Removing {} from {}", user_id, project_name));
+            ctx.log_info(&format!(
+                "[GROUP-REMOVE] Removing {} from {}",
+                user_id, project_name
+            ));
 
             let project_id = format!("proj_{}", project_name);
             let group_id = format!("group_{}_{}", project_name, user_id);
@@ -321,17 +428,23 @@ impl ProjectsTests {
             if let Some(project) = self.projects.get_mut(&project_id) {
                 project.group_ids.retain(|id| id != &group_id);
                 if removed {
-                    project.metadata.active_members = project.metadata.active_members.saturating_sub(1);
+                    project.metadata.active_members =
+                        project.metadata.active_members.saturating_sub(1);
                 }
             }
 
             if removed && !self.groups.contains_key(&group_id) {
-                ctx.log_info(&format!("✅ Member removal PASSED: Removed {} from {}", user_id, project_name));
-                results.push(VerificationResult::success(start_time.elapsed())
-                    .with_metadata("operation".to_string(), "remove_member".to_string())
-                    .with_metadata("user_id".to_string(), user_id.to_string())
-                    .with_metadata("project_name".to_string(), project_name.to_string())
-                    .with_metadata("removal_verified".to_string(), "true".to_string()));
+                ctx.log_info(&format!(
+                    "✅ Member removal PASSED: Removed {} from {}",
+                    user_id, project_name
+                ));
+                results.push(
+                    VerificationResult::success(start_time.elapsed())
+                        .with_metadata("operation".to_string(), "remove_member".to_string())
+                        .with_metadata("user_id".to_string(), user_id.to_string())
+                        .with_metadata("project_name".to_string(), project_name.to_string())
+                        .with_metadata("removal_verified".to_string(), "true".to_string()),
+                );
             } else {
                 let error = format!("Member removal failed for {}", user_id);
                 ctx.log_error(&error);
@@ -343,48 +456,109 @@ impl ProjectsTests {
     }
 
     /// Test document access control after member changes
-    async fn test_document_access_control(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_document_access_control(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing document access control after member changes");
 
         let access_scenarios = vec![
-            ("developer_user", "proj_engineering_project", "doc_engineering_project_requirements_md", "read", true),
-            ("developer_user", "proj_engineering_project", "doc_engineering_project_requirements_md", "write", true),
-            ("designer_user", "proj_design_project", "doc_design_project_design_mockup_png", "read", true),
-            ("designer_user", "proj_engineering_project", "doc_engineering_project_requirements_md", "read", false), // Cross-project access
-            ("manager_user", "proj_marketing_project", "doc_marketing_project_presentation_pptx", "approve_documents", true),
-            ("researcher_user", "proj_research_project", "doc_research_project_research_data_csv", "read", true),
-            ("removed_user", "proj_engineering_project", "doc_engineering_project_requirements_md", "read", false), // Removed user
+            (
+                "developer_user",
+                "proj_engineering_project",
+                "doc_engineering_project_requirements_md",
+                "read",
+                true,
+            ),
+            (
+                "developer_user",
+                "proj_engineering_project",
+                "doc_engineering_project_requirements_md",
+                "write",
+                true,
+            ),
+            (
+                "designer_user",
+                "proj_design_project",
+                "doc_design_project_design_mockup_png",
+                "read",
+                true,
+            ),
+            (
+                "designer_user",
+                "proj_engineering_project",
+                "doc_engineering_project_requirements_md",
+                "read",
+                false,
+            ), // Cross-project access
+            (
+                "manager_user",
+                "proj_marketing_project",
+                "doc_marketing_project_presentation_pptx",
+                "approve_documents",
+                true,
+            ),
+            (
+                "researcher_user",
+                "proj_research_project",
+                "doc_research_project_research_data_csv",
+                "read",
+                true,
+            ),
+            (
+                "removed_user",
+                "proj_engineering_project",
+                "doc_engineering_project_requirements_md",
+                "read",
+                false,
+            ), // Removed user
         ];
 
         for (user_id, project_id, document_id, permission, should_have_access) in access_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[ACCESS] Testing {} access to {} for {}", user_id, document_id, permission));
+            ctx.log_info(&format!(
+                "[ACCESS] Testing {} access to {} for {}",
+                user_id, document_id, permission
+            ));
 
             // Check if user has access
-            let has_access = self.check_user_document_access(user_id, project_id, document_id, permission);
+            let has_access =
+                self.check_user_document_access(user_id, project_id, document_id, permission);
 
             // Log access attempt
             self.log_access_attempt(user_id, document_id, permission, has_access);
 
             if has_access == should_have_access {
-                ctx.log_info(&format!("✅ Access control PASSED: {} {} access to {}", 
-                    user_id, 
-                    if should_have_access { "granted" } else { "denied" },
+                ctx.log_info(&format!(
+                    "✅ Access control PASSED: {} {} access to {}",
+                    user_id,
+                    if should_have_access {
+                        "granted"
+                    } else {
+                        "denied"
+                    },
                     document_id
                 ));
-                results.push(VerificationResult::success(start_time.elapsed())
-                    .with_metadata("operation".to_string(), "access_control".to_string())
-                    .with_metadata("user_id".to_string(), user_id.to_string())
-                    .with_metadata("document_id".to_string(), document_id.to_string())
-                    .with_metadata("permission".to_string(), permission.to_string())
-                    .with_metadata("expected_access".to_string(), should_have_access.to_string())
-                    .with_metadata("actual_access".to_string(), has_access.to_string()));
+                results.push(
+                    VerificationResult::success(start_time.elapsed())
+                        .with_metadata("operation".to_string(), "access_control".to_string())
+                        .with_metadata("user_id".to_string(), user_id.to_string())
+                        .with_metadata("document_id".to_string(), document_id.to_string())
+                        .with_metadata("permission".to_string(), permission.to_string())
+                        .with_metadata(
+                            "expected_access".to_string(),
+                            should_have_access.to_string(),
+                        )
+                        .with_metadata("actual_access".to_string(), has_access.to_string()),
+                );
             } else {
-                let error = format!("Access control failed: {} expected {}, got {} for {}", 
-                    user_id, should_have_access, has_access, document_id);
+                let error = format!(
+                    "Access control failed: {} expected {}, got {} for {}",
+                    user_id, should_have_access, has_access, document_id
+                );
                 ctx.log_error(&error);
                 results.push(VerificationResult::failure(error, start_time.elapsed()));
             }
@@ -398,7 +572,10 @@ impl ProjectsTests {
     }
 
     /// Test approval workflow for documents requiring approval
-    async fn test_approval_workflow(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_approval_workflow(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing document approval workflow");
@@ -412,8 +589,12 @@ impl ProjectsTests {
             name: "Security Protocol".to_string(),
             project_id: project_id.clone(),
             content_type: "text/markdown".to_string(),
-            content: b"# Security Protocol\n\nThis document contains sensitive security information.".to_vec(),
-            content_hash: self.calculate_hash(b"# Security Protocol\n\nThis document contains sensitive security information."),
+            content:
+                b"# Security Protocol\n\nThis document contains sensitive security information."
+                    .to_vec(),
+            content_hash: self.calculate_hash(
+                b"# Security Protocol\n\nThis document contains sensitive security information.",
+            ),
             size_bytes: 69,
             version: 1,
             author_id: "developer_user".to_string(),
@@ -435,10 +616,18 @@ impl ProjectsTests {
         for (approver_id, action, should_succeed) in approval_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[APPROVAL] {} attempting to {} document {}", approver_id, action, doc_id));
+            ctx.log_info(&format!(
+                "[APPROVAL] {} attempting to {} document {}",
+                approver_id, action, doc_id
+            ));
 
             // Check if user can approve
-            let can_approve = self.check_user_document_access(approver_id, &project_id, &doc_id, "approve_documents");
+            let can_approve = self.check_user_document_access(
+                approver_id,
+                &project_id,
+                &doc_id,
+                "approve_documents",
+            );
 
             if can_approve && should_succeed {
                 // Approve the document
@@ -446,19 +635,29 @@ impl ProjectsTests {
                     document.approval_status = "approved".to_string();
                 }
 
-                ctx.log_info(&format!("✅ Approval workflow PASSED: {} approved {}", approver_id, doc_id));
-                results.push(VerificationResult::success(start_time.elapsed())
-                    .with_metadata("operation".to_string(), "document_approval".to_string())
-                    .with_metadata("approver_id".to_string(), approver_id.to_string())
-                    .with_metadata("document_id".to_string(), doc_id.clone())
-                    .with_metadata("approval_granted".to_string(), "true".to_string()));
+                ctx.log_info(&format!(
+                    "✅ Approval workflow PASSED: {} approved {}",
+                    approver_id, doc_id
+                ));
+                results.push(
+                    VerificationResult::success(start_time.elapsed())
+                        .with_metadata("operation".to_string(), "document_approval".to_string())
+                        .with_metadata("approver_id".to_string(), approver_id.to_string())
+                        .with_metadata("document_id".to_string(), doc_id.clone())
+                        .with_metadata("approval_granted".to_string(), "true".to_string()),
+                );
             } else if !can_approve && !should_succeed {
-                ctx.log_info(&format!("✅ Approval workflow PASSED: {} correctly denied approval for {}", approver_id, doc_id));
-                results.push(VerificationResult::success(start_time.elapsed())
-                    .with_metadata("operation".to_string(), "document_approval".to_string())
-                    .with_metadata("approver_id".to_string(), approver_id.to_string())
-                    .with_metadata("document_id".to_string(), doc_id.clone())
-                    .with_metadata("approval_denied".to_string(), "true".to_string()));
+                ctx.log_info(&format!(
+                    "✅ Approval workflow PASSED: {} correctly denied approval for {}",
+                    approver_id, doc_id
+                ));
+                results.push(
+                    VerificationResult::success(start_time.elapsed())
+                        .with_metadata("operation".to_string(), "document_approval".to_string())
+                        .with_metadata("approver_id".to_string(), approver_id.to_string())
+                        .with_metadata("document_id".to_string(), doc_id.clone())
+                        .with_metadata("approval_denied".to_string(), "true".to_string()),
+                );
             } else {
                 let error = format!("Approval workflow failed for {} on {}", approver_id, doc_id);
                 ctx.log_error(&error);
@@ -470,33 +669,55 @@ impl ProjectsTests {
     }
 
     /// Test collaboration features
-    async fn test_collaboration_features(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_collaboration_features(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing collaboration features");
 
         // Test document sharing
         let sharing_scenarios = vec![
-            ("developer_user", "designer_user", "doc_engineering_project_requirements_md", "read"),
-            ("manager_user", "researcher_user", "doc_marketing_project_presentation_pptx", "read"),
+            (
+                "developer_user",
+                "designer_user",
+                "doc_engineering_project_requirements_md",
+                "read",
+            ),
+            (
+                "manager_user",
+                "researcher_user",
+                "doc_marketing_project_presentation_pptx",
+                "read",
+            ),
         ];
 
         for (sharer_id, sharee_id, document_id, permission) in sharing_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[SHARING] {} sharing {} with {} ({})", sharer_id, document_id, sharee_id, permission));
+            ctx.log_info(&format!(
+                "[SHARING] {} sharing {} with {} ({})",
+                sharer_id, document_id, sharee_id, permission
+            ));
 
             // Mock sharing process
-            let sharing_successful = self.share_document(sharer_id, sharee_id, document_id, permission);
+            let sharing_successful =
+                self.share_document(sharer_id, sharee_id, document_id, permission);
 
             if sharing_successful {
-                ctx.log_info(&format!("✅ Document sharing PASSED: {} shared with {}", document_id, sharee_id));
-                results.push(VerificationResult::success(start_time.elapsed())
-                    .with_metadata("operation".to_string(), "document_sharing".to_string())
-                    .with_metadata("sharer_id".to_string(), sharer_id.to_string())
-                    .with_metadata("sharee_id".to_string(), sharee_id.to_string())
-                    .with_metadata("document_id".to_string(), document_id.to_string())
-                    .with_metadata("permission".to_string(), permission.to_string()));
+                ctx.log_info(&format!(
+                    "✅ Document sharing PASSED: {} shared with {}",
+                    document_id, sharee_id
+                ));
+                results.push(
+                    VerificationResult::success(start_time.elapsed())
+                        .with_metadata("operation".to_string(), "document_sharing".to_string())
+                        .with_metadata("sharer_id".to_string(), sharer_id.to_string())
+                        .with_metadata("sharee_id".to_string(), sharee_id.to_string())
+                        .with_metadata("document_id".to_string(), document_id.to_string())
+                        .with_metadata("permission".to_string(), permission.to_string()),
+                );
             } else {
                 let error = format!("Document sharing failed: {} to {}", document_id, sharee_id);
                 ctx.log_error(&error);
@@ -512,7 +733,10 @@ impl ProjectsTests {
     }
 
     /// Test version control operations
-    async fn test_version_control_operations(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_version_control_operations(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing version control operations");
@@ -522,11 +746,14 @@ impl ProjectsTests {
 
         let start_time = std::time::Instant::now();
 
-        ctx.log_info(&format!("[VERSION] Creating new version of {}", document_id));
+        ctx.log_info(&format!(
+            "[VERSION] Creating new version of {}",
+            document_id
+        ));
 
         // Calculate hash before mutable borrow
         let new_content_hash = self.calculate_hash(new_content);
-        
+
         // Create new version
         if let Some(document) = self.documents.get_mut(document_id) {
             document.version += 1;
@@ -537,18 +764,23 @@ impl ProjectsTests {
             // Verify version update - create a copy to avoid borrowing issues
             let document_content_copy = document.content.clone();
         }
-        
+
         // Verify outside the mutable borrow scope
         if let Some(document) = self.documents.get(document_id) {
             let stored_hash = self.calculate_hash(&document.content);
             if document.content == new_content && stored_hash == new_content_hash {
-                ctx.log_info(&format!("✅ Version control PASSED: Version {} created for {}", document.version, document_id));
-                results.push(VerificationResult::success(start_time.elapsed())
-                    .with_metadata("operation".to_string(), "version_control".to_string())
-                    .with_metadata("document_id".to_string(), document_id.to_string())
-                    .with_metadata("new_version".to_string(), document.version.to_string())
-                    .with_metadata("content_size".to_string(), new_content.len().to_string())
-                    .with_metadata("data_verified".to_string(), "true".to_string()));
+                ctx.log_info(&format!(
+                    "✅ Version control PASSED: Version {} created for {}",
+                    document.version, document_id
+                ));
+                results.push(
+                    VerificationResult::success(start_time.elapsed())
+                        .with_metadata("operation".to_string(), "version_control".to_string())
+                        .with_metadata("document_id".to_string(), document_id.to_string())
+                        .with_metadata("new_version".to_string(), document.version.to_string())
+                        .with_metadata("content_size".to_string(), new_content.len().to_string())
+                        .with_metadata("data_verified".to_string(), "true".to_string()),
+                );
             } else {
                 let error = format!("Version control data integrity failed for {}", document_id);
                 ctx.log_error(&error);
@@ -563,11 +795,27 @@ impl ProjectsTests {
 
     fn create_test_users(&mut self) {
         let users = vec![
-            ("admin_user", "System Administrator", vec!["admin", "manage_all"]),
-            ("developer_user", "Software Developer", vec!["code", "review"]),
-            ("designer_user", "UI/UX Designer", vec!["design", "prototype"]),
+            (
+                "admin_user",
+                "System Administrator",
+                vec!["admin", "manage_all"],
+            ),
+            (
+                "developer_user",
+                "Software Developer",
+                vec!["code", "review"],
+            ),
+            (
+                "designer_user",
+                "UI/UX Designer",
+                vec!["design", "prototype"],
+            ),
             ("manager_user", "Project Manager", vec!["manage", "approve"]),
-            ("researcher_user", "Research Analyst", vec!["research", "analyze"]),
+            (
+                "researcher_user",
+                "Research Analyst",
+                vec!["research", "analyze"],
+            ),
             ("viewer_user", "Read-only Viewer", vec!["view"]),
         ];
 
@@ -589,20 +837,33 @@ impl ProjectsTests {
         hasher.finalize().to_vec()
     }
 
-    fn check_user_document_access(&self, user_id: &str, project_id: &str, document_id: &str, permission: &str) -> bool {
+    fn check_user_document_access(
+        &self,
+        user_id: &str,
+        project_id: &str,
+        document_id: &str,
+        permission: &str,
+    ) -> bool {
         // Check if user is in any group that has access to this project and document
         for group in self.groups.values() {
-            if group.project_id == project_id && 
-               group.members.contains(&user_id.to_string()) &&
-               group.permissions.contains(&permission.to_string()) &&
-               group.is_active {
+            if group.project_id == project_id
+                && group.members.contains(&user_id.to_string())
+                && group.permissions.contains(&permission.to_string())
+                && group.is_active
+            {
                 return true;
             }
         }
         false
     }
 
-    fn log_access_attempt(&mut self, user_id: &str, document_id: &str, permission: &str, granted: bool) {
+    fn log_access_attempt(
+        &mut self,
+        user_id: &str,
+        document_id: &str,
+        permission: &str,
+        granted: bool,
+    ) {
         let access_log = MockAccessLog {
             user_id: user_id.to_string(),
             document_id: document_id.to_string(),
@@ -617,11 +878,22 @@ impl ProjectsTests {
             .push(access_log);
     }
 
-    fn share_document(&mut self, sharer_id: &str, sharee_id: &str, document_id: &str, permission: &str) -> bool {
+    fn share_document(
+        &mut self,
+        sharer_id: &str,
+        sharee_id: &str,
+        document_id: &str,
+        permission: &str,
+    ) -> bool {
         // Mock document sharing - in practice would create temporary access grants
         if let Some(document) = self.documents.get(document_id) {
             // Check if sharer has sharing permission
-            let can_share = self.check_user_document_access(sharer_id, &document.project_id, document_id, "write");
+            let can_share = self.check_user_document_access(
+                sharer_id,
+                &document.project_id,
+                document_id,
+                "write",
+            );
             if can_share {
                 // Log the sharing action
                 self.log_access_attempt(sharer_id, document_id, "share", true);
@@ -753,7 +1025,7 @@ impl SubsystemTest for ProjectsTests {
         ];
 
         let shared_projects_count = shared_projects.len();
-        
+
         for (project_name, description) in shared_projects {
             for node in &nodes {
                 let project = MockProject {
@@ -790,14 +1062,22 @@ impl SubsystemTest for ProjectsTests {
 
         if total_projects >= expected_projects {
             ctx.log_info("✅ Cross-node project synchronization verified");
-            results.push(VerificationResult::success(sync_start.elapsed())
-                .with_metadata("operation".to_string(), "cross_node_sync".to_string())
-                .with_metadata("nodes_tested".to_string(), nodes.len().to_string())
-                .with_metadata("projects_synced".to_string(), shared_projects_count.to_string())
-                .with_metadata("total_projects".to_string(), total_projects.to_string())
-                .with_metadata("sync_verified".to_string(), "true".to_string()));
+            results.push(
+                VerificationResult::success(sync_start.elapsed())
+                    .with_metadata("operation".to_string(), "cross_node_sync".to_string())
+                    .with_metadata("nodes_tested".to_string(), nodes.len().to_string())
+                    .with_metadata(
+                        "projects_synced".to_string(),
+                        shared_projects_count.to_string(),
+                    )
+                    .with_metadata("total_projects".to_string(), total_projects.to_string())
+                    .with_metadata("sync_verified".to_string(), "true".to_string()),
+            );
         } else {
-            let error = format!("Cross-node sync failed: expected {} projects, got {}", expected_projects, total_projects);
+            let error = format!(
+                "Cross-node sync failed: expected {} projects, got {}",
+                expected_projects, total_projects
+            );
             ctx.log_error(&error);
             results.push(VerificationResult::failure(error, sync_start.elapsed()));
         }
@@ -815,7 +1095,10 @@ impl SubsystemTest for ProjectsTests {
         let start_time = std::time::Instant::now();
         let project_count = 100;
 
-        ctx.log_info(&format!("[STRESS] Creating {} projects with documents", project_count));
+        ctx.log_info(&format!(
+            "[STRESS] Creating {} projects with documents",
+            project_count
+        ));
 
         for i in 0..project_count {
             let project = MockProject {
@@ -851,7 +1134,8 @@ impl SubsystemTest for ProjectsTests {
                 project_id: format!("stress_project_{}", i),
                 content_type: "text/plain".to_string(),
                 content: format!("Stress test document content {}", i).into_bytes(),
-                content_hash: test_instance.calculate_hash(format!("Stress test document content {}", i).as_bytes()),
+                content_hash: test_instance
+                    .calculate_hash(format!("Stress test document content {}", i).as_bytes()),
                 size_bytes: 100,
                 version: 1,
                 author_id: "stress_user".to_string(),
@@ -862,7 +1146,9 @@ impl SubsystemTest for ProjectsTests {
                 tags: vec!["stress_test".to_string()],
             };
 
-            test_instance.documents.insert(document.id.clone(), document);
+            test_instance
+                .documents
+                .insert(document.id.clone(), document);
 
             if i % 10 == 0 {
                 ctx.log_info(&format!("Created {} projects", i));
@@ -874,19 +1160,35 @@ impl SubsystemTest for ProjectsTests {
         let created_documents = test_instance.documents.len();
 
         if created_projects >= project_count && created_documents >= project_count {
-            ctx.log_info(&format!("✅ Projects stress test PASSED: {} projects and {} documents in {:?}", 
-                                 project_count, project_count, start_time.elapsed()));
-            results.push(VerificationResult::success(start_time.elapsed())
-                .with_metadata("operation".to_string(), "projects_stress_test".to_string())
-                .with_metadata("projects_created".to_string(), project_count.to_string())
-                .with_metadata("documents_created".to_string(), project_count.to_string())
-                .with_metadata("projects_verified".to_string(), created_projects.to_string())
-                .with_metadata("documents_verified".to_string(), created_documents.to_string())
-                .with_metadata("throughput_projects_per_sec".to_string(), 
-                             (project_count as f64 / start_time.elapsed().as_secs_f64()).to_string()));
+            ctx.log_info(&format!(
+                "✅ Projects stress test PASSED: {} projects and {} documents in {:?}",
+                project_count,
+                project_count,
+                start_time.elapsed()
+            ));
+            results.push(
+                VerificationResult::success(start_time.elapsed())
+                    .with_metadata("operation".to_string(), "projects_stress_test".to_string())
+                    .with_metadata("projects_created".to_string(), project_count.to_string())
+                    .with_metadata("documents_created".to_string(), project_count.to_string())
+                    .with_metadata(
+                        "projects_verified".to_string(),
+                        created_projects.to_string(),
+                    )
+                    .with_metadata(
+                        "documents_verified".to_string(),
+                        created_documents.to_string(),
+                    )
+                    .with_metadata(
+                        "throughput_projects_per_sec".to_string(),
+                        (project_count as f64 / start_time.elapsed().as_secs_f64()).to_string(),
+                    ),
+            );
         } else {
-            let error = format!("Stress test failed: expected {} projects and {} documents, got {} and {}", 
-                               project_count, project_count, created_projects, created_documents);
+            let error = format!(
+                "Stress test failed: expected {} projects and {} documents, got {} and {}",
+                project_count, project_count, created_projects, created_documents
+            );
             ctx.log_error(&error);
             results.push(VerificationResult::failure(error, start_time.elapsed()));
         }

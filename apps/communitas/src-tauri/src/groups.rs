@@ -17,8 +17,8 @@ pub struct Group {
     pub id: String,
     pub name: String,
     pub description: String,
-    pub admin: String,  // Four-word address of admin
-    pub members: Vec<String>,  // Four-word addresses
+    pub admin: String,        // Four-word address of admin
+    pub members: Vec<String>, // Four-word addresses
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -28,7 +28,7 @@ pub struct Group {
 pub struct GroupMessage {
     pub id: String,
     pub group_id: String,
-    pub sender: String,  // Four-word address
+    pub sender: String, // Four-word address
     pub sender_name: String,
     pub content: MessageContent,
     pub timestamp: i64,
@@ -42,25 +42,42 @@ pub struct GroupMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum MessageContent {
-    Text { text: String },
-    Image { hash: String, caption: Option<String>, mime_type: String },
-    File { hash: String, filename: String, size: u64, mime_type: String },
-    VoiceNote { hash: String, duration: u32 },
-    System { message: String },
+    Text {
+        text: String,
+    },
+    Image {
+        hash: String,
+        caption: Option<String>,
+        mime_type: String,
+    },
+    File {
+        hash: String,
+        filename: String,
+        size: u64,
+        mime_type: String,
+    },
+    VoiceNote {
+        hash: String,
+        duration: u32,
+    },
+    System {
+        message: String,
+    },
 }
 
 /// Message reaction
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Reaction {
     pub emoji: String,
-    pub users: Vec<String>,  // Four-word addresses
+    pub users: Vec<String>, // Four-word addresses
 }
 
 /// Group manager
-#[derive(Debug)] pub struct GroupManager {
+#[derive(Debug)]
+pub struct GroupManager {
     groups: Arc<RwLock<HashMap<String, Group>>>,
     messages: Arc<RwLock<HashMap<String, Vec<GroupMessage>>>>,
-    user_groups: Arc<RwLock<HashMap<String, Vec<String>>>>,  // user -> group IDs
+    user_groups: Arc<RwLock<HashMap<String, Vec<String>>>>, // user -> group IDs
 }
 
 impl GroupManager {
@@ -89,35 +106,46 @@ impl GroupManager {
             created_at: chrono::Utc::now().timestamp(),
             updated_at: chrono::Utc::now().timestamp(),
         };
-        
+
         // Store group
-        self.groups.write().await.insert(group.id.clone(), group.clone());
-        
+        self.groups
+            .write()
+            .await
+            .insert(group.id.clone(), group.clone());
+
         // Update user's group list
         let mut user_groups = self.user_groups.write().await;
-        user_groups.entry(admin).or_insert_with(Vec::new).push(group.id.clone());
-        
+        user_groups
+            .entry(admin)
+            .or_insert_with(Vec::new)
+            .push(group.id.clone());
+
         // Initialize empty message list
-        self.messages.write().await.insert(group.id.clone(), Vec::new());
-        
+        self.messages
+            .write()
+            .await
+            .insert(group.id.clone(), Vec::new());
+
         Ok(group)
     }
 
     /// Add member to group
     pub async fn add_member(&self, group_id: String, member: String) -> Result<()> {
         let mut groups = self.groups.write().await;
-        let group = groups.get_mut(&group_id)
-            .context("Group not found")?;
-        
+        let group = groups.get_mut(&group_id).context("Group not found")?;
+
         if !group.members.contains(&member) {
             group.members.push(member.clone());
             group.updated_at = chrono::Utc::now().timestamp();
-            
+
             // Update user's group list
             let mut user_groups = self.user_groups.write().await;
-            user_groups.entry(member).or_insert_with(Vec::new).push(group_id.clone());
+            user_groups
+                .entry(member)
+                .or_insert_with(Vec::new)
+                .push(group_id.clone());
         }
-        
+
         Ok(())
     }
 
@@ -125,18 +153,17 @@ impl GroupManager {
     #[allow(dead_code)]
     pub async fn remove_member(&self, group_id: String, member: String) -> Result<()> {
         let mut groups = self.groups.write().await;
-        let group = groups.get_mut(&group_id)
-            .context("Group not found")?;
-        
+        let group = groups.get_mut(&group_id).context("Group not found")?;
+
         group.members.retain(|m| m != &member);
         group.updated_at = chrono::Utc::now().timestamp();
-        
+
         // Update user's group list
         let mut user_groups = self.user_groups.write().await;
         if let Some(groups) = user_groups.get_mut(&member) {
             groups.retain(|g| g != &group_id);
         }
-        
+
         Ok(())
     }
 
@@ -152,11 +179,11 @@ impl GroupManager {
         // Verify sender is member
         let groups = self.groups.read().await;
         let group = groups.get(&group_id).context("Group not found")?;
-        
+
         if !group.members.contains(&sender) {
             anyhow::bail!("Sender is not a member of this group");
         }
-        
+
         let message = GroupMessage {
             id: Uuid::new_v4().to_string(),
             group_id: group_id.clone(),
@@ -169,11 +196,14 @@ impl GroupManager {
             edited: false,
             edited_at: None,
         };
-        
+
         // Store message
         let mut messages = self.messages.write().await;
-        messages.entry(group_id).or_insert_with(Vec::new).push(message.clone());
-        
+        messages
+            .entry(group_id)
+            .or_insert_with(Vec::new)
+            .push(message.clone());
+
         Ok(message)
     }
 
@@ -185,24 +215,20 @@ impl GroupManager {
         before: Option<i64>,
     ) -> Result<Vec<GroupMessage>> {
         let messages = self.messages.read().await;
-        let group_messages = messages.get(&group_id)
-            .context("Group not found")?;
-        
+        let group_messages = messages.get(&group_id).context("Group not found")?;
+
         let filtered: Vec<GroupMessage> = if let Some(before_ts) = before {
-            group_messages.iter()
+            group_messages
+                .iter()
                 .filter(|m| m.timestamp < before_ts)
                 .rev()
                 .take(limit)
                 .cloned()
                 .collect()
         } else {
-            group_messages.iter()
-                .rev()
-                .take(limit)
-                .cloned()
-                .collect()
+            group_messages.iter().rev().take(limit).cloned().collect()
         };
-        
+
         Ok(filtered.into_iter().rev().collect())
     }
 
@@ -214,7 +240,7 @@ impl GroupManager {
         user: String,
     ) -> Result<()> {
         let mut messages = self.messages.write().await;
-        
+
         for group_messages in messages.values_mut() {
             if let Some(message) = group_messages.iter_mut().find(|m| m.id == message_id) {
                 if let Some(reaction) = message.reactions.iter_mut().find(|r| r.emoji == emoji) {
@@ -230,7 +256,7 @@ impl GroupManager {
                 return Ok(());
             }
         }
-        
+
         anyhow::bail!("Message not found")
     }
 
@@ -238,12 +264,13 @@ impl GroupManager {
     pub async fn get_user_groups(&self, user: String) -> Result<Vec<Group>> {
         let user_groups = self.user_groups.read().await;
         let group_ids = user_groups.get(&user).cloned().unwrap_or_default();
-        
+
         let groups = self.groups.read().await;
-        let user_group_list: Vec<Group> = group_ids.iter()
+        let user_group_list: Vec<Group> = group_ids
+            .iter()
             .filter_map(|id| groups.get(id).cloned())
             .collect();
-        
+
         Ok(user_group_list)
     }
 
@@ -251,8 +278,6 @@ impl GroupManager {
     #[allow(dead_code)]
     pub async fn get_group(&self, group_id: String) -> Result<Group> {
         let groups = self.groups.read().await;
-        groups.get(&group_id)
-            .cloned()
-            .context("Group not found")
+        groups.get(&group_id).cloned().context("Group not found")
     }
 }

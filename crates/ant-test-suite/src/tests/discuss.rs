@@ -16,14 +16,14 @@
 //! Tests forum functionality including categories, topics, replies, voting, moderation,
 //! wiki editing, polls, badges, trust levels, and collaborative content management.
 
-use anyhow::Result;
 use crate::tests::SubsystemTest;
-use crate::utils::{TestContext, VerificationResult, DataVerifier, TestDataGenerator};
-use std::time::{Duration, SystemTime};
+use crate::utils::{DataVerifier, TestContext, TestDataGenerator, VerificationResult};
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::time::{Duration, SystemTime};
 use tracing::{info, warn};
-use serde::{Serialize, Deserialize};
-use sha2::{Sha256, Digest};
 
 /// Discuss subsystem test implementation
 pub struct DiscussTests {
@@ -52,7 +52,10 @@ impl DiscussTests {
     }
 
     /// Test comprehensive forum functionality
-    async fn test_forum_operations(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_forum_operations(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing comprehensive forum operations");
@@ -73,12 +76,18 @@ impl DiscussTests {
         let voting_results = self.test_voting_system(ctx).await?;
         results.extend(voting_results);
 
-        ctx.log_info(&format!("Forum operations completed. Results: {}", results.len()));
+        ctx.log_info(&format!(
+            "Forum operations completed. Results: {}",
+            results.len()
+        ));
         Ok(results)
     }
 
     /// Test category management with access control
-    async fn test_category_management(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_category_management(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing category management");
@@ -87,17 +96,45 @@ impl DiscussTests {
         self.create_test_users();
 
         let category_types = vec![
-            ("general_discussion", "General Discussion", "public", "A place for general conversations"),
-            ("announcements", "Announcements", "announcement", "Official announcements from staff"),
-            ("development", "Development", "protected", "Development discussions and technical topics"),
-            ("private_staff", "Staff Only", "private", "Private discussions for staff members"),
-            ("community_wiki", "Community Wiki", "wiki", "Collaborative knowledge base"),
+            (
+                "general_discussion",
+                "General Discussion",
+                "public",
+                "A place for general conversations",
+            ),
+            (
+                "announcements",
+                "Announcements",
+                "announcement",
+                "Official announcements from staff",
+            ),
+            (
+                "development",
+                "Development",
+                "protected",
+                "Development discussions and technical topics",
+            ),
+            (
+                "private_staff",
+                "Staff Only",
+                "private",
+                "Private discussions for staff members",
+            ),
+            (
+                "community_wiki",
+                "Community Wiki",
+                "wiki",
+                "Collaborative knowledge base",
+            ),
         ];
 
         for (slug, name, access_type, description) in category_types {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[CATEGORY] Creating {} category: {}", access_type, name));
+            ctx.log_info(&format!(
+                "[CATEGORY] Creating {} category: {}",
+                access_type, name
+            ));
 
             // Create category with specific access level
             let category = MockCategory {
@@ -121,8 +158,16 @@ impl DiscussTests {
                         "protected" => 2,
                         _ => 0,
                     },
-                    auto_close_days: if access_type == "announcement" { Some(30) } else { None },
-                    slow_mode_minutes: if access_type == "development" { Some(5) } else { None },
+                    auto_close_days: if access_type == "announcement" {
+                        Some(30)
+                    } else {
+                        None
+                    },
+                    slow_mode_minutes: if access_type == "development" {
+                        Some(5)
+                    } else {
+                        None
+                    },
                 },
             };
 
@@ -132,12 +177,17 @@ impl DiscussTests {
             // Verify category data integrity
             if let Some(stored_category) = self.categories.get(&category_id) {
                 if stored_category.name == name && stored_category.slug == slug {
-                    ctx.log_info(&format!("✅ Category creation PASSED: {} - data verified", name));
-                    results.push(VerificationResult::success(start_time.elapsed())
-                        .with_metadata("operation".to_string(), "category_creation".to_string())
-                        .with_metadata("category_name".to_string(), name.to_string())
-                        .with_metadata("access_type".to_string(), access_type.to_string())
-                        .with_metadata("data_verified".to_string(), "true".to_string()));
+                    ctx.log_info(&format!(
+                        "✅ Category creation PASSED: {} - data verified",
+                        name
+                    ));
+                    results.push(
+                        VerificationResult::success(start_time.elapsed())
+                            .with_metadata("operation".to_string(), "category_creation".to_string())
+                            .with_metadata("category_name".to_string(), name.to_string())
+                            .with_metadata("access_type".to_string(), access_type.to_string())
+                            .with_metadata("data_verified".to_string(), "true".to_string()),
+                    );
                 } else {
                     let error = format!("Category data corruption detected for {}", name);
                     ctx.log_error(&error);
@@ -170,11 +220,14 @@ impl DiscussTests {
             },
         };
 
-        self.categories.insert("cat_dev_backend".to_string(), subcategory);
+        self.categories
+            .insert("cat_dev_backend".to_string(), subcategory);
         ctx.log_info("✅ Subcategory creation PASSED");
-        results.push(VerificationResult::success(subcategory_start.elapsed())
-            .with_metadata("operation".to_string(), "subcategory_creation".to_string())
-            .with_metadata("parent_category".to_string(), "cat_development".to_string()));
+        results.push(
+            VerificationResult::success(subcategory_start.elapsed())
+                .with_metadata("operation".to_string(), "subcategory_creation".to_string())
+                .with_metadata("parent_category".to_string(), "cat_development".to_string()),
+        );
 
         Ok(results)
     }
@@ -182,11 +235,35 @@ impl DiscussTests {
     /// Create test users with different trust levels
     fn create_test_users(&mut self) {
         let users = vec![
-            ("admin_user", 4, vec!["Administrator".to_string()], 1000, 5000),
-            ("moderator_user", 3, vec!["Moderator".to_string()], 500, 2000),
-            ("regular_user", 2, vec!["Regular Member".to_string()], 200, 800),
+            (
+                "admin_user",
+                4,
+                vec!["Administrator".to_string()],
+                1000,
+                5000,
+            ),
+            (
+                "moderator_user",
+                3,
+                vec!["Moderator".to_string()],
+                500,
+                2000,
+            ),
+            (
+                "regular_user",
+                2,
+                vec!["Regular Member".to_string()],
+                200,
+                800,
+            ),
             ("new_user", 0, vec![], 10, 50),
-            ("contributor_user", 2, vec!["Contributor".to_string()], 300, 1200),
+            (
+                "contributor_user",
+                2,
+                vec!["Contributor".to_string()],
+                300,
+                1200,
+            ),
             ("banned_user", 0, vec![], 0, 0),
         ];
 
@@ -210,22 +287,55 @@ impl DiscussTests {
     }
 
     /// Test topic creation and management
-    async fn test_topic_management(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_topic_management(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing topic creation and management");
 
         let topic_scenarios = vec![
-            ("welcome_topic", "cat_general_discussion", "Welcome to the Forum!", "regular", 
-             "Welcome everyone! This is our community forum.", vec!["welcome".to_string(), "announcement".to_string()]),
-            ("technical_question", "cat_development", "How to implement async/await?", "question",
-             "I'm having trouble understanding async/await patterns. Can someone help?", vec!["async".to_string(), "help".to_string()]),
-            ("wiki_guide", "cat_community_wiki", "Community Guidelines", "wiki",
-             "# Community Guidelines\n\nPlease follow these rules...", vec!["guidelines".to_string(), "wiki".to_string()]),
-            ("poll_topic", "cat_general_discussion", "What's your favorite programming language?", "poll",
-             "Let's see what languages are popular in our community!", vec!["poll".to_string(), "languages".to_string()]),
-            ("announcement_topic", "cat_announcements", "Forum Updates v2.0", "announcement",
-             "We're excited to announce new features coming to the forum!", vec!["updates".to_string(), "features".to_string()]),
+            (
+                "welcome_topic",
+                "cat_general_discussion",
+                "Welcome to the Forum!",
+                "regular",
+                "Welcome everyone! This is our community forum.",
+                vec!["welcome".to_string(), "announcement".to_string()],
+            ),
+            (
+                "technical_question",
+                "cat_development",
+                "How to implement async/await?",
+                "question",
+                "I'm having trouble understanding async/await patterns. Can someone help?",
+                vec!["async".to_string(), "help".to_string()],
+            ),
+            (
+                "wiki_guide",
+                "cat_community_wiki",
+                "Community Guidelines",
+                "wiki",
+                "# Community Guidelines\n\nPlease follow these rules...",
+                vec!["guidelines".to_string(), "wiki".to_string()],
+            ),
+            (
+                "poll_topic",
+                "cat_general_discussion",
+                "What's your favorite programming language?",
+                "poll",
+                "Let's see what languages are popular in our community!",
+                vec!["poll".to_string(), "languages".to_string()],
+            ),
+            (
+                "announcement_topic",
+                "cat_announcements",
+                "Forum Updates v2.0",
+                "announcement",
+                "We're excited to announce new features coming to the forum!",
+                vec!["updates".to_string(), "features".to_string()],
+            ),
         ];
 
         for (topic_id, category_id, title, topic_type, content, tags) in topic_scenarios {
@@ -245,7 +355,11 @@ impl DiscussTests {
                 id: format!("topic_{}", topic_id),
                 category_id: category_id.to_string(),
                 title: title.to_string(),
-                slug: title.to_lowercase().replace(" ", "-").replace("?", "").replace("!", ""),
+                slug: title
+                    .to_lowercase()
+                    .replace(" ", "-")
+                    .replace("?", "")
+                    .replace("!", ""),
                 content: MockTopicContent {
                     current_version: content.to_string(),
                     format: "markdown".to_string(),
@@ -255,7 +369,11 @@ impl DiscussTests {
                         created_at: SystemTime::now(),
                         edit_reason: None,
                     }],
-                    wiki_editors: if topic_type == "wiki" { vec!["admin_user".to_string()] } else { vec![] },
+                    wiki_editors: if topic_type == "wiki" {
+                        vec!["admin_user".to_string()]
+                    } else {
+                        vec![]
+                    },
                 },
                 author: "regular_user".to_string(),
                 tags: tags.clone(),
@@ -294,17 +412,24 @@ impl DiscussTests {
                 let tags_match = stored_topic.tags == tags;
 
                 if title_match && content_match && tags_match {
-                    ctx.log_info(&format!("✅ Topic creation PASSED: {} - all data verified", title));
-                    results.push(VerificationResult::success(start_time.elapsed())
-                        .with_metadata("operation".to_string(), "topic_creation".to_string())
-                        .with_metadata("topic_type".to_string(), topic_type.to_string())
-                        .with_metadata("title".to_string(), title.to_string())
-                        .with_metadata("content_length".to_string(), content.len().to_string())
-                        .with_metadata("tags_count".to_string(), tags.len().to_string())
-                        .with_metadata("data_verified".to_string(), "true".to_string()));
+                    ctx.log_info(&format!(
+                        "✅ Topic creation PASSED: {} - all data verified",
+                        title
+                    ));
+                    results.push(
+                        VerificationResult::success(start_time.elapsed())
+                            .with_metadata("operation".to_string(), "topic_creation".to_string())
+                            .with_metadata("topic_type".to_string(), topic_type.to_string())
+                            .with_metadata("title".to_string(), title.to_string())
+                            .with_metadata("content_length".to_string(), content.len().to_string())
+                            .with_metadata("tags_count".to_string(), tags.len().to_string())
+                            .with_metadata("data_verified".to_string(), "true".to_string()),
+                    );
                 } else {
-                    let error = format!("Topic data verification failed for {}: title={}, content={}, tags={}", 
-                                      title, title_match, content_match, tags_match);
+                    let error = format!(
+                        "Topic data verification failed for {}: title={}, content={}, tags={}",
+                        title, title_match, content_match, tags_match
+                    );
                     ctx.log_error(&error);
                     results.push(VerificationResult::failure(error, start_time.elapsed()));
                 }
@@ -317,7 +442,10 @@ impl DiscussTests {
 
         if let Some(wiki_topic) = self.topics.get_mut("topic_wiki_guide") {
             let original_content = wiki_topic.content.current_version.clone();
-            let edited_content = format!("{}\n\n## Additional Section\n\nThis section was added later.", original_content);
+            let edited_content = format!(
+                "{}\n\n## Additional Section\n\nThis section was added later.",
+                original_content
+            );
 
             // Add new version
             wiki_topic.content.versions.push(MockContentVersion {
@@ -330,12 +458,19 @@ impl DiscussTests {
             wiki_topic.updated_at = SystemTime::now();
 
             // Verify edit integrity
-            if wiki_topic.content.current_version == edited_content && wiki_topic.content.versions.len() == 2 {
+            if wiki_topic.content.current_version == edited_content
+                && wiki_topic.content.versions.len() == 2
+            {
                 ctx.log_info("✅ Wiki topic editing PASSED");
-                results.push(VerificationResult::success(edit_start.elapsed())
-                    .with_metadata("operation".to_string(), "topic_edit".to_string())
-                    .with_metadata("versions_count".to_string(), wiki_topic.content.versions.len().to_string())
-                    .with_metadata("edit_verified".to_string(), "true".to_string()));
+                results.push(
+                    VerificationResult::success(edit_start.elapsed())
+                        .with_metadata("operation".to_string(), "topic_edit".to_string())
+                        .with_metadata(
+                            "versions_count".to_string(),
+                            wiki_topic.content.versions.len().to_string(),
+                        )
+                        .with_metadata("edit_verified".to_string(), "true".to_string()),
+                );
             } else {
                 let error = "Topic edit verification failed".to_string();
                 ctx.log_error(&error);
@@ -354,17 +489,50 @@ impl DiscussTests {
 
         // Test replies to different topic types
         let reply_scenarios = vec![
-            ("answer_reply", "topic_technical_question", None, "Here's how async/await works...", "regular_user"),
-            ("follow_up", "topic_technical_question", Some("reply_answer_reply"), "Thanks! That's very helpful.", "new_user"),
-            ("expert_answer", "topic_technical_question", None, "Actually, there's a more elegant solution...", "moderator_user"),
-            ("wiki_suggestion", "topic_wiki_guide", None, "Should we add a section about code of conduct?", "contributor_user"),
-            ("poll_vote_comment", "topic_poll_topic", None, "I voted for Rust because of its safety features.", "regular_user"),
+            (
+                "answer_reply",
+                "topic_technical_question",
+                None,
+                "Here's how async/await works...",
+                "regular_user",
+            ),
+            (
+                "follow_up",
+                "topic_technical_question",
+                Some("reply_answer_reply"),
+                "Thanks! That's very helpful.",
+                "new_user",
+            ),
+            (
+                "expert_answer",
+                "topic_technical_question",
+                None,
+                "Actually, there's a more elegant solution...",
+                "moderator_user",
+            ),
+            (
+                "wiki_suggestion",
+                "topic_wiki_guide",
+                None,
+                "Should we add a section about code of conduct?",
+                "contributor_user",
+            ),
+            (
+                "poll_vote_comment",
+                "topic_poll_topic",
+                None,
+                "I voted for Rust because of its safety features.",
+                "regular_user",
+            ),
         ];
 
         for (reply_id, topic_id, parent_reply_id, content, author) in reply_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[REPLY] Creating reply by {} to {}", author, topic_id));
+            ctx.log_info(&format!(
+                "[REPLY] Creating reply by {} to {}",
+                author, topic_id
+            ));
 
             // Check if topic exists
             if !self.topics.contains_key(topic_id) {
@@ -391,8 +559,14 @@ impl DiscussTests {
                 edited_at: None,
                 deleted_at: None,
                 reactions: vec![
-                    MockReaction { emoji: "👍".to_string(), users: vec![] },
-                    MockReaction { emoji: "❤️".to_string(), users: vec![] },
+                    MockReaction {
+                        emoji: "👍".to_string(),
+                        users: vec![],
+                    },
+                    MockReaction {
+                        emoji: "❤️".to_string(),
+                        users: vec![],
+                    },
                 ],
             };
 
@@ -418,20 +592,31 @@ impl DiscussTests {
             if let Some(stored_reply) = self.replies.get(&full_reply_id) {
                 let content_match = stored_reply.content == content;
                 let author_match = stored_reply.author == author;
-                let threading_correct = stored_reply.reply_to == parent_reply_id.map(|id| format!("reply_{}", id));
+                let threading_correct =
+                    stored_reply.reply_to == parent_reply_id.map(|id| format!("reply_{}", id));
 
                 if content_match && author_match && threading_correct {
-                    ctx.log_info(&format!("✅ Reply creation PASSED: {} by {}", reply_id, author));
-                    results.push(VerificationResult::success(start_time.elapsed())
-                        .with_metadata("operation".to_string(), "reply_creation".to_string())
-                        .with_metadata("reply_id".to_string(), reply_id.to_string())
-                        .with_metadata("author".to_string(), author.to_string())
-                        .with_metadata("is_threaded".to_string(), parent_reply_id.is_some().to_string())
-                        .with_metadata("content_length".to_string(), content.len().to_string())
-                        .with_metadata("data_verified".to_string(), "true".to_string()));
+                    ctx.log_info(&format!(
+                        "✅ Reply creation PASSED: {} by {}",
+                        reply_id, author
+                    ));
+                    results.push(
+                        VerificationResult::success(start_time.elapsed())
+                            .with_metadata("operation".to_string(), "reply_creation".to_string())
+                            .with_metadata("reply_id".to_string(), reply_id.to_string())
+                            .with_metadata("author".to_string(), author.to_string())
+                            .with_metadata(
+                                "is_threaded".to_string(),
+                                parent_reply_id.is_some().to_string(),
+                            )
+                            .with_metadata("content_length".to_string(), content.len().to_string())
+                            .with_metadata("data_verified".to_string(), "true".to_string()),
+                    );
                 } else {
-                    let error = format!("Reply verification failed for {}: content={}, author={}, threading={}", 
-                                      reply_id, content_match, author_match, threading_correct);
+                    let error = format!(
+                        "Reply verification failed for {}: content={}, author={}, threading={}",
+                        reply_id, content_match, author_match, threading_correct
+                    );
                     ctx.log_error(&error);
                     results.push(VerificationResult::failure(error, start_time.elapsed()));
                 }
@@ -444,13 +629,15 @@ impl DiscussTests {
 
         if let Some(reply) = self.replies.get_mut("reply_expert_answer") {
             reply.accepted_answer = true;
-            
+
             if reply.accepted_answer {
                 ctx.log_info("✅ Answer acceptance PASSED");
-                results.push(VerificationResult::success(accept_start.elapsed())
-                    .with_metadata("operation".to_string(), "answer_acceptance".to_string())
-                    .with_metadata("reply_id".to_string(), "reply_expert_answer".to_string())
-                    .with_metadata("accepted_verified".to_string(), "true".to_string()));
+                results.push(
+                    VerificationResult::success(accept_start.elapsed())
+                        .with_metadata("operation".to_string(), "answer_acceptance".to_string())
+                        .with_metadata("reply_id".to_string(), "reply_expert_answer".to_string())
+                        .with_metadata("accepted_verified".to_string(), "true".to_string()),
+                );
             }
         }
 
@@ -476,35 +663,49 @@ impl DiscussTests {
         for (reply_id, voter_id, vote_type, expected_score) in voting_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[VOTE] {} voting {} on {}", voter_id, vote_type, reply_id));
+            ctx.log_info(&format!(
+                "[VOTE] {} voting {} on {}",
+                voter_id, vote_type, reply_id
+            ));
 
             if let Some(reply) = self.replies.get_mut(reply_id) {
                 // Record vote
-                reply.votes.voters.insert(voter_id.to_string(), vote_type.to_string());
-                
+                reply
+                    .votes
+                    .voters
+                    .insert(voter_id.to_string(), vote_type.to_string());
+
                 // Recalculate score
-                reply.votes.upvotes = reply.votes.voters.values()
-                    .filter(|&v| v == "up").count() as u64;
-                reply.votes.downvotes = reply.votes.voters.values()
-                    .filter(|&v| v == "down").count() as u64;
+                reply.votes.upvotes =
+                    reply.votes.voters.values().filter(|&v| v == "up").count() as u64;
+                reply.votes.downvotes =
+                    reply.votes.voters.values().filter(|&v| v == "down").count() as u64;
                 reply.votes.score = reply.votes.upvotes as i64 - reply.votes.downvotes as i64;
 
                 // Verify vote integrity
-                let vote_recorded = reply.votes.voters.get(voter_id) == Some(&vote_type.to_string());
+                let vote_recorded =
+                    reply.votes.voters.get(voter_id) == Some(&vote_type.to_string());
                 let score_correct = reply.votes.score == expected_score;
 
                 if vote_recorded && score_correct {
-                    ctx.log_info(&format!("✅ Voting PASSED: {} by {} (score: {})", vote_type, voter_id, reply.votes.score));
-                    results.push(VerificationResult::success(start_time.elapsed())
-                        .with_metadata("operation".to_string(), "vote_cast".to_string())
-                        .with_metadata("reply_id".to_string(), reply_id.to_string())
-                        .with_metadata("voter_id".to_string(), voter_id.to_string())
-                        .with_metadata("vote_type".to_string(), vote_type.to_string())
-                        .with_metadata("final_score".to_string(), reply.votes.score.to_string())
-                        .with_metadata("vote_verified".to_string(), "true".to_string()));
+                    ctx.log_info(&format!(
+                        "✅ Voting PASSED: {} by {} (score: {})",
+                        vote_type, voter_id, reply.votes.score
+                    ));
+                    results.push(
+                        VerificationResult::success(start_time.elapsed())
+                            .with_metadata("operation".to_string(), "vote_cast".to_string())
+                            .with_metadata("reply_id".to_string(), reply_id.to_string())
+                            .with_metadata("voter_id".to_string(), voter_id.to_string())
+                            .with_metadata("vote_type".to_string(), vote_type.to_string())
+                            .with_metadata("final_score".to_string(), reply.votes.score.to_string())
+                            .with_metadata("vote_verified".to_string(), "true".to_string()),
+                    );
                 } else {
-                    let error = format!("Vote verification failed for {}: recorded={}, score_correct={} (expected={}, got={})", 
-                                      reply_id, vote_recorded, score_correct, expected_score, reply.votes.score);
+                    let error = format!(
+                        "Vote verification failed for {}: recorded={}, score_correct={} (expected={}, got={})",
+                        reply_id, vote_recorded, score_correct, expected_score, reply.votes.score
+                    );
                     ctx.log_error(&error);
                     results.push(VerificationResult::failure(error, start_time.elapsed()));
                 }
@@ -525,24 +726,33 @@ impl DiscussTests {
                 reaction.users.push("admin_user".to_string());
             }
 
-            let thumbs_up_count = reply.reactions.iter()
+            let thumbs_up_count = reply
+                .reactions
+                .iter()
                 .find(|r| r.emoji == "👍")
                 .map(|r| r.users.len())
                 .unwrap_or(0);
-            let heart_count = reply.reactions.iter()
+            let heart_count = reply
+                .reactions
+                .iter()
                 .find(|r| r.emoji == "❤️")
                 .map(|r| r.users.len())
                 .unwrap_or(0);
 
             if thumbs_up_count == 2 && heart_count == 1 {
                 ctx.log_info("✅ Emoji reactions PASSED");
-                results.push(VerificationResult::success(reaction_start.elapsed())
-                    .with_metadata("operation".to_string(), "emoji_reactions".to_string())
-                    .with_metadata("thumbs_up_count".to_string(), thumbs_up_count.to_string())
-                    .with_metadata("heart_count".to_string(), heart_count.to_string())
-                    .with_metadata("reactions_verified".to_string(), "true".to_string()));
+                results.push(
+                    VerificationResult::success(reaction_start.elapsed())
+                        .with_metadata("operation".to_string(), "emoji_reactions".to_string())
+                        .with_metadata("thumbs_up_count".to_string(), thumbs_up_count.to_string())
+                        .with_metadata("heart_count".to_string(), heart_count.to_string())
+                        .with_metadata("reactions_verified".to_string(), "true".to_string()),
+                );
             } else {
-                let error = format!("Reaction verification failed: thumbs_up={}, heart={}", thumbs_up_count, heart_count);
+                let error = format!(
+                    "Reaction verification failed: thumbs_up={}, heart={}",
+                    thumbs_up_count, heart_count
+                );
                 ctx.log_error(&error);
                 results.push(VerificationResult::failure(error, reaction_start.elapsed()));
             }
@@ -552,33 +762,79 @@ impl DiscussTests {
     }
 
     /// Test moderation features
-    async fn test_moderation_system(&mut self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
+    async fn test_moderation_system(
+        &mut self,
+        ctx: &TestContext,
+    ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
 
         ctx.log_info("Testing moderation system");
 
         let moderation_scenarios = vec![
-            ("close_topic", "topic_technical_question", "moderator_user", "close", "Question has been resolved"),
-            ("pin_announcement", "topic_announcement_topic", "admin_user", "pin", "Important announcement"),
-            ("move_topic", "topic_welcome_topic", "moderator_user", "move", "Better suited for announcements"),
-            ("delete_spam", "reply_follow_up", "moderator_user", "delete", "Spam content removed"),
-            ("warn_user", "new_user", "moderator_user", "warn", "Please follow community guidelines"),
+            (
+                "close_topic",
+                "topic_technical_question",
+                "moderator_user",
+                "close",
+                "Question has been resolved",
+            ),
+            (
+                "pin_announcement",
+                "topic_announcement_topic",
+                "admin_user",
+                "pin",
+                "Important announcement",
+            ),
+            (
+                "move_topic",
+                "topic_welcome_topic",
+                "moderator_user",
+                "move",
+                "Better suited for announcements",
+            ),
+            (
+                "delete_spam",
+                "reply_follow_up",
+                "moderator_user",
+                "delete",
+                "Spam content removed",
+            ),
+            (
+                "warn_user",
+                "new_user",
+                "moderator_user",
+                "warn",
+                "Please follow community guidelines",
+            ),
         ];
 
         for (action_id, target_id, moderator_id, action_type, reason) in moderation_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[MODERATION] {} performing {} on {}", moderator_id, action_type, target_id));
+            ctx.log_info(&format!(
+                "[MODERATION] {} performing {} on {}",
+                moderator_id, action_type, target_id
+            ));
 
             let moderation_action = MockModerationAction {
                 id: format!("mod_{}", action_id),
                 action_type: action_type.to_string(),
                 target_id: target_id.to_string(),
-                target_type: if target_id.starts_with("topic_") { "topic".to_string() } else if target_id.starts_with("reply_") { "reply".to_string() } else { "user".to_string() },
+                target_type: if target_id.starts_with("topic_") {
+                    "topic".to_string()
+                } else if target_id.starts_with("reply_") {
+                    "reply".to_string()
+                } else {
+                    "user".to_string()
+                },
                 moderator_id: moderator_id.to_string(),
                 reason: reason.to_string(),
                 created_at: SystemTime::now(),
-                expires_at: if action_type == "warn" { Some(SystemTime::now()) } else { None },
+                expires_at: if action_type == "warn" {
+                    Some(SystemTime::now())
+                } else {
+                    None
+                },
             };
 
             // Apply moderation action
@@ -611,7 +867,8 @@ impl DiscussTests {
             }
 
             let action_id_full = moderation_action.id.clone();
-            self.moderation_actions.insert(action_id_full.clone(), moderation_action);
+            self.moderation_actions
+                .insert(action_id_full.clone(), moderation_action);
 
             // Verify moderation action
             if let Some(stored_action) = self.moderation_actions.get(&action_id_full) {
@@ -620,17 +877,24 @@ impl DiscussTests {
                 let target_correct = stored_action.target_id == target_id;
 
                 if action_recorded && moderator_correct && target_correct {
-                    ctx.log_info(&format!("✅ Moderation action PASSED: {} by {}", action_type, moderator_id));
-                    results.push(VerificationResult::success(start_time.elapsed())
-                        .with_metadata("operation".to_string(), "moderation_action".to_string())
-                        .with_metadata("action_type".to_string(), action_type.to_string())
-                        .with_metadata("moderator_id".to_string(), moderator_id.to_string())
-                        .with_metadata("target_id".to_string(), target_id.to_string())
-                        .with_metadata("reason".to_string(), reason.to_string())
-                        .with_metadata("action_verified".to_string(), "true".to_string()));
+                    ctx.log_info(&format!(
+                        "✅ Moderation action PASSED: {} by {}",
+                        action_type, moderator_id
+                    ));
+                    results.push(
+                        VerificationResult::success(start_time.elapsed())
+                            .with_metadata("operation".to_string(), "moderation_action".to_string())
+                            .with_metadata("action_type".to_string(), action_type.to_string())
+                            .with_metadata("moderator_id".to_string(), moderator_id.to_string())
+                            .with_metadata("target_id".to_string(), target_id.to_string())
+                            .with_metadata("reason".to_string(), reason.to_string())
+                            .with_metadata("action_verified".to_string(), "true".to_string()),
+                    );
                 } else {
-                    let error = format!("Moderation action verification failed for {}: action={}, moderator={}, target={}", 
-                                      action_id, action_recorded, moderator_correct, target_correct);
+                    let error = format!(
+                        "Moderation action verification failed for {}: action={}, moderator={}, target={}",
+                        action_id, action_recorded, moderator_correct, target_correct
+                    );
                     ctx.log_error(&error);
                     results.push(VerificationResult::failure(error, start_time.elapsed()));
                 }
@@ -648,10 +912,30 @@ impl DiscussTests {
 
         // Create polls
         let poll_scenarios = vec![
-            ("lang_poll", "topic_poll_topic", "What's your favorite programming language?", 
-             vec!["Rust".to_string(), "Python".to_string(), "JavaScript".to_string(), "Go".to_string()], "single"),
-            ("features_poll", "topic_announcement_topic", "Which features should we prioritize?", 
-             vec!["Better search".to_string(), "Mobile app".to_string(), "Dark mode".to_string(), "API access".to_string()], "multiple"),
+            (
+                "lang_poll",
+                "topic_poll_topic",
+                "What's your favorite programming language?",
+                vec![
+                    "Rust".to_string(),
+                    "Python".to_string(),
+                    "JavaScript".to_string(),
+                    "Go".to_string(),
+                ],
+                "single",
+            ),
+            (
+                "features_poll",
+                "topic_announcement_topic",
+                "Which features should we prioritize?",
+                vec![
+                    "Better search".to_string(),
+                    "Mobile app".to_string(),
+                    "Dark mode".to_string(),
+                    "API access".to_string(),
+                ],
+                "multiple",
+            ),
         ];
 
         for (poll_id, topic_id, question, options, poll_type) in poll_scenarios {
@@ -663,10 +947,13 @@ impl DiscussTests {
                 id: format!("poll_{}", poll_id),
                 topic_id: topic_id.to_string(),
                 question: question.to_string(),
-                options: options.iter().map(|opt| MockPollOption {
-                    text: opt.clone(),
-                    votes: 0,
-                }).collect(),
+                options: options
+                    .iter()
+                    .map(|opt| MockPollOption {
+                        text: opt.clone(),
+                        votes: 0,
+                    })
+                    .collect(),
                 poll_type: poll_type.to_string(),
                 closes_at: None,
                 results_visible: "always".to_string(),
@@ -678,17 +965,24 @@ impl DiscussTests {
 
             // Test voting on poll
             let voting_scenarios = vec![
-                ("regular_user", vec![0]),  // Rust
+                ("regular_user", vec![0]),   // Rust
                 ("moderator_user", vec![1]), // Python
                 ("admin_user", vec![0]),     // Rust
-                ("contributor_user", if poll_type == "multiple" { vec![0, 2] } else { vec![2] }), // Rust + Dark mode or just JavaScript
+                (
+                    "contributor_user",
+                    if poll_type == "multiple" {
+                        vec![0, 2]
+                    } else {
+                        vec![2]
+                    },
+                ), // Rust + Dark mode or just JavaScript
             ];
 
             for (voter_id, choices) in voting_scenarios {
                 if let Some(poll) = self.polls.get_mut(&poll_id_full) {
                     // Record vote
                     poll.voters.insert(voter_id.to_string(), choices.clone());
-                    
+
                     // Update option counts
                     for &choice_idx in &choices {
                         if let Some(option) = poll.options.get_mut(choice_idx) {
@@ -706,18 +1000,28 @@ impl DiscussTests {
                 let voters_count = stored_poll.voters.len();
 
                 if question_match && options_count_correct && total_votes > 0 {
-                    ctx.log_info(&format!("✅ Poll creation and voting PASSED: {} ({} votes)", poll_id, total_votes));
-                    results.push(VerificationResult::success(start_time.elapsed())
-                        .with_metadata("operation".to_string(), "poll_creation_voting".to_string())
-                        .with_metadata("poll_id".to_string(), poll_id.to_string())
-                        .with_metadata("poll_type".to_string(), poll_type.to_string())
-                        .with_metadata("options_count".to_string(), options.len().to_string())
-                        .with_metadata("total_votes".to_string(), total_votes.to_string())
-                        .with_metadata("voters_count".to_string(), voters_count.to_string())
-                        .with_metadata("data_verified".to_string(), "true".to_string()));
+                    ctx.log_info(&format!(
+                        "✅ Poll creation and voting PASSED: {} ({} votes)",
+                        poll_id, total_votes
+                    ));
+                    results.push(
+                        VerificationResult::success(start_time.elapsed())
+                            .with_metadata(
+                                "operation".to_string(),
+                                "poll_creation_voting".to_string(),
+                            )
+                            .with_metadata("poll_id".to_string(), poll_id.to_string())
+                            .with_metadata("poll_type".to_string(), poll_type.to_string())
+                            .with_metadata("options_count".to_string(), options.len().to_string())
+                            .with_metadata("total_votes".to_string(), total_votes.to_string())
+                            .with_metadata("voters_count".to_string(), voters_count.to_string())
+                            .with_metadata("data_verified".to_string(), "true".to_string()),
+                    );
                 } else {
-                    let error = format!("Poll verification failed for {}: question={}, options={}, votes={}", 
-                                      poll_id, question_match, options_count_correct, total_votes);
+                    let error = format!(
+                        "Poll verification failed for {}: question={}, options={}, votes={}",
+                        poll_id, question_match, options_count_correct, total_votes
+                    );
                     ctx.log_error(&error);
                     results.push(VerificationResult::failure(error, start_time.elapsed()));
                 }
@@ -734,32 +1038,63 @@ impl DiscussTests {
         ctx.log_info("Testing badge system and trust levels");
 
         let badge_scenarios = vec![
-            ("regular_user", "First Post", "bronze", "Made your first post"),
-            ("moderator_user", "Helpful", "silver", "Received 50 likes on answers"),
-            ("admin_user", "Community Leader", "gold", "Outstanding contributions to the community"),
-            ("contributor_user", "Problem Solver", "silver", "Had 10 answers accepted"),
+            (
+                "regular_user",
+                "First Post",
+                "bronze",
+                "Made your first post",
+            ),
+            (
+                "moderator_user",
+                "Helpful",
+                "silver",
+                "Received 50 likes on answers",
+            ),
+            (
+                "admin_user",
+                "Community Leader",
+                "gold",
+                "Outstanding contributions to the community",
+            ),
+            (
+                "contributor_user",
+                "Problem Solver",
+                "silver",
+                "Had 10 answers accepted",
+            ),
         ];
 
         for (user_id, badge_name, badge_type, description) in badge_scenarios {
             let start_time = std::time::Instant::now();
 
-            ctx.log_info(&format!("[BADGE] Awarding {} badge '{}' to {}", badge_type, badge_name, user_id));
+            ctx.log_info(&format!(
+                "[BADGE] Awarding {} badge '{}' to {}",
+                badge_type, badge_name, user_id
+            ));
 
             if let Some(user) = self.users.get_mut(user_id) {
                 let badge = format!("{} ({})", badge_name, badge_type);
                 if !user.badges.contains(&badge) {
                     user.badges.push(badge.clone());
-                    
+
                     // Verify badge award
                     if user.badges.contains(&badge) {
-                        ctx.log_info(&format!("✅ Badge award PASSED: {} to {}", badge_name, user_id));
-                        results.push(VerificationResult::success(start_time.elapsed())
-                            .with_metadata("operation".to_string(), "badge_award".to_string())
-                            .with_metadata("user_id".to_string(), user_id.to_string())
-                            .with_metadata("badge_name".to_string(), badge_name.to_string())
-                            .with_metadata("badge_type".to_string(), badge_type.to_string())
-                            .with_metadata("total_badges".to_string(), user.badges.len().to_string())
-                            .with_metadata("badge_verified".to_string(), "true".to_string()));
+                        ctx.log_info(&format!(
+                            "✅ Badge award PASSED: {} to {}",
+                            badge_name, user_id
+                        ));
+                        results.push(
+                            VerificationResult::success(start_time.elapsed())
+                                .with_metadata("operation".to_string(), "badge_award".to_string())
+                                .with_metadata("user_id".to_string(), user_id.to_string())
+                                .with_metadata("badge_name".to_string(), badge_name.to_string())
+                                .with_metadata("badge_type".to_string(), badge_type.to_string())
+                                .with_metadata(
+                                    "total_badges".to_string(),
+                                    user.badges.len().to_string(),
+                                )
+                                .with_metadata("badge_verified".to_string(), "true".to_string()),
+                        );
                     } else {
                         let error = format!("Badge award verification failed for {}", user_id);
                         ctx.log_error(&error);
@@ -775,26 +1110,34 @@ impl DiscussTests {
 
         if let Some(user) = self.users.get_mut("regular_user") {
             let original_trust = user.trust_level;
-            
+
             // Simulate activity that increases trust level
             user.posts_made += 50;
             user.likes_received += 25;
             user.days_visited += 10;
-            
+
             // Update trust level based on activity
             if user.posts_made >= 50 && user.likes_received >= 25 && user.days_visited >= 30 {
                 user.trust_level = 3; // Promote to Regular (level 3)
             }
-            
+
             if user.trust_level > original_trust {
-                ctx.log_info(&format!("✅ Trust level progression PASSED: {} -> {}", original_trust, user.trust_level));
-                results.push(VerificationResult::success(trust_start.elapsed())
-                    .with_metadata("operation".to_string(), "trust_level_progression".to_string())
-                    .with_metadata("user_id".to_string(), "regular_user".to_string())
-                    .with_metadata("original_level".to_string(), original_trust.to_string())
-                    .with_metadata("new_level".to_string(), user.trust_level.to_string())
-                    .with_metadata("posts_made".to_string(), user.posts_made.to_string())
-                    .with_metadata("progression_verified".to_string(), "true".to_string()));
+                ctx.log_info(&format!(
+                    "✅ Trust level progression PASSED: {} -> {}",
+                    original_trust, user.trust_level
+                ));
+                results.push(
+                    VerificationResult::success(trust_start.elapsed())
+                        .with_metadata(
+                            "operation".to_string(),
+                            "trust_level_progression".to_string(),
+                        )
+                        .with_metadata("user_id".to_string(), "regular_user".to_string())
+                        .with_metadata("original_level".to_string(), original_trust.to_string())
+                        .with_metadata("new_level".to_string(), user.trust_level.to_string())
+                        .with_metadata("posts_made".to_string(), user.posts_made.to_string())
+                        .with_metadata("progression_verified".to_string(), "true".to_string()),
+                );
             }
         }
 
@@ -950,13 +1293,15 @@ struct MockModerationAction {
 
 #[async_trait::async_trait]
 impl SubsystemTest for DiscussTests {
-    fn name(&self) -> &str { "discuss" }
+    fn name(&self) -> &str {
+        "discuss"
+    }
 
     async fn test_basic_functionality(&self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
         let mut test_instance = self.clone();
-        
+
         ctx.log_info("Running comprehensive discuss/forum functionality tests");
-        
+
         // Test forum operations
         test_instance.test_forum_operations(ctx).await
     }
@@ -964,40 +1309,44 @@ impl SubsystemTest for DiscussTests {
     async fn test_data_verification(&self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
         let mut test_instance = self.clone();
         let mut results = Vec::new();
-        
+
         ctx.log_info("Running discuss data verification tests");
-        
+
         // Test moderation system
         let moderation_results = test_instance.test_moderation_system(ctx).await?;
         results.extend(moderation_results);
-        
+
         // Test poll system
         let poll_results = test_instance.test_poll_system(ctx).await?;
         results.extend(poll_results);
-        
+
         // Test badge system
         let badge_results = test_instance.test_badge_system(ctx).await?;
         results.extend(badge_results);
-        
+
         Ok(results)
     }
 
     async fn test_cross_node(&self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
         let mut test_instance = self.clone();
         let mut results = Vec::new();
-        
+
         ctx.log_info("Running cross-node discuss tests");
-        
+
         // Test cross-node forum synchronization
         let sync_start = std::time::Instant::now();
-        
+
         // Create categories on multiple nodes
         let cross_node_categories = vec![
             ("node1_general", "Node 1 General", "public"),
             ("node2_dev", "Node 2 Development", "protected"),
-            ("shared_announcements", "Shared Announcements", "announcement"),
+            (
+                "shared_announcements",
+                "Shared Announcements",
+                "announcement",
+            ),
         ];
-        
+
         for (slug, name, access_type) in cross_node_categories {
             let category = MockCategory {
                 id: format!("cross_cat_{}", slug),
@@ -1020,17 +1369,34 @@ impl SubsystemTest for DiscussTests {
                     slow_mode_minutes: None,
                 },
             };
-            
-            test_instance.categories.insert(category.id.clone(), category);
+
+            test_instance
+                .categories
+                .insert(category.id.clone(), category);
         }
-        
+
         // Test cross-node topic synchronization
         let cross_node_topics = vec![
-            ("sync_topic_1", "cross_cat_shared_announcements", "Network Update", "Important network protocol update"),
-            ("sync_topic_2", "cross_cat_node1_general", "Welcome Cross-Node Users", "Welcome to our distributed forum"),
-            ("sync_topic_3", "cross_cat_node2_dev", "API Synchronization", "Discussing API sync between nodes"),
+            (
+                "sync_topic_1",
+                "cross_cat_shared_announcements",
+                "Network Update",
+                "Important network protocol update",
+            ),
+            (
+                "sync_topic_2",
+                "cross_cat_node1_general",
+                "Welcome Cross-Node Users",
+                "Welcome to our distributed forum",
+            ),
+            (
+                "sync_topic_3",
+                "cross_cat_node2_dev",
+                "API Synchronization",
+                "Discussing API sync between nodes",
+            ),
         ];
-        
+
         for (topic_id, category_id, title, content) in cross_node_topics {
             let topic = MockTopic {
                 id: format!("cross_topic_{}", topic_id),
@@ -1065,17 +1431,32 @@ impl SubsystemTest for DiscussTests {
                 closed_at: None,
                 deleted_at: None,
             };
-            
+
             test_instance.topics.insert(topic.id.clone(), topic);
         }
-        
+
         // Test cross-node reply synchronization
         let cross_node_replies = vec![
-            ("sync_reply_1", "cross_topic_sync_topic_1", "node1_user", "Thanks for the update from node 1!"),
-            ("sync_reply_2", "cross_topic_sync_topic_1", "node2_user", "Confirmed update received on node 2"),
-            ("sync_reply_3", "cross_topic_sync_topic_2", "node1_user", "Welcome! This cross-node feature is amazing"),
+            (
+                "sync_reply_1",
+                "cross_topic_sync_topic_1",
+                "node1_user",
+                "Thanks for the update from node 1!",
+            ),
+            (
+                "sync_reply_2",
+                "cross_topic_sync_topic_1",
+                "node2_user",
+                "Confirmed update received on node 2",
+            ),
+            (
+                "sync_reply_3",
+                "cross_topic_sync_topic_2",
+                "node1_user",
+                "Welcome! This cross-node feature is amazing",
+            ),
         ];
-        
+
         for (reply_id, topic_id, author, content) in cross_node_replies {
             let reply = MockReply {
                 id: format!("cross_reply_{}", reply_id),
@@ -1095,48 +1476,63 @@ impl SubsystemTest for DiscussTests {
                 deleted_at: None,
                 reactions: vec![],
             };
-            
+
             test_instance.replies.insert(reply.id.clone(), reply);
         }
-        
+
         // Verify cross-node synchronization
-        let cross_categories: Vec<_> = test_instance.categories
+        let cross_categories: Vec<_> = test_instance
+            .categories
             .values()
             .filter(|cat| cat.id.starts_with("cross_cat_"))
             .collect();
-        let cross_topics: Vec<_> = test_instance.topics
+        let cross_topics: Vec<_> = test_instance
+            .topics
             .values()
             .filter(|topic| topic.id.starts_with("cross_topic_"))
             .collect();
-        let cross_replies: Vec<_> = test_instance.replies
+        let cross_replies: Vec<_> = test_instance
+            .replies
             .values()
             .filter(|reply| reply.id.starts_with("cross_reply_"))
             .collect();
-        
+
         if cross_categories.len() == 3 && cross_topics.len() == 3 && cross_replies.len() == 3 {
             ctx.log_info("✅ Cross-node discuss synchronization PASSED");
-            results.push(VerificationResult::success(sync_start.elapsed())
-                .with_metadata("operation".to_string(), "cross_node_sync".to_string())
-                .with_metadata("categories_synced".to_string(), cross_categories.len().to_string())
-                .with_metadata("topics_synced".to_string(), cross_topics.len().to_string())
-                .with_metadata("replies_synced".to_string(), cross_replies.len().to_string())
-                .with_metadata("sync_verified".to_string(), "true".to_string()));
+            results.push(
+                VerificationResult::success(sync_start.elapsed())
+                    .with_metadata("operation".to_string(), "cross_node_sync".to_string())
+                    .with_metadata(
+                        "categories_synced".to_string(),
+                        cross_categories.len().to_string(),
+                    )
+                    .with_metadata("topics_synced".to_string(), cross_topics.len().to_string())
+                    .with_metadata(
+                        "replies_synced".to_string(),
+                        cross_replies.len().to_string(),
+                    )
+                    .with_metadata("sync_verified".to_string(), "true".to_string()),
+            );
         } else {
-            let error = format!("Cross-node sync failed: categories={}, topics={}, replies={}", 
-                              cross_categories.len(), cross_topics.len(), cross_replies.len());
+            let error = format!(
+                "Cross-node sync failed: categories={}, topics={}, replies={}",
+                cross_categories.len(),
+                cross_topics.len(),
+                cross_replies.len()
+            );
             ctx.log_error(&error);
             results.push(VerificationResult::failure(error, sync_start.elapsed()));
         }
-        
+
         Ok(results)
     }
 
     async fn test_stress(&self, ctx: &TestContext) -> Result<Vec<VerificationResult>> {
         let mut test_instance = self.clone();
         let mut results = Vec::new();
-        
+
         ctx.log_info("Running discuss stress tests");
-        
+
         // Create a stress test category
         let stress_category = MockCategory {
             id: "stress_category".to_string(),
@@ -1159,15 +1555,17 @@ impl SubsystemTest for DiscussTests {
                 slow_mode_minutes: None,
             },
         };
-        
-        test_instance.categories.insert("stress_category".to_string(), stress_category);
-        
+
+        test_instance
+            .categories
+            .insert("stress_category".to_string(), stress_category);
+
         // Stress test 1: High-volume topic creation
         let start_time = std::time::Instant::now();
         let topic_count = 500;
-        
+
         ctx.log_info(&format!("[STRESS] Creating {} topics rapidly", topic_count));
-        
+
         for i in 0..topic_count {
             let topic = MockTopic {
                 id: format!("stress_topic_{}", i),
@@ -1175,7 +1573,10 @@ impl SubsystemTest for DiscussTests {
                 title: format!("Stress Test Topic #{}", i),
                 slug: format!("stress-test-topic-{}", i),
                 content: MockTopicContent {
-                    current_version: format!("This is stress test topic number {}. Testing high-volume topic creation.", i),
+                    current_version: format!(
+                        "This is stress test topic number {}. Testing high-volume topic creation.",
+                        i
+                    ),
                     format: "markdown".to_string(),
                     versions: vec![MockContentVersion {
                         content: format!("Stress test content #{}", i),
@@ -1202,30 +1603,33 @@ impl SubsystemTest for DiscussTests {
                 closed_at: None,
                 deleted_at: None,
             };
-            
+
             test_instance.topics.insert(topic.id.clone(), topic);
-            
+
             if i % 100 == 0 {
                 ctx.log_info(&format!("Created {} topics", i));
             }
         }
-        
+
         // Stress test 2: High-volume reply creation
         let reply_count = 1000;
-        ctx.log_info(&format!("[STRESS] Creating {} replies rapidly", reply_count));
-        
+        ctx.log_info(&format!(
+            "[STRESS] Creating {} replies rapidly",
+            reply_count
+        ));
+
         for i in 0..reply_count {
             let topic_id = format!("stress_topic_{}", i % topic_count); // Distribute replies across topics
-            
+
             let reply = MockReply {
                 id: format!("stress_reply_{}", i),
                 topic_id,
                 author: format!("stress_user_{}", i % 50), // 50 different users
                 content: format!("This is stress test reply #{}", i),
-                reply_to: if i > 0 && i % 10 == 0 { 
-                    Some(format!("stress_reply_{}", i - 1)) 
-                } else { 
-                    None 
+                reply_to: if i > 0 && i % 10 == 0 {
+                    Some(format!("stress_reply_{}", i - 1))
+                } else {
+                    None
                 }, // Some threaded replies
                 votes: MockVoteCount {
                     upvotes: 0,
@@ -1239,48 +1643,72 @@ impl SubsystemTest for DiscussTests {
                 deleted_at: None,
                 reactions: vec![],
             };
-            
+
             test_instance.replies.insert(reply.id.clone(), reply);
-            
+
             if i % 200 == 0 {
                 ctx.log_info(&format!("Created {} replies", i));
             }
         }
-        
+
         // Verify stress test results
-        let stored_stress_topics: Vec<_> = test_instance.topics
+        let stored_stress_topics: Vec<_> = test_instance
+            .topics
             .values()
             .filter(|topic| topic.id.starts_with("stress_topic_"))
             .collect();
-        let stored_stress_replies: Vec<_> = test_instance.replies
+        let stored_stress_replies: Vec<_> = test_instance
+            .replies
             .values()
             .filter(|reply| reply.id.starts_with("stress_reply_"))
             .collect();
-        
+
         if stored_stress_topics.len() == topic_count && stored_stress_replies.len() == reply_count {
-            ctx.log_info(&format!("✅ Discuss stress test PASSED: {} topics + {} replies in {:?}", 
-                                topic_count, reply_count, start_time.elapsed()));
-            results.push(VerificationResult::success(start_time.elapsed())
-                .with_metadata("operation".to_string(), "discuss_stress_test".to_string())
-                .with_metadata("topics_created".to_string(), topic_count.to_string())
-                .with_metadata("replies_created".to_string(), reply_count.to_string())
-                .with_metadata("topics_verified".to_string(), stored_stress_topics.len().to_string())
-                .with_metadata("replies_verified".to_string(), stored_stress_replies.len().to_string())
-                .with_metadata("throughput_items_per_sec".to_string(), 
-                    ((topic_count + reply_count) as f64 / start_time.elapsed().as_secs_f64()).to_string()));
+            ctx.log_info(&format!(
+                "✅ Discuss stress test PASSED: {} topics + {} replies in {:?}",
+                topic_count,
+                reply_count,
+                start_time.elapsed()
+            ));
+            results.push(
+                VerificationResult::success(start_time.elapsed())
+                    .with_metadata("operation".to_string(), "discuss_stress_test".to_string())
+                    .with_metadata("topics_created".to_string(), topic_count.to_string())
+                    .with_metadata("replies_created".to_string(), reply_count.to_string())
+                    .with_metadata(
+                        "topics_verified".to_string(),
+                        stored_stress_topics.len().to_string(),
+                    )
+                    .with_metadata(
+                        "replies_verified".to_string(),
+                        stored_stress_replies.len().to_string(),
+                    )
+                    .with_metadata(
+                        "throughput_items_per_sec".to_string(),
+                        ((topic_count + reply_count) as f64 / start_time.elapsed().as_secs_f64())
+                            .to_string(),
+                    ),
+            );
         } else {
-            let error = format!("Stress test failed: expected {} topics + {} replies, got {} + {}", 
-                              topic_count, reply_count, stored_stress_topics.len(), stored_stress_replies.len());
+            let error = format!(
+                "Stress test failed: expected {} topics + {} replies, got {} + {}",
+                topic_count,
+                reply_count,
+                stored_stress_topics.len(),
+                stored_stress_replies.len()
+            );
             ctx.log_error(&error);
             results.push(VerificationResult::failure(error, start_time.elapsed()));
         }
-        
+
         Ok(results)
     }
 }
 
 impl Default for DiscussTests {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Clone for DiscussTests {

@@ -27,16 +27,16 @@ use tracing::{debug, info, warn};
 pub struct BenchmarkConfig {
     /// Number of iterations to run
     pub iterations: u32,
-    
+
     /// Number of concurrent operations
     pub concurrency: u32,
-    
+
     /// Warmup iterations (not included in results)
     pub warmup_iterations: u32,
-    
+
     /// Maximum duration for the benchmark
     pub max_duration: Duration,
-    
+
     /// Sample interval for system metrics
     pub sample_interval: Duration,
 }
@@ -58,19 +58,19 @@ impl Default for BenchmarkConfig {
 pub struct BenchmarkResult {
     /// Operation name
     pub name: String,
-    
+
     /// Total number of operations completed
     pub operations_completed: u32,
-    
+
     /// Total benchmark duration
     pub total_duration: Duration,
-    
+
     /// Individual operation durations
     pub operation_durations: Vec<Duration>,
-    
+
     /// System resource usage during benchmark
     pub resource_usage: ResourceUsage,
-    
+
     /// Custom metrics
     pub custom_metrics: HashMap<String, f64>,
 }
@@ -112,12 +112,20 @@ impl BenchmarkResult {
 
     /// Calculate minimum latency
     pub fn min_latency(&self) -> Duration {
-        self.operation_durations.iter().min().copied().unwrap_or(Duration::ZERO)
+        self.operation_durations
+            .iter()
+            .min()
+            .copied()
+            .unwrap_or(Duration::ZERO)
     }
 
     /// Calculate maximum latency
     pub fn max_latency(&self) -> Duration {
-        self.operation_durations.iter().max().copied().unwrap_or(Duration::ZERO)
+        self.operation_durations
+            .iter()
+            .max()
+            .copied()
+            .unwrap_or(Duration::ZERO)
     }
 
     /// Generate summary report
@@ -147,16 +155,16 @@ impl BenchmarkResult {
 pub struct ResourceUsage {
     /// Average CPU usage percentage
     pub average_cpu_percent: f64,
-    
+
     /// Peak CPU usage percentage
     pub peak_cpu_percent: f64,
-    
+
     /// Peak memory usage in MB
     pub peak_memory_mb: f64,
-    
+
     /// Average memory usage in MB
     pub average_memory_mb: f64,
-    
+
     /// Number of samples taken
     pub sample_count: u32,
 }
@@ -186,9 +194,9 @@ impl PerformanceMonitor {
     pub fn new() -> Self {
         let mut system = System::new_all();
         system.refresh_all();
-        
+
         let process_id = std::process::id();
-        
+
         Self {
             system,
             process_id,
@@ -207,10 +215,13 @@ impl PerformanceMonitor {
     /// Take a resource usage sample
     pub fn sample(&mut self) {
         self.system.refresh_all();
-        
+
         let cpu_percent = self.system.global_cpu_info().cpu_usage() as f64;
-        
-        let memory_mb = if let Some(process) = self.system.process(sysinfo::Pid::from(self.process_id as usize)) {
+
+        let memory_mb = if let Some(process) = self
+            .system
+            .process(sysinfo::Pid::from(self.process_id as usize))
+        {
             process.memory() as f64 / 1024.0 / 1024.0 // Convert to MB
         } else {
             0.0
@@ -234,7 +245,7 @@ impl PerformanceMonitor {
 
         let average_cpu = cpu_values.iter().sum::<f64>() / cpu_values.len() as f64;
         let peak_cpu = cpu_values.iter().fold(0.0f64, |a, &b| a.max(b));
-        
+
         let average_memory = memory_values.iter().sum::<f64>() / memory_values.len() as f64;
         let peak_memory = memory_values.iter().fold(0.0f64, |a, &b| a.max(b));
 
@@ -284,7 +295,10 @@ impl BenchmarkExecutor {
         F: Fn() -> Fut + Clone,
         Fut: std::future::Future<Output = Result<()>>,
     {
-        info!("Starting benchmark: {} with {} iterations", name, config.iterations);
+        info!(
+            "Starting benchmark: {} with {} iterations",
+            name, config.iterations
+        );
 
         // Warmup phase
         if config.warmup_iterations > 0 {
@@ -299,19 +313,19 @@ impl BenchmarkExecutor {
         // Start monitoring
         self.monitor.start();
         let benchmark_start = Instant::now();
-        
+
         // Start background resource sampling
         let sample_interval = config.sample_interval;
         let monitor_handle = {
             let mut monitor_clone = PerformanceMonitor::new();
             monitor_clone.start();
-            
+
             tokio::spawn(async move {
                 let mut interval = tokio::time::interval(sample_interval);
                 loop {
                     interval.tick().await;
                     monitor_clone.sample();
-                    
+
                     // Stop sampling if benchmark should be done
                     if monitor_clone.start_time.elapsed() > sample_interval * 1000 {
                         break;
@@ -352,7 +366,7 @@ impl BenchmarkExecutor {
         }
 
         let total_duration = benchmark_start.elapsed();
-        
+
         // Stop monitoring
         let resource_usage = if let Ok(usage) = monitor_handle.await {
             usage
@@ -407,7 +421,7 @@ impl BenchmarkExecutor {
 
             let operation_clone = operation.clone();
             let max_duration = config.max_duration;
-            
+
             let handle = tokio::spawn(async move {
                 let mut durations = Vec::new();
                 let mut completed = 0u32;
@@ -508,16 +522,14 @@ impl PerformanceThresholds {
         if result.resource_usage.average_cpu_percent > self.max_cpu_percent {
             violations.push(format!(
                 "CPU usage {:.1}% exceeds threshold {:.1}%",
-                result.resource_usage.average_cpu_percent,
-                self.max_cpu_percent
+                result.resource_usage.average_cpu_percent, self.max_cpu_percent
             ));
         }
 
         if result.resource_usage.peak_memory_mb > self.max_memory_mb {
             violations.push(format!(
                 "Memory usage {:.1} MB exceeds threshold {:.1} MB",
-                result.resource_usage.peak_memory_mb,
-                self.max_memory_mb
+                result.resource_usage.peak_memory_mb, self.max_memory_mb
             ));
         }
 
@@ -540,14 +552,13 @@ mod tests {
             sample_interval: Duration::from_millis(100),
         };
 
-        let result = executor.run_benchmark(
-            "test_benchmark".to_string(),
-            config,
-            || async {
+        let result = executor
+            .run_benchmark("test_benchmark".to_string(), config, || async {
                 tokio::time::sleep(Duration::from_millis(1)).await;
                 Ok(())
-            },
-        ).await.unwrap();
+            })
+            .await
+            .unwrap();
 
         assert_eq!(result.operations_completed, 10);
         assert!(result.total_duration > Duration::ZERO);

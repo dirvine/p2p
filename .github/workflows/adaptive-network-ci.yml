@@ -4,12 +4,12 @@ on:
   push:
     branches: [ main, develop ]
     paths:
-      - 'crates/p2p-core/src/adaptive/**'
+      - 'crates/saorsa-core/src/adaptive/**'
       - '.github/workflows/adaptive-network-ci.yml'
   pull_request:
     branches: [ main ]
     paths:
-      - 'crates/p2p-core/src/adaptive/**'
+      - 'crates/saorsa-core/src/adaptive/**'
 
 env:
   CARGO_TERM_COLOR: always

@@ -16,7 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Core P2P library
-saorsa-core = { path = "../p2p-core", features = ["quantum-resistant"] }
+saorsa-core = { path = "../saorsa-core", features = ["quantum-resistant"] }
 
 # Workspace dependencies
 tokio.workspace = true

@@ -34,51 +34,52 @@ impl ChatService {
             .ok_or_else(|| anyhow::anyhow!("Failed to get data directory"))?
             .join("communitas")
             .join("messages");
-        
+
         std::fs::create_dir_all(&db_path)?;
         let message_store = Arc::new(sled::open(db_path)?);
-        
+
         Ok(Self {
             groups: Arc::new(RwLock::new(HashMap::new())),
             message_store,
             network,
         })
     }
-    
+
     /// Create a new group
     pub async fn create_group(&self, name: &str) -> Result<Group> {
         let group = Group::new(name.to_string());
-        
+
         let mut groups = self.groups.write().await;
         groups.insert(group.id.clone(), group.clone());
-        
+
         // Store in DHT
         self.network.store_group(&group).await?;
-        
+
         Ok(group)
     }
-    
+
     /// Send a message to a group
     pub async fn send_message(&self, group_id: &str, content: &str) -> Result<MessageId> {
         let groups = self.groups.read().await;
         let group_id_obj = GroupId(group_id.to_string());
-        let group = groups.get(&group_id_obj)
+        let group = groups
+            .get(&group_id_obj)
             .ok_or_else(|| ChatError::GroupNotFound(group_id.to_string()))?;
-        
+
         let message = Message::new(
             self.network.get_identity().await?,
             MessageContent::Text(content.to_string()),
         );
-        
+
         // Store locally
         self.store_message(&message, group_id).await?;
-        
+
         // Send to network
         self.network.broadcast_message(&message, group).await?;
-        
+
         Ok(message.id.clone())
     }
-    
+
     /// Store message locally
     async fn store_message(&self, message: &Message, group_id: &str) -> Result<()> {
         let key = format!("{}:{}", group_id, message.id.0);

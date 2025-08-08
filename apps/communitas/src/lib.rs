@@ -90,17 +90,17 @@ impl CommuniasApp {
         let network = Arc::new(network::NetworkIntegration::new(bootstrap_node.clone()).await?);
         let chat_service = Arc::new(chat::ChatService::new(network.clone()).await?);
         let diagnostics = Arc::new(diagnostics::DiagnosticsEngine::new(network.clone()));
-        
+
         // Load or create identity
         let identity = network.get_or_create_identity().await?;
-        
+
         let state = Arc::new(RwLock::new(AppState {
             identity,
             current_tab: Tab::Overview,
             connected: false,
             bootstrap_node,
         }));
-        
+
         Ok(Self {
             chat_service,
             diagnostics,
@@ -110,21 +110,21 @@ impl CommuniasApp {
             state,
         })
     }
-    
+
     /// Connect to the P2P network
     pub async fn connect(&self) -> Result<()> {
         self.network.connect_to_bootstrap().await?;
-        
+
         // Update state
         let mut state = self.state.write().await;
         state.connected = true;
-        
+
         // Start diagnostics collection
         self.diagnostics.start_collection();
-        
+
         Ok(())
     }
-    
+
     /// Get current network health
     pub async fn get_network_health(&self) -> diagnostics::NetworkHealth {
         self.diagnostics.get_network_health().await

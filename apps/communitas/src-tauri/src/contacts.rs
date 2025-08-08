@@ -186,7 +186,10 @@ impl ContactManager {
         let mut address_lookup = self.address_lookup.write().await;
         address_lookup.insert(four_word_address, contact_id);
 
-        info!("Added new contact: {} ({})", contact.display_name, contact.four_word_address);
+        info!(
+            "Added new contact: {} ({})",
+            contact.display_name, contact.four_word_address
+        );
         Ok(contact)
     }
 
@@ -255,7 +258,10 @@ impl ContactManager {
         let mut invitations = self.invitations.write().await;
         invitations.insert(invitation.id.clone(), invitation.clone());
 
-        info!("Created invitation: {} (expires in {}h)", invitation.id, expires_in_hours);
+        info!(
+            "Created invitation: {} (expires in {}h)",
+            invitation.id, expires_in_hours
+        );
         Ok(invitation)
     }
 
@@ -266,21 +272,32 @@ impl ContactManager {
     pub async fn search_contacts(&self, query: &str) -> Vec<ContactProfile> {
         let contacts = self.contacts.read().await;
         let query_lower = query.to_lowercase();
-        
+
         contacts
             .values()
             .filter(|contact| {
-                contact.display_name.to_lowercase().contains(&query_lower) ||
-                contact.four_word_address.to_lowercase().contains(&query_lower) ||
-                contact.bio.as_ref().map_or(false, |bio| bio.to_lowercase().contains(&query_lower))
+                contact.display_name.to_lowercase().contains(&query_lower)
+                    || contact
+                        .four_word_address
+                        .to_lowercase()
+                        .contains(&query_lower)
+                    || contact
+                        .bio
+                        .as_ref()
+                        .map_or(false, |bio| bio.to_lowercase().contains(&query_lower))
             })
             .cloned()
             .collect()
     }
 
-    pub async fn accept_invitation(&self, token: &str, accepter_address: String, accepter_name: String) -> Result<ContactProfile> {
+    pub async fn accept_invitation(
+        &self,
+        token: &str,
+        accepter_address: String,
+        accepter_name: String,
+    ) -> Result<ContactProfile> {
         let mut invitations = self.invitations.write().await;
-        
+
         // Find invitation by token
         let invitation = invitations
             .values_mut()
@@ -291,17 +308,22 @@ impl ContactManager {
         invitation.usage_count += 1;
 
         // Create contact from invitation
-        let contact = self.add_contact(
-            accepter_address,
-            accepter_name,
-            None,
-        ).await?;
+        let contact = self
+            .add_contact(accepter_address, accepter_name, None)
+            .await?;
 
-        info!("Accepted invitation: {} -> contact: {}", invitation.id, contact.id);
+        info!(
+            "Accepted invitation: {} -> contact: {}",
+            invitation.id, contact.id
+        );
         Ok(contact)
     }
 
-    pub async fn update_contact_status(&self, contact_id: &str, status: ContactStatus) -> Result<()> {
+    pub async fn update_contact_status(
+        &self,
+        contact_id: &str,
+        status: ContactStatus,
+    ) -> Result<()> {
         let mut contacts = self.contacts.write().await;
         if let Some(contact) = contacts.get_mut(contact_id) {
             contact.status = status.clone();

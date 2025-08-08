@@ -11,13 +11,13 @@ pub use harness::TestHarness;
 pub trait TestScenario: Send + Sync {
     /// Scenario name
     fn name(&self) -> &str;
-    
+
     /// Setup the test
     fn setup(&mut self) -> anyhow::Result<()>;
-    
+
     /// Execute the test
     fn execute(&mut self) -> anyhow::Result<TestResult>;
-    
+
     /// Cleanup after test
     fn teardown(&mut self) -> anyhow::Result<()>;
 }

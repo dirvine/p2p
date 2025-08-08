@@ -27,13 +27,13 @@ use uuid::Uuid;
 pub struct TestContext {
     /// Unique correlation ID for this test run
     pub correlation_id: String,
-    
+
     /// Test name or identifier
     pub test_name: String,
-    
+
     /// Start time of the test
     pub start_time: Instant,
-    
+
     /// Additional context metadata
     pub metadata: std::collections::HashMap<String, String>,
 }
@@ -252,41 +252,39 @@ impl ColoredOutput {
 
     pub fn test_result_table(results: &[TestResult]) -> String {
         let mut output = String::new();
-        
+
         output.push_str(&format!("{}\n", "Test Results".cyan().bold()));
         output.push_str(&format!("{}\n", "─".repeat(80).dimmed()));
-        
+
         for result in results {
             let status = if result.success {
                 "✅ PASS".green().bold()
             } else {
                 "❌ FAIL".red().bold()
             };
-            
+
             output.push_str(&format!(
                 "{:<50} {} {:>8}\n",
                 result.name.bold(),
                 status,
                 format!("{:?}", result.duration).dimmed()
             ));
-            
+
             if let Some(error) = &result.error {
                 output.push_str(&format!("   {}\n", error.red()));
             }
         }
-        
+
         let passed = results.iter().filter(|r| r.success).count();
         let total = results.len();
         let pass_rate = if total > 0 { (passed * 100) / total } else { 0 };
-        
+
         output.push_str(&format!("{}\n", "─".repeat(80).dimmed()));
         output.push_str(&format!(
             "Summary: {}/{} passed ({}%)\n",
-            passed,
-            total,
-            pass_rate
+            passed, total, pass_rate
         ));
-        
+
         output
     }
 }
@@ -362,35 +360,26 @@ impl ProgressReporter {
         if result.success {
             self.passed_tests += 1;
         }
-        
+
         let status = if result.success {
             ColoredOutput::success("✅ PASS")
         } else {
             ColoredOutput::error("❌ FAIL")
         };
-        
-        println!(
-            "{} {} ({:?})",
-            status,
-            result.name,
-            result.duration
-        );
-        
+
+        println!("{} {} ({:?})", status, result.name, result.duration);
+
         if let Some(error) = &result.error {
             println!("   {}", ColoredOutput::error(error));
         }
-        
+
         self.print_progress();
         self.current_test = None;
     }
 
     pub fn print_progress(&self) {
-        let progress = ColoredOutput::progress_bar(
-            self.completed_tests,
-            self.total_tests,
-            40
-        );
-        
+        let progress = ColoredOutput::progress_bar(self.completed_tests, self.total_tests, 40);
+
         let elapsed = self.start_time.elapsed();
         let eta = if self.completed_tests > 0 {
             let avg_time = elapsed / self.completed_tests as u32;
@@ -399,13 +388,8 @@ impl ProgressReporter {
         } else {
             Duration::ZERO
         };
-        
-        println!(
-            "{} ETA: {:?} Elapsed: {:?}",
-            progress,
-            eta,
-            elapsed
-        );
+
+        println!("{} ETA: {:?} Elapsed: {:?}", progress, eta, elapsed);
     }
 
     pub fn print_summary(&self) {
@@ -414,14 +398,11 @@ impl ProgressReporter {
         } else {
             0
         };
-        
+
         println!("\n{}", "=".repeat(80).cyan());
-        println!(
-            "{} Test Suite Complete",
-            ColoredOutput::highlight("🎉")
-        );
+        println!("{} Test Suite Complete", ColoredOutput::highlight("🎉"));
         println!("{}", "=".repeat(80).cyan());
-        
+
         println!(
             "Total Tests: {}, Passed: {}, Failed: {}, Pass Rate: {}%",
             self.total_tests,
@@ -429,9 +410,9 @@ impl ProgressReporter {
             self.total_tests - self.passed_tests,
             pass_rate
         );
-        
+
         println!("Total Duration: {:?}", self.start_time.elapsed());
-        
+
         if self.passed_tests == self.total_tests {
             println!("{}", ColoredOutput::success("🎊 All tests passed!"));
         } else {
@@ -453,11 +434,11 @@ mod tests {
     #[test]
     fn test_performance_metrics() {
         let mut metrics = PerformanceMetrics::new();
-        
+
         metrics.record_operation();
         metrics.record_bytes(1024);
         metrics.record_custom_metric("custom".to_string(), 42.0);
-        
+
         assert_eq!(metrics.operation_count, 1);
         assert_eq!(metrics.bytes_processed, 1024);
         assert_eq!(metrics.custom_metrics.get("custom"), Some(&42.0));
@@ -465,9 +446,8 @@ mod tests {
 
     #[test]
     fn test_test_context() {
-        let ctx = TestContext::new("test_example")
-            .with_metadata("key", "value");
-        
+        let ctx = TestContext::new("test_example").with_metadata("key", "value");
+
         assert_eq!(ctx.test_name, "test_example");
         assert_eq!(ctx.metadata.get("key"), Some(&"value".to_string()));
     }
@@ -475,11 +455,11 @@ mod tests {
     #[test]
     fn test_progress_reporter() {
         let mut reporter = ProgressReporter::new(3);
-        
+
         reporter.start_test("test1".to_string());
         let result = TestResult::success("test1".to_string(), Duration::from_millis(100));
         reporter.complete_test(&result);
-        
+
         assert_eq!(reporter.completed_tests, 1);
         assert_eq!(reporter.passed_tests, 1);
     }

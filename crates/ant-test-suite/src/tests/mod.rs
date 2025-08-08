@@ -13,19 +13,19 @@
 
 //! Test modules for different subsystems
 
-pub mod network;
-pub mod identity;
-pub mod crypto;
-pub mod storage;
 pub mod chat;
-pub mod projects;
+pub mod crypto;
 pub mod discuss;
-pub mod threshold;
+pub mod identity;
 pub mod integration;
+pub mod network;
+pub mod projects;
+pub mod storage;
+pub mod threshold;
 
-use anyhow::Result;
 use crate::config::TestConfig;
 use crate::utils::{TestContext, VerificationResult};
+use anyhow::Result;
 use std::time::Duration;
 
 /// Common test trait for all subsystem tests
@@ -65,22 +65,22 @@ impl TestCoordinator {
         cross_node: bool,
     ) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
-        
+
         // TODO: Implement test coordination
         // This will instantiate the appropriate test implementation
         // and run the requested test types
-        
+
         Ok(results)
     }
 
     /// Run the complete test suite
     pub async fn run_complete_suite(&self) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
-        
+
         // TODO: Implement complete test suite execution
         // This will run all subsystem tests in the correct order
         // with proper setup and teardown
-        
+
         Ok(results)
     }
 }

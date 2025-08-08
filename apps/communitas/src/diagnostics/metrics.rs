@@ -71,17 +71,17 @@ impl NetworkMetrics {
     pub fn update(&mut self, stats: NetworkStats) {
         self.connected_peers = stats.connected_peers;
         self.bandwidth_usage_kbps = stats.bandwidth_kbps;
-        
+
         // Update latency samples
         self.latency_samples.push_back(stats.latest_latency_ms);
         if self.latency_samples.len() > 100 {
             self.latency_samples.pop_front();
         }
-        
+
         // Calculate average latency
         if !self.latency_samples.is_empty() {
-            self.avg_latency_ms = self.latency_samples.iter().sum::<f64>() 
-                / self.latency_samples.len() as f64;
+            self.avg_latency_ms =
+                self.latency_samples.iter().sum::<f64>() / self.latency_samples.len() as f64;
         }
     }
 }

@@ -16,8 +16,8 @@
 //! Handles deployment and management of test nodes on remote servers,
 //! specifically Digital Ocean instances accessible via SSH.
 
-use anyhow::{Context, Result};
 use crate::config::{RemoteNodeConfig, TestConfig};
+use anyhow::{Context, Result};
 use tracing::{debug, info, warn};
 
 /// Remote node manager for SSH-based deployment
@@ -32,10 +32,15 @@ impl RemoteNodeManager {
 
     /// Deploy test node to remote server
     pub async fn deploy_node(&self, node_id: &str) -> Result<RemoteNode> {
-        let node_config = self.config.get_remote_node(node_id)
+        let node_config = self
+            .config
+            .get_remote_node(node_id)
             .with_context(|| format!("Remote node '{}' not found in configuration", node_id))?;
 
-        info!("Deploying test node to remote server: {}", node_config.ssh_host);
+        info!(
+            "Deploying test node to remote server: {}",
+            node_config.ssh_host
+        );
 
         // TODO: Implement actual SSH deployment
         // 1. Connect to remote server via SSH
@@ -54,7 +59,9 @@ impl RemoteNodeManager {
 
     /// Check if remote node is accessible
     pub async fn check_connectivity(&self, node_id: &str) -> Result<bool> {
-        let node_config = self.config.get_remote_node(node_id)
+        let node_config = self
+            .config
+            .get_remote_node(node_id)
             .with_context(|| format!("Remote node '{}' not found", node_id))?;
 
         debug!("Checking connectivity to {}", node_config.ssh_host);
@@ -128,8 +135,11 @@ mod tests {
     async fn test_remote_node_manager_creation() {
         let config = TestConfig::default();
         let manager = RemoteNodeManager::new(config);
-        
+
         // Basic test - just ensure we can create the manager
-        assert!(manager.check_connectivity("do").await.is_err() || !manager.check_connectivity("do").await.unwrap());
+        assert!(
+            manager.check_connectivity("do").await.is_err()
+                || !manager.check_connectivity("do").await.unwrap()
+        );
     }
 }

@@ -40,15 +40,15 @@
 
 mod config;
 mod remote;
-mod utils;
-mod tests;
 mod reporters;
+mod tests;
+mod utils;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::*;
 use std::time::Duration;
-use tracing::{info, error, warn};
+use tracing::{error, info, warn};
 
 #[derive(Parser)]
 #[command(name = "ant-test-suite")]
@@ -71,8 +71,7 @@ pub struct Cli {
     pub no_color: bool,
 }
 
-#[derive(Subcommand)]
-#[derive(Debug)]
+#[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Run the complete test suite
     Run {
@@ -255,64 +254,67 @@ async fn main() -> Result<()> {
 
     // Execute command
     let result = match cli.command {
-        Commands::Run { 
-            remote, 
-            duration, 
-            verify_data, 
-            cross_node, 
-            output 
+        Commands::Run {
+            remote,
+            duration,
+            verify_data,
+            cross_node,
+            output,
+        } => run_full_suite(config, remote, duration, verify_data, cross_node, output).await,
+
+        Commands::Test {
+            subsystem,
+            local_port,
+            remote,
+            verify_all,
+            cross_node,
+            iterations,
         } => {
-            run_full_suite(config, remote, duration, verify_data, cross_node, output).await
+            run_subsystem_test(
+                config, subsystem, local_port, remote, verify_all, cross_node, iterations,
+            )
+            .await
         }
 
-        Commands::Test { 
-            subsystem, 
-            local_port, 
-            remote, 
-            verify_all, 
-            cross_node, 
-            iterations 
-        } => {
-            run_subsystem_test(config, subsystem, local_port, remote, verify_all, cross_node, iterations).await
-        }
+        Commands::SetupRemote {
+            host,
+            deploy_duration,
+        } => setup_remote_environment(config, host, deploy_duration).await,
 
-        Commands::SetupRemote { host, deploy_duration } => {
-            setup_remote_environment(config, host, deploy_duration).await
-        }
+        Commands::Monitor {
+            follow,
+            filter,
+            check_interval,
+            alert_on_corruption,
+        } => monitor_tests(config, follow, filter, check_interval, alert_on_corruption).await,
 
-        Commands::Monitor { 
-            follow, 
-            filter, 
-            check_interval, 
-            alert_on_corruption 
-        } => {
-            monitor_tests(config, follow, filter, check_interval, alert_on_corruption).await
-        }
+        Commands::Report {
+            format,
+            output,
+            include_metrics,
+        } => generate_report(config, format, output, include_metrics).await,
 
-        Commands::Report { 
-            format, 
-            output, 
-            include_metrics 
-        } => {
-            generate_report(config, format, output, include_metrics).await
-        }
+        Commands::Stress {
+            operations,
+            concurrent,
+            verify_all,
+            parallel,
+        } => run_stress_tests(config, operations, concurrent, verify_all, parallel).await,
 
-        Commands::Stress { 
-            operations, 
-            concurrent, 
-            verify_all, 
-            parallel 
+        Commands::Audit {
+            compare_nodes,
+            check_signatures,
+            verify_hashes,
+            generate_report,
         } => {
-            run_stress_tests(config, operations, concurrent, verify_all, parallel).await
-        }
-
-        Commands::Audit { 
-            compare_nodes, 
-            check_signatures, 
-            verify_hashes, 
-            generate_report 
-        } => {
-            audit_data_consistency(config, compare_nodes, check_signatures, verify_hashes, generate_report).await
+            audit_data_consistency(
+                config,
+                compare_nodes,
+                check_signatures,
+                verify_hashes,
+                generate_report,
+            )
+            .await
         }
     };
 
@@ -341,7 +343,7 @@ fn init_logging(verbose: bool, no_color: bool) -> Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(filter))
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(filter)),
         )
         .with(tracing_subscriber::fmt::layer().with_ansi(!no_color))
         .init();
@@ -358,12 +360,18 @@ async fn run_full_suite(
     output: OutputFormat,
 ) -> Result<()> {
     info!("🧪 Running full test suite");
-    info!("📊 Data verification: {}", if verify_data { "enabled" } else { "disabled" });
-    info!("🌐 Cross-node testing: {}", if cross_node { "enabled" } else { "disabled" });
+    info!(
+        "📊 Data verification: {}",
+        if verify_data { "enabled" } else { "disabled" }
+    );
+    info!(
+        "🌐 Cross-node testing: {}",
+        if cross_node { "enabled" } else { "disabled" }
+    );
 
     // TODO: Implement full test suite execution
     warn!("Full test suite implementation pending");
-    
+
     Ok(())
 }
 
@@ -385,172 +393,229 @@ async fn run_subsystem_test(
     // Run subsystem-specific testing
     match subsystem {
         TestSubsystem::Network => {
-            use crate::tests::network::NetworkTests;
             use crate::tests::SubsystemTest;
+            use crate::tests::network::NetworkTests;
             use crate::utils::TestContext;
-            
+
             let network_test = NetworkTests::new();
             let ctx = TestContext::new("network_test");
-            
+
             info!("🌐 Running network functionality tests...");
             let basic_results = network_test.test_basic_functionality(&ctx).await?;
-            info!("✅ Basic functionality tests: {} results", basic_results.len());
-            
+            info!(
+                "✅ Basic functionality tests: {} results",
+                basic_results.len()
+            );
+
             if verify_all {
                 info!("🔍 Running data verification tests...");
                 let verification_results = network_test.test_data_verification(&ctx).await?;
-                info!("✅ Data verification tests: {} results", verification_results.len());
+                info!(
+                    "✅ Data verification tests: {} results",
+                    verification_results.len()
+                );
             }
-            
+
             if cross_node {
                 info!("🔗 Running cross-node tests...");
                 let cross_node_results = network_test.test_cross_node(&ctx).await?;
                 info!("✅ Cross-node tests: {} results", cross_node_results.len());
             }
-        },
+        }
         TestSubsystem::Identity => {
-            use crate::tests::identity::IdentityTests;
             use crate::tests::SubsystemTest;
+            use crate::tests::identity::IdentityTests;
             use crate::utils::TestContext;
-            
+
             let identity_test = IdentityTests::new();
             let ctx = TestContext::new("identity_test");
-            
+
             info!("👤 Running identity functionality tests...");
             let basic_results = identity_test.test_basic_functionality(&ctx).await?;
-            info!("✅ Basic functionality tests: {} results", basic_results.len());
-            
+            info!(
+                "✅ Basic functionality tests: {} results",
+                basic_results.len()
+            );
+
             if verify_all {
                 info!("🔍 Running identity data verification tests...");
                 let verification_results = identity_test.test_data_verification(&ctx).await?;
-                info!("✅ Data verification tests: {} results", verification_results.len());
+                info!(
+                    "✅ Data verification tests: {} results",
+                    verification_results.len()
+                );
             }
-        },
+        }
         TestSubsystem::Crypto => {
-            use crate::tests::crypto::CryptoTests;
             use crate::tests::SubsystemTest;
+            use crate::tests::crypto::CryptoTests;
             use crate::utils::TestContext;
-            
+
             let crypto_test = CryptoTests::new();
             let ctx = TestContext::new("crypto_test");
-            
+
             info!("🔐 Running cryptography functionality tests...");
             let basic_results = crypto_test.test_basic_functionality(&ctx).await?;
-            info!("✅ Basic functionality tests: {} results", basic_results.len());
-            
+            info!(
+                "✅ Basic functionality tests: {} results",
+                basic_results.len()
+            );
+
             if verify_all {
                 info!("🔍 Running crypto data verification tests...");
                 let verification_results = crypto_test.test_data_verification(&ctx).await?;
-                info!("✅ Data verification tests: {} results", verification_results.len());
+                info!(
+                    "✅ Data verification tests: {} results",
+                    verification_results.len()
+                );
             }
-            
+
             if cross_node {
                 info!("🔗 Running cross-node crypto tests...");
                 let cross_node_results = crypto_test.test_cross_node(&ctx).await?;
-                info!("✅ Cross-node crypto tests: {} results", cross_node_results.len());
+                info!(
+                    "✅ Cross-node crypto tests: {} results",
+                    cross_node_results.len()
+                );
             }
-        },
+        }
         TestSubsystem::Storage => {
-            use crate::tests::storage::StorageTests;
             use crate::tests::SubsystemTest;
+            use crate::tests::storage::StorageTests;
             use crate::utils::TestContext;
-            
+
             let storage_test = StorageTests::new();
             let ctx = TestContext::new("storage_test");
-            
+
             info!("🗄️ Running storage functionality tests...");
             let basic_results = storage_test.test_basic_functionality(&ctx).await?;
-            info!("✅ Basic functionality tests: {} results", basic_results.len());
-            
+            info!(
+                "✅ Basic functionality tests: {} results",
+                basic_results.len()
+            );
+
             if verify_all {
                 info!("🔍 Running storage data verification tests...");
                 let verification_results = storage_test.test_data_verification(&ctx).await?;
-                info!("✅ Data verification tests: {} results", verification_results.len());
+                info!(
+                    "✅ Data verification tests: {} results",
+                    verification_results.len()
+                );
             }
-            
+
             if cross_node {
                 info!("🔗 Running cross-node storage tests...");
                 let cross_node_results = storage_test.test_cross_node(&ctx).await?;
-                info!("✅ Cross-node storage tests: {} results", cross_node_results.len());
+                info!(
+                    "✅ Cross-node storage tests: {} results",
+                    cross_node_results.len()
+                );
             }
-        },
+        }
         TestSubsystem::Chat => {
-            use crate::tests::chat::ChatTests;
             use crate::tests::SubsystemTest;
+            use crate::tests::chat::ChatTests;
             use crate::utils::TestContext;
-            
+
             let chat_test = ChatTests::new();
             let ctx = TestContext::new("chat_test");
-            
+
             info!("💬 Running chat functionality tests...");
             let basic_results = chat_test.test_basic_functionality(&ctx).await?;
-            info!("✅ Basic functionality tests: {} results", basic_results.len());
-            
+            info!(
+                "✅ Basic functionality tests: {} results",
+                basic_results.len()
+            );
+
             if verify_all {
                 info!("🔍 Running chat data verification tests...");
                 let verification_results = chat_test.test_data_verification(&ctx).await?;
-                info!("✅ Data verification tests: {} results", verification_results.len());
+                info!(
+                    "✅ Data verification tests: {} results",
+                    verification_results.len()
+                );
             }
-            
+
             if cross_node {
                 info!("🔗 Running cross-node chat tests...");
                 let cross_node_results = chat_test.test_cross_node(&ctx).await?;
-                info!("✅ Cross-node chat tests: {} results", cross_node_results.len());
+                info!(
+                    "✅ Cross-node chat tests: {} results",
+                    cross_node_results.len()
+                );
             }
-        },
+        }
         TestSubsystem::Projects => {
-            use crate::tests::projects::ProjectsTests;
             use crate::tests::SubsystemTest;
+            use crate::tests::projects::ProjectsTests;
             use crate::utils::TestContext;
-            
+
             let projects_test = ProjectsTests::new();
             let ctx = TestContext::new("projects_test");
-            
+
             info!("📋 Running projects functionality tests...");
             let basic_results = projects_test.test_basic_functionality(&ctx).await?;
-            info!("✅ Basic functionality tests: {} results", basic_results.len());
-            
+            info!(
+                "✅ Basic functionality tests: {} results",
+                basic_results.len()
+            );
+
             if verify_all {
                 info!("🔍 Running projects data verification tests...");
                 let verification_results = projects_test.test_data_verification(&ctx).await?;
-                info!("✅ Data verification tests: {} results", verification_results.len());
+                info!(
+                    "✅ Data verification tests: {} results",
+                    verification_results.len()
+                );
             }
-            
+
             if cross_node {
                 info!("🔗 Running cross-node projects tests...");
                 let cross_node_results = projects_test.test_cross_node(&ctx).await?;
-                info!("✅ Cross-node projects tests: {} results", cross_node_results.len());
+                info!(
+                    "✅ Cross-node projects tests: {} results",
+                    cross_node_results.len()
+                );
             }
-        },
+        }
         TestSubsystem::Discuss => {
-            use crate::tests::discuss::DiscussTests;
             use crate::tests::SubsystemTest;
+            use crate::tests::discuss::DiscussTests;
             use crate::utils::TestContext;
-            
+
             let discuss_test = DiscussTests::new();
             let ctx = TestContext::new("discuss_test");
-            
+
             info!("🏛️ Running discuss/forum functionality tests...");
             let basic_results = discuss_test.test_basic_functionality(&ctx).await?;
-            info!("✅ Basic functionality tests: {} results", basic_results.len());
-            
+            info!(
+                "✅ Basic functionality tests: {} results",
+                basic_results.len()
+            );
+
             if verify_all {
                 info!("🔍 Running discuss data verification tests...");
                 let verification_results = discuss_test.test_data_verification(&ctx).await?;
-                info!("✅ Data verification tests: {} results", verification_results.len());
+                info!(
+                    "✅ Data verification tests: {} results",
+                    verification_results.len()
+                );
             }
-            
+
             if cross_node {
                 info!("🔗 Running cross-node discuss tests...");
                 let cross_node_results = discuss_test.test_cross_node(&ctx).await?;
-                info!("✅ Cross-node discuss tests: {} results", cross_node_results.len());
+                info!(
+                    "✅ Cross-node discuss tests: {} results",
+                    cross_node_results.len()
+                );
             }
-        },
+        }
         _ => {
             warn!("Subsystem {:?} testing implementation pending", subsystem);
         }
     }
-    
+
     Ok(())
 }
 
@@ -565,7 +630,7 @@ async fn setup_remote_environment(
 
     // TODO: Implement remote environment setup
     warn!("Remote setup implementation pending");
-    
+
     Ok(())
 }
 
@@ -583,7 +648,7 @@ async fn monitor_tests(
 
     // TODO: Implement test monitoring
     warn!("Test monitoring implementation pending");
-    
+
     Ok(())
 }
 
@@ -600,7 +665,7 @@ async fn generate_report(
 
     // TODO: Implement report generation
     warn!("Report generation implementation pending");
-    
+
     Ok(())
 }
 
@@ -619,7 +684,7 @@ async fn run_stress_tests(
 
     // TODO: Implement stress testing
     warn!("Stress testing implementation pending");
-    
+
     Ok(())
 }
 
@@ -638,6 +703,6 @@ async fn audit_data_consistency(
 
     // TODO: Implement data consistency audit
     warn!("Data consistency audit implementation pending");
-    
+
     Ok(())
 }

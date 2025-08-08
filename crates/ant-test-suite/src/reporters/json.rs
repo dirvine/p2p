@@ -13,10 +13,10 @@
 
 //! JSON output reporter
 
-use anyhow::Result;
 use crate::reporters::TestReporter;
 use crate::utils::VerificationResult;
-use serde_json::{json, Value};
+use anyhow::Result;
+use serde_json::{Value, json};
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -33,7 +33,7 @@ impl TestReporter for JsonReporter {
         let total = results.len();
         let passed = results.iter().filter(|r| r.success).count();
         let failed = total - passed;
-        
+
         let report = json!({
             "timestamp": SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)?
@@ -57,10 +57,10 @@ impl TestReporter for JsonReporter {
                 })
             }).collect::<Vec<Value>>()
         });
-        
+
         Ok(serde_json::to_string_pretty(&report)?)
     }
-    
+
     fn save_report(&self, results: &[VerificationResult], output_path: &Path) -> Result<()> {
         let report = self.generate_report(results)?;
         std::fs::write(output_path, report)?;

@@ -4,13 +4,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/p2p-core",           # Core P2P library (publishable to crates.io)
-    "crates/p2p-cli",            # CLI tools and utilities
+    "crates/saorsa-core",        # Core P2P library (publishable to crates.io)
+    "crates/saorsa-cli",         # CLI tools and utilities
     "crates/ant-test-suite",     # Comprehensive test suite with data integrity verification
-    "apps/saorsa/src-tauri",     # Tauri desktop application
-    "apps/saorsa-terminal-chat", # Terminal chat application
-    "apps/saorsa-network-tester",# Network testing tool
-    "test-app", "apps/communitas", "apps/communitas/src-tauri",                  # Test application
+    "apps/communitas",           # Communitas application
+    "apps/communitas/src-tauri", # Communitas Tauri backend
+    "test-app",                  # Test application
     # "examples/*",                # Example applications - temporarily disabled for Tauri testing
 ]
 
