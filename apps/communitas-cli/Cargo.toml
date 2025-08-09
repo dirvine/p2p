@@ -1,0 +1,78 @@
+[package]
+name = "communitas-cli"
+version = "0.1.0"
+edition = "2021"
+authors = ["David Irvine <saorsalabs@gmail.com>"]
+description = "Command-line interface for Communitas personal AI assistant"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/saorsalabs/p2p"
+
+[lib]
+name = "communitas_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "communitas"
+path = "src/main.rs"
+
+[dependencies]
+# Core dependencies
+saorsa-core = { path = "../../crates/saorsa-core", features = ["quantum-resistant"] }
+tokio = { version = "1.38", features = ["full"] }
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Terminal UI
+ratatui = "0.28"
+crossterm = "0.28"
+tui-textarea = "0.6"
+
+# AI Integration
+reqwest = { version = "0.12", features = ["json", "stream"] }
+async-openai = "0.23"
+base64 = "0.22"
+
+# Audio I/O
+rodio = "0.19"
+cpal = "0.15"
+hound = "3.5"
+whisper-rs = { version = "0.11", optional = true }
+
+# File handling
+mime_guess = "2.0"
+image = "0.25"
+pdf = "0.8"
+
+# Configuration
+config = "0.14"
+directories = "5.0"
+toml = "0.8"
+
+# Additional core dependencies needed for the library
+thiserror = "1.0"
+futures = "0.3"
+tokio-stream = "0.1"
+uuid = { version = "1.8", features = ["v4"] }
+async-trait = "0.1"
+rand = "0.8"
+four-word-networking = "2.6.0"
+chrono = { version = "0.4", features = ["serde"] }
+blake3 = "1.5"
+
+[features]
+default = ["tui", "voice"]
+tui = []
+voice = ["whisper-rs"]
+network = []
+minimal = []
+
+[dev-dependencies]
+tempfile = "3.10"
+mockito = "1.4"
+tokio-test = "0.4"
+assert_matches = "1.5"
+rustls = "0.23"
