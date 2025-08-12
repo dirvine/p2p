@@ -48,14 +48,13 @@ jobs:
         
     - name: Build CLI (Linux x86_64)
       run: |
-        cd apps/communitas-cli
-        cargo build --release --target x86_64-unknown-linux-gnu
+        cargo build --release --target x86_64-unknown-linux-gnu --package communitas-cli
         
     - name: Strip binary
       run: |
         strip target/x86_64-unknown-linux-gnu/release/communitas
         
-    - name: Create tarball
+    - name: Create tarball  
       run: |
         cd target/x86_64-unknown-linux-gnu/release
         tar czf communitas-linux-amd64.tar.gz communitas

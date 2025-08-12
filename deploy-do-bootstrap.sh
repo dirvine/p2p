@@ -5,8 +5,8 @@
 set -e
 
 # Configuration
-GITHUB_REPO="saorsalabs/p2p"
-RELEASE_TAG="v0.1.0"  # Update with actual release tag
+GITHUB_REPO="dirvine/p2p"
+RELEASE_TAG="cli-v0.1.0"  # Using the current release tag
 SSH_KEY="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQD0H91SZIFP6rBe3+996fuIeC9e7GYrb885f2xZQkH+8rgG5Zmq+HqIpQ7XgvAGBePjtdKsg58eQktA7vE8UMbCHMVofnCe8mLf3WiaoajMJr+FrSnlau0RkMHIJcdgFDtJcFr5wottqMXsEThUtNBC98eMu8rE1uW8cl7ZLH6H9z2y51uAW04OA0KGHCgSQqOb+pCvFQkdm9hNFVar+/4sPGW6fA6ZWlc1n/cvn3pcCSMJIVpx45TRBa43YktUsMUm3fWrPk4ZWPbjMdUNndDjrAPoCG4nySB9ZE3Z++AEYXkwzvMkhNRc1MykVcyvg3sre/RP/iXwSF6gNsKVe9cioyikv6E4GjooOTCi+OL33ou4hhLvh7GVVhuAy6tDHgkuuubLtatZSuglVIpGmai2+0W39qA6zlgnvgvwYd55baQ01UjbTlacDFEXcjXTBETzpHlXqKwyiuzcs7NFPrurIH7j55VDhmInCVHbb8wXg/5J6dAM+U614HMHgyqu12c= davidirvine@MacBook-Pro.localdomain"
 
 # Colors
@@ -55,8 +55,10 @@ mkdir -p /opt/communitas/data/dht
 chown -R communitas:communitas /opt/communitas
 
 # Download binary from GitHub release
-RELEASE_URL="https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/communitas-linux-amd64"
-wget -O /opt/communitas/bin/communitas "$RELEASE_URL"
+RELEASE_URL="https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/communitas-linux-amd64.tar.gz"
+wget -O /tmp/communitas.tar.gz "$RELEASE_URL"
+tar -xzf /tmp/communitas.tar.gz -C /opt/communitas/bin/
+rm /tmp/communitas.tar.gz
 chmod +x /opt/communitas/bin/communitas
 
 # Generate API token
