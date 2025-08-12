@@ -178,13 +178,6 @@ enum Commands {
     },
 }
 
-/// Bootstrap node state
-struct BootstrapState {
-    dht_manager: Arc<RwLock<Option<DHTManager>>>,
-    geo_manager: Arc<RwLock<Option<GeographicBootstrapManager>>>,
-    network_manager: Arc<RwLock<Option<NetworkManager>>>,
-    mcp_server: Option<MCPServer>,
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
