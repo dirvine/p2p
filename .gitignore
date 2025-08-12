@@ -70,3 +70,6 @@ android-keystore.jks
 # Local configuration files
 fastlane/config.local.rb
 config.local.*
+
+# MCP configuration (contains sensitive tokens)
+.mcp.json

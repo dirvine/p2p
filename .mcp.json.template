@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "digitalocean": {
+      "command": "npx",
+      "args": ["@digitalocean/mcp"],
+      "env": {
+        "DIGITALOCEAN_API_TOKEN": "your_digitalocean_token_here"
+      }
+    },
+    "tauri-mcp": {
+      "command": "node",
+      "args": ["/path/to/your/mcp-servers/tauri-plugin-mcp/mcp-server-ts/build/index.js"],
+      "env": {
+        "TAURI_MCP_CONNECTION_TYPE": "tcp",
+        "TAURI_MCP_TCP_HOST": "127.0.0.1",
+        "TAURI_MCP_TCP_PORT": "4000"
+      }
+    }
+  }
+}

@@ -4,9 +4,7 @@
 // Geographic routing manager for CLI bootstrap nodes
 
 use anyhow::Result;
-use saorsa_core::network::geographic::{
-    GeographicRegion, GeographicNetworkService, GeographicLocation
-};
+use super::{GeographicRegion, GeographicLocation, GeographicNetworkService};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;

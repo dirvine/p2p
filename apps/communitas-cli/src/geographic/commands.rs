@@ -6,7 +6,7 @@
 use clap::Subcommand;
 use anyhow::Result;
 use super::manager::GeographicBootstrapManager;
-use saorsa_core::network::geographic::GeographicRegion;
+use super::{GeographicRegion};
 
 #[derive(Subcommand, Debug)]
 pub enum GeographicCommands {

@@ -274,7 +274,7 @@ impl MCPHandlers {
         
         if let Some(geo) = geo_guard.as_ref() {
             let region_filter = if let Some(r) = region {
-                match crate::geographic::commands::parse_region(&r) {
+                match parse_region(&r) {
                     Ok(region) => Some(region),
                     Err(e) => {
                         return MCPResponse::Error {
@@ -367,9 +367,9 @@ impl MCPHandlers {
 }
 
 // Helper function to parse region strings
-use saorsa_core::network::geographic::GeographicRegion;
+use crate::geographic::GeographicRegion;
 
-fn parse_region(s: &str) -> Result<GeographicRegion> {
+pub fn parse_region(s: &str) -> Result<GeographicRegion> {
     match s.to_lowercase().as_str() {
         "na" | "northamerica" => Ok(GeographicRegion::NorthAmerica),
         "eu" | "europe" => Ok(GeographicRegion::Europe),

@@ -9,8 +9,49 @@ pub mod manager;
 pub use commands::{GeographicCommands, execute_geographic_command};
 pub use manager::{GeographicBootstrapManager, RegionStats};
 
-use saorsa_core::network::geographic::{GeographicRegion, GeographicLocation};
+// Define local geographic types since they don't exist in saorsa-core yet
 use std::net::IpAddr;
+
+/// Geographic regions for bootstrap node distribution
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum GeographicRegion {
+    NorthAmerica,
+    Europe,
+    AsiaPacific,
+    SouthAmerica,
+    Africa,
+    Oceania,
+    Unknown,
+}
+
+/// Geographic location information
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GeographicLocation {
+    pub region: GeographicRegion,
+    pub country: String,
+    pub city: String,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+}
+
+/// Geographic network service for handling region-specific operations
+#[derive(Debug)]
+pub struct GeographicNetworkService {
+    initialized: bool,
+}
+
+impl GeographicNetworkService {
+    pub fn new() -> Self {
+        Self {
+            initialized: false,
+        }
+    }
+    
+    pub async fn initialize(&mut self) -> anyhow::Result<()> {
+        self.initialized = true;
+        Ok(())
+    }
+}
 
 /// Geographic bootstrap configuration
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
