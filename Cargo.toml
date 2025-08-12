@@ -5,16 +5,16 @@
 resolver = "2"
 members = [
     "crates/saorsa-core",        # Core P2P library (publishable to crates.io)
-    "crates/saorsa-fec",         # Forward Error Correction (patent-free Reed-Solomon)
-    "crates/dht-rsps",           # Root-Scoped Provider Summaries for DHT
-    "crates/saorsa-mls",         # Message Layer Security (MLS) protocol implementation
+    # "crates/saorsa-fec",         # Forward Error Correction (patent-free Reed-Solomon) - not in git yet
+    # "crates/dht-rsps",           # Root-Scoped Provider Summaries for DHT - not in git yet
+    # "crates/saorsa-mls",         # Message Layer Security (MLS) protocol implementation - not in git yet
     "crates/saorsa-cli",         # CLI tools and utilities
     "crates/ant-test-suite",     # Comprehensive test suite with data integrity verification
     "apps/communitas",           # Communitas Tauri application
     "apps/communitas/src-tauri", # Communitas Tauri backend
     "apps/communitas-cli",       # Enhanced CLI bootstrap node
     "test-app",                  # Test application
-    "mls-validation-tests",      # MLS validation test suite
+    # "mls-validation-tests",      # MLS validation test suite - not in git yet
     # "examples/*",                # Example applications - temporarily disabled for Tauri testing
 ]
 
