@@ -72,98 +72,67 @@ jobs:
         
     - name: Create Release
       id: create_release
-      uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.event.inputs.version || github.ref_name }}
-        release_name: Communitas CLI ${{ github.event.inputs.version || github.ref_name }}
-        body: |
-          # Communitas CLI Release
-          
-          Full-featured P2P bootstrap node with DHT storage and geographic routing.
-          
-          ## Features
-          - Distributed Hash Table (DHT) with 8x replication
-          - Geographic-aware routing across 6 global regions
-          - MCP server for remote management
-          - Persistent storage support
-          - Cross-platform support (Linux x86_64)
-          
-          ## Installation
-          
-          ### Linux (x86_64)
-          ```bash
-          wget https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.version || github.ref_name }}/communitas-linux-amd64.tar.gz
-          tar xzf communitas-linux-amd64.tar.gz
-          sudo mv communitas /usr/local/bin/
-          ```
-          
-          ## Usage
-          
-          ### Run as Bootstrap Node
-          ```bash
-          communitas bootstrap \
-            --port 9001 \
-            --mcp-port 9090 \
-            --region EU \
-            --api-token $(openssl rand -hex 32)
-          ```
-          
-          ### DHT Operations
-          ```bash
-          communitas dht put mykey myvalue
-          communitas dht get mykey
-          communitas dht stats
-          ```
-          
-          ### Geographic Routing
-          ```bash
-          communitas geo status
-          communitas geo peers --region EU
-          ```
-          
-          ## Deployment
-          
-          Deploy to DigitalOcean:
-          ```bash
-          ./deploy-do-bootstrap.sh
-          ```
-          
-          ## Checksums
-          See attached `.sha256` files for verification.
-        draft: false
-        prerelease: false
+      run: |
+        gh release create "${{ github.event.inputs.version || github.ref_name }}" \
+          --title "Communitas CLI ${{ github.event.inputs.version || github.ref_name }}" \
+          --notes "# Communitas CLI Release
         
-    - name: Upload Linux Binary
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./communitas-linux-amd64.tar.gz
-        asset_name: communitas-linux-amd64.tar.gz
-        asset_content_type: application/gzip
+        Full-featured P2P bootstrap node with DHT storage and geographic routing.
         
-    - name: Upload SHA256 (tarball)
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./communitas-linux-amd64.tar.gz.sha256
-        asset_name: communitas-linux-amd64.tar.gz.sha256
-        asset_content_type: text/plain
+        ## Features
+        - Distributed Hash Table (DHT) with 8x replication
+        - Geographic-aware routing across 6 global regions
+        - MCP server for remote management
+        - Persistent storage support
+        - Cross-platform support (Linux x86_64)
         
-    - name: Upload SHA256 (binary)
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./communitas-linux-amd64.sha256
-        asset_name: communitas-linux-amd64.sha256
-        asset_content_type: text/plain
+        ## Installation
+        
+        ### Linux (x86_64)
+        \`\`\`bash
+        wget https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.version || github.ref_name }}/communitas-linux-amd64.tar.gz
+        tar xzf communitas-linux-amd64.tar.gz
+        sudo mv communitas /usr/local/bin/
+        \`\`\`
+        
+        ## Usage
+        
+        ### Run as Bootstrap Node
+        \`\`\`bash
+        communitas bootstrap \\
+          --port 9001 \\
+          --mcp-port 9090 \\
+          --region EU \\
+          --api-token \$(openssl rand -hex 32)
+        \`\`\`
+        
+        ### DHT Operations
+        \`\`\`bash
+        communitas dht put mykey myvalue
+        communitas dht get mykey
+        communitas dht stats
+        \`\`\`
+        
+        ### Geographic Routing
+        \`\`\`bash
+        communitas geo status
+        communitas geo peers --region EU
+        \`\`\`
+        
+        ## Deployment
+        
+        Deploy to DigitalOcean:
+        \`\`\`bash
+        ./deploy-do-bootstrap.sh
+        \`\`\`
+        
+        ## Checksums
+        See attached \`.sha256\` files for verification." \
+          ./communitas-linux-amd64.tar.gz \
+          ./communitas-linux-amd64.tar.gz.sha256 \
+          ./communitas-linux-amd64.sha256
 
   build-multi-arch:
     name: Build Multi-Architecture
