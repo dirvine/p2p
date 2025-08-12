@@ -1,0 +1,192 @@
+name: Release Communitas CLI
+
+on:
+  push:
+    tags:
+      - 'cli-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v0.1.0)'
+        required: true
+        default: 'v0.1.0'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-release:
+    name: Build and Release CLI
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: x86_64-unknown-linux-gnu
+        
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Cache cargo index
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Cache cargo build
+      uses: actions/cache@v3
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build CLI (Linux x86_64)
+      run: |
+        cd apps/communitas-cli
+        cargo build --release --target x86_64-unknown-linux-gnu
+        
+    - name: Strip binary
+      run: |
+        strip target/x86_64-unknown-linux-gnu/release/communitas
+        
+    - name: Create tarball
+      run: |
+        cd target/x86_64-unknown-linux-gnu/release
+        tar czf communitas-linux-amd64.tar.gz communitas
+        mv communitas-linux-amd64.tar.gz ../../../
+        
+    - name: Generate SHA256 checksums
+      run: |
+        sha256sum communitas-linux-amd64.tar.gz > communitas-linux-amd64.tar.gz.sha256
+        sha256sum target/x86_64-unknown-linux-gnu/release/communitas > communitas-linux-amd64.sha256
+        
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.event.inputs.version || github.ref_name }}
+        release_name: Communitas CLI ${{ github.event.inputs.version || github.ref_name }}
+        body: |
+          # Communitas CLI Release
+          
+          Full-featured P2P bootstrap node with DHT storage and geographic routing.
+          
+          ## Features
+          - Distributed Hash Table (DHT) with 8x replication
+          - Geographic-aware routing across 6 global regions
+          - MCP server for remote management
+          - Persistent storage support
+          - Cross-platform support (Linux x86_64)
+          
+          ## Installation
+          
+          ### Linux (x86_64)
+          ```bash
+          wget https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.version || github.ref_name }}/communitas-linux-amd64.tar.gz
+          tar xzf communitas-linux-amd64.tar.gz
+          sudo mv communitas /usr/local/bin/
+          ```
+          
+          ## Usage
+          
+          ### Run as Bootstrap Node
+          ```bash
+          communitas bootstrap \
+            --port 9001 \
+            --mcp-port 9090 \
+            --region EU \
+            --api-token $(openssl rand -hex 32)
+          ```
+          
+          ### DHT Operations
+          ```bash
+          communitas dht put mykey myvalue
+          communitas dht get mykey
+          communitas dht stats
+          ```
+          
+          ### Geographic Routing
+          ```bash
+          communitas geo status
+          communitas geo peers --region EU
+          ```
+          
+          ## Deployment
+          
+          Deploy to DigitalOcean:
+          ```bash
+          ./deploy-do-bootstrap.sh
+          ```
+          
+          ## Checksums
+          See attached `.sha256` files for verification.
+        draft: false
+        prerelease: false
+        
+    - name: Upload Linux Binary
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./communitas-linux-amd64.tar.gz
+        asset_name: communitas-linux-amd64.tar.gz
+        asset_content_type: application/gzip
+        
+    - name: Upload SHA256 (tarball)
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./communitas-linux-amd64.tar.gz.sha256
+        asset_name: communitas-linux-amd64.tar.gz.sha256
+        asset_content_type: text/plain
+        
+    - name: Upload SHA256 (binary)
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./communitas-linux-amd64.sha256
+        asset_name: communitas-linux-amd64.sha256
+        asset_content_type: text/plain
+
+  build-multi-arch:
+    name: Build Multi-Architecture
+    runs-on: ubuntu-latest
+    needs: build-and-release
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            arch: arm64
+            
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install cross-compilation tools
+      run: |
+        cargo install cross --git https://github.com/cross-rs/cross
+        
+    - name: Build for ${{ matrix.target }}
+      run: |
+        cd apps/communitas-cli
+        cross build --release --target ${{ matrix.target }}
+        
+    - name: Package binary
+      run: |
+        cd target/${{ matrix.target }}/release
+        tar czf communitas-linux-${{ matrix.arch }}.tar.gz communitas
+        
+    # Additional upload steps for ARM builds...

@@ -13,6 +13,10 @@ pub mod voice;
 pub mod network;
 pub mod communication;
 pub mod identity;
+pub mod dns;
+pub mod dht;
+pub mod geographic;
+pub mod mcp;
 
 // Re-export commonly used types
 pub use config::{ConfigManager, ConfigError};
