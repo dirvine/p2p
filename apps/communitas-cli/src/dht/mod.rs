@@ -11,7 +11,7 @@ pub use commands::{DHTCommands, execute_dht_command};
 pub use manager::{DHTManager, DHTOperationResult};
 pub use storage::{StorageBackend, DiskStorage, StorageStats};
 
-use saorsa_core::dht::{Key, Record};
+// Re-export DHT types when needed
 use std::time::Duration;
 
 /// DHT configuration for bootstrap nodes

@@ -52,6 +52,7 @@ impl Default for MCPConfig {
 }
 
 /// MCP server for remote node management
+#[derive(Debug, Clone)]
 pub struct MCPServer {
     config: Arc<RwLock<MCPConfig>>,
     handlers: Arc<MCPHandlers>,

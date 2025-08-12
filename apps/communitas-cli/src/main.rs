@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 use tracing::{info, warn, error};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::net::SocketAddr;
+// use std::net::SocketAddr;
 
 // Import our modules
 use communitas_cli::{
@@ -266,10 +266,10 @@ async fn main() -> Result<()> {
         }
         
         Commands::Config { api_key, show } => {
-            let config_manager = ConfigManager::new()?;
+            let _config_manager = ConfigManager::load()?;
             
             if show {
-                let config = config_manager.load()?;
+                let config = ConfigManager::load()?;
                 println!("Current Configuration:");
                 println!("{:#?}", config);
             } else if let Some(key_name) = api_key {
@@ -280,16 +280,17 @@ async fn main() -> Result<()> {
         
         Commands::Connect { bootstrap, port } => {
             info!("Connecting to P2P network on port {}", port);
-            if let Some(addr) = bootstrap {
+            if let Some(ref addr) = bootstrap {
                 info!("Using bootstrap node: {}", addr);
             }
             
             // Simple P2P client connection
-            let mut network_manager = NetworkManager::new().await?;
-            network_manager.start(port).await?;
+            let mut network_manager = NetworkManager::new();
+            network_manager.initialize_with_address(&format!("0.0.0.0:{}", port)).await?;
             
             if let Some(bootstrap_addr) = bootstrap {
-                network_manager.connect_to_bootstrap(&bootstrap_addr).await?;
+                // Add bootstrap node to config
+                network_manager.config_mut().add_bootstrap_node(bootstrap_addr)?;
             }
             
             println!("Connected to P2P network on port {}", port);
@@ -395,23 +396,24 @@ async fn run_bootstrap_node(
         geo_config.local_region = parse_region(&r)?;
     }
     
+    let local_region = geo_config.local_region.clone();
     let mut geo_manager = GeographicBootstrapManager::new(geo_config).await?;
     geo_manager.initialize().await?;
     let geo_manager = Arc::new(RwLock::new(Some(geo_manager)));
     
     // Initialize network
-    let mut network_manager = NetworkManager::new().await?;
-    network_manager.start(port).await?;
+    let mut network_manager = NetworkManager::new();
+    network_manager.initialize_with_address(&format!("0.0.0.0:{}", port)).await?;
     
-    // Connect to bootstrap nodes
+    // Add bootstrap nodes to config
     for node in bootstrap_nodes {
-        match network_manager.connect_to_bootstrap(&node).await {
-            Ok(_) => info!("Connected to bootstrap node: {}", node),
-            Err(e) => warn!("Failed to connect to {}: {}", node, e),
+        match network_manager.config_mut().add_bootstrap_node(node.clone()) {
+            Ok(_) => info!("Added bootstrap node: {}", node),
+            Err(e) => warn!("Failed to add bootstrap node {}: {}", node, e),
         }
     }
     
-    let network_manager = Arc::new(RwLock::new(Some(network_manager)));
+    let _network_manager = Arc::new(RwLock::new(Some(network_manager)));
     
     // Initialize MCP server
     let mcp_server = if let Some(token) = api_token {
@@ -449,7 +451,7 @@ async fn run_bootstrap_node(
     }
     println!("Data Directory: {}", data_dir);
     println!("Storage Capacity: {} MB", storage_mb);
-    println!("Geographic Region: {:?}", geo_config.local_region);
+    println!("Geographic Region: {:?}", local_region);
     println!("");
     println!("Node is ready to accept connections");
     println!("Press Ctrl+C to shutdown");
@@ -514,8 +516,8 @@ fn init_logging(verbose: bool) -> Result<()> {
 }
 
 /// Parse region string
-fn parse_region(s: &str) -> Result<saorsa_core::network::geographic::GeographicRegion> {
-    use saorsa_core::network::geographic::GeographicRegion;
+fn parse_region(s: &str) -> Result<communitas_cli::geographic::GeographicRegion> {
+    use communitas_cli::geographic::GeographicRegion;
     
     match s.to_lowercase().as_str() {
         "na" | "northamerica" => Ok(GeographicRegion::NorthAmerica),

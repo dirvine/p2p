@@ -3,7 +3,7 @@
 //
 // P2P Node implementation and lifecycle management
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 

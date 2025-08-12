@@ -167,6 +167,12 @@ impl CommunicationManager {
     pub async fn with_node(node: saorsa_core::P2PNode) -> Self {
         CommunicationManager {
             node: Some(node),
+            secure_messaging: None,
+            event_publisher: None,
+            notification_manager: None,
+            community_sync_manager: None,
+            sync_protocol_handler: None,
+            conflict_resolver: None,
         }
     }
 

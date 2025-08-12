@@ -4,7 +4,7 @@
 // DHT manager for CLI bootstrap node
 
 use anyhow::{Result, Context};
-use saorsa_core::dht::{DHT, Key, Record, DHTConfig};
+use saorsa_core::dht::{DHT, Key, DHTConfig};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -73,6 +73,7 @@ pub struct BucketInfo {
 }
 
 /// DHT Manager for bootstrap nodes
+#[derive(Debug)]
 pub struct DHTManager {
     dht: Arc<RwLock<DHT>>,
     storage: Arc<RwLock<Box<dyn StorageBackend>>>,
@@ -91,12 +92,13 @@ impl DHTManager {
             record_ttl: config.record_ttl,
             bucket_refresh_interval: Duration::from_secs(3600),
             republish_interval: Duration::from_secs(3600),
-            provider_cleanup_interval: Duration::from_secs(3600),
+            max_distance: 160,
         };
         
-        let dht = DHT::new(dht_config.clone())
-            .await
-            .context("Failed to create DHT")?;
+        // Generate a local node ID
+        let local_id = saorsa_core::dht::Key::random();
+        
+        let dht = DHT::new(local_id, dht_config.clone());
         
         // Initialize storage backend
         let storage: Box<dyn StorageBackend> = if config.persistent_storage {
@@ -125,27 +127,21 @@ impl DHTManager {
     }
     
     /// Store a value in the DHT
-    pub async fn put(&mut self, key: &str, value: Vec<u8>, ttl: u64) -> Result<DHTOperationResult> {
+    pub async fn put(&mut self, key: &str, value: Vec<u8>, _ttl: u64) -> Result<DHTOperationResult> {
         let start = std::time::Instant::now();
         
         // Create key
-        let dht_key = Key::from(blake3::hash(key.as_bytes()).as_bytes().to_vec());
+        let dht_key = Key::new(key.as_bytes());
         
-        // Create record
-        let record = Record {
-            key: dht_key.clone(),
-            value: value.clone(),
-            publisher: None,
-            expires: Some(std::time::Instant::now() + Duration::from_secs(ttl)),
-        };
+        // Note: We don't need to create a record explicitly, the DHT.put() method handles it
         
         // Store locally
         let mut storage = self.storage.write().await;
         storage.put(key, &value).await?;
         
         // Store in DHT
-        let mut dht = self.dht.write().await;
-        dht.put_record(record).await
+        let dht = self.dht.read().await;
+        dht.put(dht_key.clone(), value.clone()).await
             .context("Failed to store in DHT")?;
         
         // Update metrics
@@ -158,7 +154,7 @@ impl DHTManager {
         
         Ok(DHTOperationResult {
             success: true,
-            hash: Some(hex::encode(&dht_key.as_ref()[..8])),
+            hash: Some(hex::encode(&dht_key.as_bytes()[..8])),
             size: value.len(),
             replicas: self.config.read().await.replication_factor,
             duration_ms,
@@ -191,10 +187,10 @@ impl DHTManager {
         drop(storage);
         
         // Query DHT
-        let dht_key = Key::from(blake3::hash(key.as_bytes()).as_bytes().to_vec());
-        let mut dht = self.dht.write().await;
+        let dht_key = Key::new(key.as_bytes());
+        let dht = self.dht.read().await;
         
-        if let Some(record) = dht.get_record(&dht_key).await? {
+        if let Some(record) = dht.get(&dht_key).await {
             // Store in local cache
             let mut storage = self.storage.write().await;
             storage.put(key, &record.value).await?;
@@ -281,7 +277,7 @@ impl DHTManager {
         let mut stats = HashMap::new();
         
         let dht = self.dht.read().await;
-        let dht_stats = dht.get_stats().await;
+        let dht_stats = dht.stats().await;
         
         stats.insert("routing_table_size".to_string(), dht_stats.total_nodes.to_string());
         stats.insert("active_buckets".to_string(), dht_stats.active_buckets.to_string());
@@ -296,18 +292,18 @@ impl DHTManager {
     }
     
     /// Find closest nodes to a key
-    pub async fn find_closest_nodes(&mut self, key: &str, count: usize) -> Result<Vec<NodeInfo>> {
-        let dht_key = Key::from(blake3::hash(key.as_bytes()).as_bytes().to_vec());
+    pub async fn find_closest_nodes(&mut self, key: &str, _count: usize) -> Result<Vec<NodeInfo>> {
+        let dht_key = Key::new(key.as_bytes());
         
-        let mut dht = self.dht.write().await;
-        let nodes = dht.find_closest_nodes(&dht_key, count).await?;
+        let dht = self.dht.read().await;
+        let nodes = dht.find_node(&dht_key).await;
         
         // Update metrics
         let mut metrics = self.metrics.write().await;
         metrics.lookup_requests += 1;
         
         Ok(nodes.into_iter().map(|node| NodeInfo {
-            id: hex::encode(&node.peer_id.to_bytes()[..8]),
+            id: hex::encode(&node.peer_id.as_bytes()[..8]),
             address: node.addresses.first()
                 .map(|a| a.to_string())
                 .unwrap_or_else(|| "unknown".to_string()),
@@ -318,16 +314,16 @@ impl DHTManager {
     
     /// Replicate a key to maintain replication factor
     pub async fn replicate_key(&mut self, key: &str, factor: Option<usize>) -> Result<ReplicationResult> {
-        let factor = factor.unwrap_or(self.config.read().await.replication_factor);
+        let _factor = factor.unwrap_or(self.config.read().await.replication_factor);
         
         // Get the value
-        let value = self.get(key).await?
+        let _value = self.get(key).await?
             .ok_or_else(|| anyhow::anyhow!("Key not found"))?;
         
         // Find nodes to replicate to
-        let dht_key = Key::from(blake3::hash(key.as_bytes()).as_bytes().to_vec());
-        let mut dht = self.dht.write().await;
-        let nodes = dht.find_closest_nodes(&dht_key, factor).await?;
+        let dht_key = Key::new(key.as_bytes());
+        let dht = self.dht.read().await;
+        let nodes = dht.find_node(&dht_key).await;
         
         // TODO: Actually replicate to nodes
         
@@ -435,7 +431,7 @@ impl DHTManager {
                             entry.insert("encoding".to_string(), serde_json::Value::String("utf8".to_string()));
                         }
                         Err(_) => {
-                            entry.insert("value".to_string(), serde_json::Value::String(base64::encode(&value)));
+                            entry.insert("value".to_string(), serde_json::Value::String(base64::prelude::Engine::encode(&base64::prelude::BASE64_STANDARD, &value)));
                             entry.insert("encoding".to_string(), serde_json::Value::String("base64".to_string()));
                         }
                     }
@@ -542,7 +538,7 @@ impl DHTManager {
                 if let Some(obj) = value.as_object() {
                     if let (Some(val), Some(enc)) = (obj.get("value"), obj.get("encoding")) {
                         let value_bytes = if enc == "base64" {
-                            base64::decode(val.as_str().unwrap_or(""))?
+                            base64::prelude::Engine::decode(&base64::prelude::BASE64_STANDARD, val.as_str().unwrap_or(""))?
                         } else {
                             val.as_str().unwrap_or("").as_bytes().to_vec()
                         };
@@ -587,7 +583,7 @@ impl DHTManager {
     /// Get bucket information
     pub async fn get_bucket_info(&self) -> Result<Vec<BucketInfo>> {
         let dht = self.dht.read().await;
-        let stats = dht.get_stats().await;
+        let stats = dht.stats().await;
         
         // TODO: Get actual bucket information from DHT
         let mut buckets = Vec::new();
@@ -604,9 +600,9 @@ impl DHTManager {
     
     /// Refresh stale buckets
     pub async fn refresh_buckets(&mut self) -> Result<usize> {
-        let mut dht = self.dht.write().await;
-        dht.refresh_buckets().await?;
-        Ok(0) // TODO: Return actual count
+        // TODO: This method would need to call a public DHT method when available
+        // For now, just return 0 as a placeholder
+        Ok(0)
     }
     
     /// Compact buckets

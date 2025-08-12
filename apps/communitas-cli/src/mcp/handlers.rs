@@ -12,6 +12,7 @@ use crate::geographic::GeographicBootstrapManager;
 use serde_json::json;
 
 /// MCP request handlers
+#[derive(Debug)]
 pub struct MCPHandlers {
     dht_manager: Arc<RwLock<Option<DHTManager>>>,
     geo_manager: Arc<RwLock<Option<GeographicBootstrapManager>>>,
@@ -167,7 +168,7 @@ impl MCPHandlers {
                     // Try to convert to string, otherwise base64
                     let value_str = match String::from_utf8(value.clone()) {
                         Ok(s) => s,
-                        Err(_) => base64::encode(&value),
+                        Err(_) => base64::prelude::Engine::encode(&base64::prelude::BASE64_STANDARD, &value),
                     };
                     
                     MCPResponse::Success {

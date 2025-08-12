@@ -136,7 +136,7 @@ pub async fn execute_geographic_command(
                 println!("ID                          Region          Latency  Location");
                 println!("{:-<80}", "");
                 for peer in peers {
-                    println!("{:<28} {:?:<15} {:>6} ms  {}", 
+                    println!("{:<28} {:<15?} {:>6} ms  {}", 
                         &peer.id[..28.min(peer.id.len())],
                         peer.region,
                         peer.latency_ms,
@@ -157,7 +157,7 @@ pub async fn execute_geographic_command(
                 println!("{:-<60}", "");
                 
                 for stat in stats {
-                    println!("{:?:<17} {:>5}  {:>8.1} ms  {:>10.1}%  {:>9.1} Mbps",
+                    println!("{:<17?} {:>5}  {:>8.1} ms  {:>10.1}%  {:>9.1} Mbps",
                         stat.region,
                         stat.peer_count,
                         stat.avg_latency_ms,
@@ -196,7 +196,7 @@ pub async fn execute_geographic_command(
                 
                 if let Some(r) = region {
                     let region = parse_region(&r)?;
-                    manager.set_local_region(region).await?;
+                    manager.set_local_region(region.clone()).await?;
                     println!("✓ Set local region to {:?}", region);
                     updated = true;
                 }
@@ -216,14 +216,14 @@ pub async fn execute_geographic_command(
                 
                 if let Some(ap) = add_preferred {
                     let region = parse_region(&ap)?;
-                    manager.add_preferred_region(region).await?;
+                    manager.add_preferred_region(region.clone()).await?;
                     println!("✓ Added {:?} to preferred regions", region);
                     updated = true;
                 }
                 
                 if let Some(rp) = remove_preferred {
                     let region = parse_region(&rp)?;
-                    manager.remove_preferred_region(region).await?;
+                    manager.remove_preferred_region(region.clone()).await?;
                     println!("✓ Removed {:?} from preferred regions", region);
                     updated = true;
                 }

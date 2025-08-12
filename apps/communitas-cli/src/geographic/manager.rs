@@ -4,7 +4,7 @@
 // Geographic routing manager for CLI bootstrap nodes
 
 use anyhow::Result;
-use super::{GeographicRegion, GeographicLocation, GeographicNetworkService};
+use super::{GeographicRegion, GeographicNetworkService};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -67,6 +67,7 @@ pub struct OptimizationResult {
 }
 
 /// Geographic bootstrap manager
+#[derive(Debug)]
 pub struct GeographicBootstrapManager {
     config: Arc<RwLock<GeographicBootstrapConfig>>,
     network_service: Arc<RwLock<GeographicNetworkService>>,

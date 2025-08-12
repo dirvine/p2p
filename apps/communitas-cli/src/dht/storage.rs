@@ -6,7 +6,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::sync::RwLock;
 use std::sync::Arc;
 
@@ -21,7 +21,7 @@ pub struct StorageStats {
 
 /// Storage backend trait
 #[async_trait]
-pub trait StorageBackend: Send + Sync {
+pub trait StorageBackend: Send + Sync + std::fmt::Debug {
     /// Store a value
     async fn put(&mut self, key: &str, value: &[u8]) -> Result<()>;
     
@@ -42,6 +42,7 @@ pub trait StorageBackend: Send + Sync {
 }
 
 /// In-memory storage backend
+#[derive(Debug)]
 pub struct MemoryStorage {
     data: Arc<RwLock<HashMap<String, Vec<u8>>>>,
     capacity_mb: usize,
@@ -122,6 +123,7 @@ impl StorageBackend for MemoryStorage {
 }
 
 /// Disk-based storage backend
+#[derive(Debug)]
 pub struct DiskStorage {
     base_path: PathBuf,
     capacity_mb: usize,

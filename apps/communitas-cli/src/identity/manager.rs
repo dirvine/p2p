@@ -30,7 +30,7 @@ pub struct EnhancedIdentityManager {
     address_book: Vec<AddressBookEntry>,
     trust_manager: TrustManager,
     #[cfg(feature = "network")]
-    saorsa_identity: Option<saorsa_core::Identity>,
+    saorsa_identity: Option<saorsa_core::identity::UserIdentity>,
 }
 
 /// Local identity representation
@@ -58,31 +58,22 @@ impl EnhancedIdentityManager {
     /// Initialize with network identity
     #[cfg(feature = "network")]
     pub async fn initialize_with_network(&mut self) -> Result<()> {
-        use saorsa_core::identity::{IdentityManager, IdentityCreationParams, SecurityLevel};
-        use saorsa_core::secure_memory::SecureString;
+        use saorsa_core::identity::{IdentityManager, IdentityManagerConfig};
         
         // Create identity manager
-        let mut identity_manager = IdentityManager::new();
-        identity_manager.initialize()
-            .await
-            .context("Failed to initialize identity manager")?;
-        
-        // Create identity with parameters
-        let password = SecureString::from_str("default-password")
-            .context("Failed to create secure password")?;
-        
-        let params = IdentityCreationParams {
-            display_name: Some("Communitas User".to_string()),
-            avatar_url: None,
-            bio: None,
-            ..Default::default()
-        };
+        let config = IdentityManagerConfig::default();
+        let identity_manager = IdentityManager::new(config);
         
         // Try to create the identity, handling the known issue
-        match identity_manager.create_identity(&password, params).await {
+        match identity_manager.create_identity(
+            "Communitas User".to_string(),
+            "default-three-word".to_string(),
+            None,
+            None,
+        ).await {
             Ok(identity) => {
-                // Use the four-word address directly from saorsa
-                let four_word = FourWordAddress::from_string(&identity.four_word_address)?;
+                // Use the three-word address from saorsa (note: it's three-word, not four-word)
+                let four_word = FourWordAddress::from_string(&identity.three_word_address)?;
                 
                 let local_identity = Identity {
                     name: "Network User".to_string(),

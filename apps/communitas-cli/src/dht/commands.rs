@@ -214,7 +214,7 @@ pub async fn execute_dht_command(manager: &mut DHTManager, command: DHTCommands)
                 for (key, info) in keys {
                     println!("Key: {}", key);
                     println!("  Size: {} bytes", info.size);
-                    println!("  Created: {}", info.created);
+                    println!("  Created: {:?}", info.created);
                     println!("  TTL: {} seconds", info.ttl);
                     println!("  Replicas: {}", info.replicas);
                     println!();
